@@ -4,13 +4,12 @@ import random
 import sys
 import re
 import requests
-import json
 import time
 from urllib.parse import quote
 from datetime import datetime
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
-from aiogram.types import Message
+from aiogram.types import Message, ChatMember
 
 # ===== НАСТРОЙКИ =====
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -22,31 +21,34 @@ if not BOT_TOKEN:
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-# Поисковые запросы (только азиатки)
+# Поисковые запросы
 SEARCH_QUERIES = [
     "asian beautiful girl portrait",
     "beautiful japanese woman",
     "korean girl model",
     "chinese woman portrait",
-    "east asian beauty",
-    "asian model photography",
 ]
 
 # Хранилище активных чатов
 active_chats = {}
 
+# ===== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ =====
+
+async def is_user_admin(chat_id: int, user_id: int) -> bool:
+    """Проверяет, является ли пользователь администратором чата"""
+    try:
+        chat_member = await bot.get_chat_member(chat_id, user_id)
+        return chat_member.status in ["administrator", "creator"]
+    except:
+        return False
+
 def search_bing(query):
-    """
-    Ищет фото через Bing Images
-    """
+    """Ищет фото через Bing Images"""
     try:
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
             "Accept-Language": "en-US,en;q=0.5",
-            "Accept-Encoding": "gzip, deflate, br",
-            "Connection": "keep-alive",
-            "Upgrade-Insecure-Requests": "1"
         }
         
         encoded_query = quote(query)
@@ -65,7 +67,7 @@ def search_bing(query):
             img = img.replace('\\u0026', '&')
             img = img.replace('\\/', '/')
             
-            if any(ext in img.lower() for ext in ['.jpg', '.jpeg', '.png', '.webp']):
+            if any(ext in img.lower() ext in ['.jpg', '.jpeg', '.png', '.webp']):
                 if not any(x in img.lower() for x in ['gstatic', 'google', 'favicon', 'logo', 'bing']):
                     clean_images.append(img)
         
@@ -81,9 +83,7 @@ def search_bing(query):
         return None
 
 def search_google_direct(query):
-    """
-    Ищет фото через Google Images
-    """
+    """Ищет фото через Google Images"""
     try:
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -124,9 +124,7 @@ def search_google_direct(query):
         return None
 
 def search_pexels(query):
-    """
-    Ищет фото через Pexels API
-    """
+    """Ищет фото через Pexels API"""
     try:
         PEXELS_KEY = os.getenv("PEXELS_KEY")
         if not PEXELS_KEY:
@@ -157,13 +155,11 @@ def search_pexels(query):
         return None
 
 def get_random_photo():
-    """
-    Получает случайное фото азиатки из интернета
-    """
+    """Получает случайное фото азиатки из интернета"""
     queries = SEARCH_QUERIES.copy()
     random.shuffle(queries)
     
-    # 1. Пробуем Bing
+    # 1. Bing
     print("🔍 Поиск в Bing...")
     for query in queries:
         photo = search_bing(query)
@@ -172,7 +168,7 @@ def get_random_photo():
             return photo
         time.sleep(0.3)
     
-    # 2. Пробуем Google
+    # 2. Google
     print("🔍 Поиск в Google...")
     for query in queries:
         photo = search_google_direct(query)
@@ -181,7 +177,7 @@ def get_random_photo():
             return photo
         time.sleep(0.3)
     
-    # 3. Пробуем Pexels
+    # 3. Pexels
     print("🔍 Поиск в Pexels...")
     for query in queries:
         photo = search_pexels(query)
@@ -194,9 +190,7 @@ def get_random_photo():
     return None
 
 async def send_photo(chat_id):
-    """
-    Отправляет фото или ошибку
-    """
+    """Отправляет фото или ошибку"""
     try:
         photo_url = get_random_photo()
         
@@ -205,12 +199,7 @@ async def send_photo(chat_id):
             print(f"✅ Фото отправлено в чат {chat_id}")
             return True
         else:
-            error_msg = (
-                "❌ Не удалось найти фото азиатской девушки.\n\n"
-                "💡 Попробуйте позже или используйте /photo снова."
-            )
-            await bot.send_message(chat_id=chat_id, text=error_msg)
-            print(f"❌ Фото не найдено для чата {chat_id}")
+            await bot.send_message(chat_id=chat_id, text="❌ Не удалось найти фото азиатской девушки. Попробуйте позже.")
             return False
             
     except Exception as e:
@@ -218,9 +207,7 @@ async def send_photo(chat_id):
         return False
 
 async def send_to_all():
-    """
-    Отправляет фото во все активные чаты
-    """
+    """Отправляет фото во все активные чаты"""
     if not active_chats:
         print("⚠️ Нет активных чатов")
         return
@@ -232,24 +219,28 @@ async def send_to_all():
         await asyncio.sleep(2)
 
 async def scheduler():
-    """
-    Отправляет каждые 3 часа во все чаты
-    """
+    """Отправляет каждые 3 часа во все чаты"""
     await asyncio.sleep(5)
     await send_to_all()
     
     while True:
-        await asyncio.sleep(3 * 3600)  # 3 часа
+        await asyncio.sleep(3 * 3600)
         await send_to_all()
+
+# ===== КОМАНДЫ БОТА (с проверкой прав) =====
 
 @dp.message(Command("start"))
 async def start(msg: Message):
     chat_id = msg.chat.id
+    user_id = msg.from_user.id
     chat_type = msg.chat.type
-    user = msg.from_user
     
-    # Проверяем, является ли чат группой или супергруппой
+    # Проверяем админа (для групп)
     if chat_type in ["group", "supergroup"]:
+        if not await is_user_admin(chat_id, user_id):
+            await msg.reply("⛔ Эта команда только для администраторов группы.")
+            return
+        
         # Проверяем, админ ли бот в группе
         try:
             chat_member = await bot.get_chat_member(chat_id, bot.id)
@@ -258,19 +249,13 @@ async def start(msg: Message):
             is_admin = False
         
         if not is_admin:
-            await msg.answer(
-                "❌ Я должен быть администратором группы!\n\n"
-                "Чтобы активировать бота:\n"
-                "1. Назначьте меня администратором\n"
-                "2. Дайте права на отправку сообщений\n"
-                "3. Напишите /start снова"
-            )
+            await msg.answer("❌ Я должен быть администратором группы!\nНазначьте меня админом и попробуйте снова.")
             return
     
     # Добавляем чат в список активных
     active_chats[chat_id] = {
         "type": chat_type,
-        "added_by": user.id,
+        "added_by": user_id,
         "added_at": datetime.now().isoformat(),
         "name": msg.chat.title or msg.chat.first_name or str(chat_id)
     }
@@ -278,14 +263,10 @@ async def start(msg: Message):
     await msg.answer(
         f"✅ Бот активирован!\n"
         f"📌 Тип: {chat_type}\n"
-        f"🆔 ID: {chat_id}\n"
         f"📸 Фото азиаток каждые 3 часа\n"
-        f"🔄 /photo - получить фото сейчас\n"
-        f"📊 /status - статус бота\n"
-        f"🛑 /stop - отключить бота"
+        f"🔄 /photo - получить фото сейчас"
     )
     
-    # Отправляем приветственное фото
     await asyncio.sleep(1)
     await send_photo(chat_id)
     
@@ -294,16 +275,33 @@ async def start(msg: Message):
 @dp.message(Command("photo"))
 async def photo(msg: Message):
     chat_id = msg.chat.id
+    user_id = msg.from_user.id
+    chat_type = msg.chat.type
+    
+    # Только админы могут запрашивать фото в группах
+    if chat_type in ["group", "supergroup"]:
+        if not await is_user_admin(chat_id, user_id):
+            await msg.reply("⛔ Только администраторы могут запрашивать фото.")
+            return
     
     if chat_id not in active_chats:
-        await msg.answer("⚠️ Бот не активирован в этом чате. Напишите /start")
+        await msg.answer("⚠️ Бот не активирован. Напишите /start (только для админов)")
         return
     
+    await msg.answer("🔍 Ищу фото...")
     await send_photo(chat_id)
 
 @dp.message(Command("stop"))
 async def stop(msg: Message):
     chat_id = msg.chat.id
+    user_id = msg.from_user.id
+    chat_type = msg.chat.type
+    
+    # Только админы могут остановить
+    if chat_type in ["group", "supergroup"]:
+        if not await is_user_admin(chat_id, user_id):
+            await msg.reply("⛔ Только администраторы могут отключить бота.")
+            return
     
     if chat_id in active_chats:
         del active_chats[chat_id]
@@ -315,9 +313,17 @@ async def stop(msg: Message):
 @dp.message(Command("status"))
 async def status(msg: Message):
     chat_id = msg.chat.id
+    user_id = msg.from_user.id
+    chat_type = msg.chat.type
+    
+    # Только админы могут смотреть статус
+    if chat_type in ["group", "supergroup"]:
+        if not await is_user_admin(chat_id, user_id):
+            await msg.reply("⛔ Только администраторы могут смотреть статус.")
+            return
+    
     is_active = chat_id in active_chats
     
-    # Информация о текущем чате
     status_text = (
         f"📊 Статус бота:\n"
         f"• В этом чате: {'✅ Активен' if is_active else '❌ Неактивен'}\n"
@@ -326,21 +332,15 @@ async def status(msg: Message):
         f"• Фото: только азиатки\n"
     )
     
-    # Если чат активен, показываем дополнительную информацию
     if is_active and chat_id in active_chats:
         info = active_chats[chat_id]
         status_text += f"\n📌 Тип: {info.get('type', 'unknown')}"
-        if info.get('name'):
-            status_text += f"\n📝 Название: {info.get('name')}"
     
     await msg.answer(status_text)
 
 @dp.message(Command("chats"))
 async def list_chats(msg: Message):
-    """
-    Показывает все активные чаты (только для владельца)
-    """
-    # Проверяем владельца по ID из .env
+    """Список всех чатов (только для владельца)"""
     OWNER_ID = int(os.getenv("CHAT_ID", 0))
     
     if msg.from_user.id != OWNER_ID:
@@ -358,88 +358,24 @@ async def list_chats(msg: Message):
         chat_type = info.get('type', 'unknown')
         added_at = info.get('added_at', '')[:16] if info.get('added_at') else ''
         
-        text += f"{i}. {name}\n"
-        text += f"   ID: {chat_id}\n"
-        text += f"   Тип: {chat_type}\n"
-        text += f"   Добавлен: {added_at}\n\n"
+        text += f"{i}. {name}\n   ID: {chat_id}\n   Тип: {chat_type}\n   Добавлен: {added_at}\n\n"
         
-        # Ограничиваем длину сообщения
         if len(text) > 3500:
             text += "... (показаны не все)"
             break
     
     await msg.answer(text)
 
-@dp.message(Command("stop_all"))
-async def stop_all(msg: Message):
-    """
-    Отключает бота во всех чатах (только для владельца)
-    """
-    OWNER_ID = int(os.getenv("CHAT_ID", 0))
-    
-    if msg.from_user.id != OWNER_ID:
-        await msg.answer("⛔ Доступ запрещён. Только для владельца.")
-        return
-    
-    count = len(active_chats)
-    active_chats.clear()
-    
-    await msg.answer(f"🛑 Бот отключён во всех {count} чатах")
-
-@dp.message(Command("broadcast"))
-async def broadcast(msg: Message):
-    """
-    Отправляет сообщение во все чаты (только для владельца)
-    """
-    OWNER_ID = int(os.getenv("CHAT_ID", 0))
-    
-    if msg.from_user.id != OWNER_ID:
-        await msg.answer("⛔ Доступ запрещён. Только для владельца.")
-        return
-    
-    # Получаем текст после команды
-    text = msg.text.replace("/broadcast", "").strip()
-    
-    if not text:
-        await msg.answer("ℹ️ Укажите текст для рассылки.\nПример: /broadcast Привет всем!")
-        return
-    
-    if not active_chats:
-        await msg.answer("📭 Нет активных чатов")
-        return
-    
-    await msg.answer(f"📤 Отправка '{text[:30]}...' в {len(active_chats)} чатов")
-    
-    sent = 0
-    for chat_id in list(active_chats.keys()):
-        try:
-            await bot.send_message(chat_id=chat_id, text=text)
-            sent += 1
-            await asyncio.sleep(0.5)
-        except Exception as e:
-            print(f"Ошибка отправки в {chat_id}: {e}")
-            # Если бот заблокирован - удаляем чат
-            if "forbidden" in str(e).lower():
-                del active_chats[chat_id]
-    
-    await msg.answer(f"✅ Отправлено в {sent} чатов")
+# ===== ЗАПУСК =====
 
 async def main():
     print("=" * 60)
     print("🤖 Бот запущен")
     print("🔍 Поиск в: Bing → Google → Pexels")
     print("🌏 Только азиатки: японки, китаянки, кореянки")
-    print("📌 Работает во ВСЕХ чатах, где является админом")
+    print("🔒 Команды только для администраторов")
     print("=" * 60)
     
-    # Проверяем Pexels ключ
-    pexels_key = os.getenv("PEXELS_KEY")
-    if pexels_key:
-        print("✅ Pexels API: доступен")
-    else:
-        print("ℹ️ Pexels API: не настроен (можно получить на pexels.com)")
-    
-    # Проверяем ID владельца
     owner_id = os.getenv("CHAT_ID", "не задан")
     print(f"👤 ID владельца: {owner_id}")
     print("=" * 60)
