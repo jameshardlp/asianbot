@@ -4,6 +4,7 @@ import random
 import sys
 import re
 import requests
+import json
 import time
 from urllib.parse import quote
 from datetime import datetime
@@ -13,6 +14,7 @@ from aiogram.types import Message, ChatMember
 
 # ===== НАСТРОЙКИ =====
 BOT_TOKEN = os.getenv("BOT_TOKEN")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 if not BOT_TOKEN:
     print("Ошибка: BOT_TOKEN не задан")
@@ -27,10 +29,143 @@ SEARCH_QUERIES = [
     "beautiful japanese woman",
     "korean girl model",
     "chinese woman portrait",
+    "east asian beauty",
 ]
 
 # Хранилище активных чатов
 active_chats = {}
+
+# ===== ГЕНЕРАЦИЯ ТЕКСТА ЧЕРЕЗ OPENAI =====
+
+def generate_caption_with_openai() -> str:
+    """
+    Генерирует описание для фото через OpenAI API
+    """
+    try:
+        if not OPENAI_API_KEY:
+            print("⚠️ OPENAI_API_KEY не задан")
+            return get_fallback_caption()
+        
+        url = "https://api.openai.com/v1/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {OPENAI_API_KEY}",
+            "Content-Type": "application/json"
+        }
+        
+        prompt = """Напиши описание (на русском языке) для фотографии азиатской девушки.
+
+Примеры стиля:
+- "Бля, базаришь, Илья.
+Я что-то тоже в последнее время поднабрал на японской лапше в наваристом свином бульоне.
+Всегда был тонкий как спица, и вот впервые в жизни заметил у себя признаки скуфского пузика.
+Пиздец, похоже старость приходит.
+Хорошо, что хотя бы лысина меня стороной обошла (тьфу-тьфу-тьфу)
+Вроде у бати и у деда нет лысины, поэтому шансы кажется в мою пользу.
+Тогда тоже с завтрашнего дня сажусь на диету.
+Скуфяры в чате - присоединяйтесь.
+Завтра все встаём с утра и начинаем считать калории.
+Едим овощи, варим гречку, и побольше мяса - лучше куриную грудку.
+Всё взвешиваем, скидываем в ChatGPT, чтобы подсчитал калории.
+Держимся минимум 2 месяца, потом все отчитываемся об успехах.
+Вольно, бойцы.
+
+США уже не торт.
+Раньше это была самая пиздатая страна на планете.
+Но потом они зачем-то отменили рабство...
+
+Сижу вот, думаю, может сделать ларпинг тебя на Ютубе.
+Куплю говняный микрофон, создам канал Larpysson, и буду делать обзор на Месть Боксёра...
+а потом трахну торт.
+Ищу кучерявого напарника, который готов создать канал Юрий Ларпинкий, чтобы сыграть роль Пушкина в моём запланированном видосе Городок.
+Пишите.
+Ещё хочу заларпить видос "Слава Роду" - родинку на груди уже нарисовал, а вот где такую футболку заказать не могу найти."
+- "Ничего-ничего, после Городка с Хованским они уже ни на что не в обиде.
+Даже на Миротворец тебя в благодарность записали.
+
+Ты кстати случаем в Россию не вернулся? 🤔
+А то что-то последние посты начал всё чаще в адекватное для малюток время писать, а не в 4-5 утра, как раньше.
+Если так, то надеюсь это не Росов тебя через Новосибирский аэропорт убедил прилететь..."
+
+Требования:
+- 1-2 предложения
+- Грубый и юмористический стиль с насмешкой
+- Упоминание восточной культуры (Япония, Корея, Китай)
+- Без кавычек и лишних слов
+- Разные описания каждый раз
+
+Напиши ТОЛЬКО описание."""
+
+        data = {
+            "model": "gpt-3.5-turbo",
+            "messages": [
+                {"role": "system", "content": "Ты поэт, пишущий красивые описания для фотографий."},
+                {"role": "user", "content": prompt}
+            ],
+            "temperature": 0.9,
+            "max_tokens": 80,
+            "n": 1
+        }
+        
+        print("🔄 Генерация описания через OpenAI...")
+        response = requests.post(url, headers=headers, json=data, timeout=20)
+        
+        # Проверяем статус ответа
+        if response.status_code != 200:
+            print(f"❌ OpenAI ошибка: {response.status_code}")
+            print(f"📄 Ответ: {response.text[:200]}")
+            return get_fallback_caption()
+        
+        # Парсим JSON
+        try:
+            result = response.json()
+        except json.JSONDecodeError:
+            print("❌ Ошибка парсинга JSON")
+            return get_fallback_caption()
+        
+        # Извлекаем текст
+        if "choices" in result and len(result["choices"]) > 0:
+            caption = result["choices"][0]["message"]["content"].strip()
+            # Очищаем от кавычек
+            caption = caption.strip('"').strip("'")
+            
+            # Добавляем случайный флаг
+            tags = ["🇯🇵 Япония", "🇰🇷 Корея", "🇨🇳 Китай", "🇹🇭 Таиланд"]
+            tag = random.choice(tags)
+            
+            print(f"✅ Сгенерировано: {caption[:50]}...")
+            return f"{caption}\n\n{tag} 📸"
+        else:
+            print("❌ Неожиданный ответ от OpenAI")
+            return get_fallback_caption()
+            
+    except requests.exceptions.Timeout:
+        print("⏰ Таймаут OpenAI")
+        return get_fallback_caption()
+    except requests.exceptions.RequestException as e:
+        print(f"❌ Ошибка запроса: {e}")
+        return get_fallback_caption()
+    except Exception as e:
+        print(f"❌ Ошибка генерации: {e}")
+        return get_fallback_caption()
+
+def get_fallback_caption() -> str:
+    """Резервные описания (если AI не работает)"""
+    captions = [
+        "🌸 Японская весна. Нежность и изящество сакуры в каждом взгляде.",
+        "💫 K-Beauty. Сияние, которое невозможно не заметить.",
+        "🏮 Шанхай. Огонь и элегантность в каждом движении.",
+        "🌏 Восточная красота. Утончённость и гармония.",
+        "✨ Азиатский шарм — в каждой детали.",
+        "🌺 Красота, которая вдохновляет.",
+        "🌸 Симфония восточной красоты.",
+        "💕 Азия в кадре — искренность и свет.",
+        "🌟 Восточная эстетика. Минимализм и изящество.",
+        "🌺 Цветущая сакура и нежный взгляд."
+    ]
+    caption = random.choice(captions)
+    tags = ["🇯🇵 Япония", "🇰🇷 Корея", "🇨🇳 Китай"]
+    tag = random.choice(tags)
+    return f"{caption}\n\n{tag} 📸"
 
 # ===== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ =====
 
@@ -56,6 +191,7 @@ def search_bing(query):
         
         response = requests.get(url, headers=headers, timeout=15)
         
+        # Ищем ссылки на изображения
         pattern = r'"murl":"([^"]+)"'
         images = re.findall(pattern, response.text)
         
@@ -67,7 +203,6 @@ def search_bing(query):
             img = img.replace('\\u0026', '&')
             img = img.replace('\\/', '/')
             
-            # ИСПРАВЛЕННАЯ СТРОКА 70:
             if any(ext in img.lower() for ext in ['.jpg', '.jpeg', '.png', '.webp']):
                 if not any(x in img.lower() for x in ['gstatic', 'google', 'favicon', 'logo', 'bing']):
                     clean_images.append(img)
@@ -108,7 +243,6 @@ def search_google_direct(query):
             img = img.replace('\\u0026', '&')
             img = img.replace('\\/', '/')
             
-            # ИСПРАВЛЕННАЯ СТРОКА (аналогичная):
             if any(ext in img.lower() for ext in ['.jpg', '.jpeg', '.png', '.webp']):
                 if not any(x in img.lower() for x in ['gstatic', 'google', 'favicon', 'logo']):
                     if not img.startswith('data:'):
@@ -192,20 +326,34 @@ def get_random_photo():
     return None
 
 async def send_photo(chat_id):
-    """Отправляет фото или ошибку"""
+    """Отправляет фото с AI-описанием"""
     try:
         photo_url = get_random_photo()
         
         if photo_url:
-            await bot.send_photo(chat_id=chat_id, photo=photo_url)
+            # Генерируем описание через AI
+            caption = generate_caption_with_openai()
+            
+            await bot.send_photo(
+                chat_id=chat_id, 
+                photo=photo_url,
+                caption=caption
+            )
             print(f"✅ Фото отправлено в чат {chat_id}")
             return True
         else:
-            await bot.send_message(chat_id=chat_id, text="❌ Не удалось найти фото азиатской девушки. Попробуйте позже.")
+            await bot.send_message(
+                chat_id=chat_id, 
+                text="❌ Не удалось найти фото. Попробуйте позже."
+            )
             return False
             
     except Exception as e:
         print(f"❌ Ошибка отправки в чат {chat_id}: {e}")
+        await bot.send_message(
+            chat_id=chat_id, 
+            text=f"❌ Ошибка: {str(e)[:100]}"
+        )
         return False
 
 async def send_to_all():
@@ -226,10 +374,10 @@ async def scheduler():
     await send_to_all()
     
     while True:
-        await asyncio.sleep(3 * 3600)
+        await asyncio.sleep(3 * 3600)  # 3 часа
         await send_to_all()
 
-# ===== КОМАНДЫ БОТА (с проверкой прав) =====
+# ===== КОМАНДЫ БОТА =====
 
 @dp.message(Command("start"))
 async def start(msg: Message):
@@ -262,11 +410,16 @@ async def start(msg: Message):
         "name": msg.chat.title or msg.chat.first_name or str(chat_id)
     }
     
+    ai_status = "✅ OpenAI (GPT-3.5)" if OPENAI_API_KEY else "❌ Резервные описания"
+    
     await msg.answer(
         f"✅ Бот активирован!\n"
         f"📌 Тип: {chat_type}\n"
-        f"📸 Фото азиаток каждые 3 часа\n"
-        f"🔄 /photo - получить фото сейчас"
+        f"🧠 Нейросеть: {ai_status}\n"
+        f"📸 Фото азиаток с AI-описаниями каждые 3 часа\n"
+        f"🔄 /photo - получить фото сейчас\n"
+        f"📊 /status - статус бота\n"
+        f"🛑 /stop - отключить бота"
     )
     
     await asyncio.sleep(1)
@@ -290,7 +443,7 @@ async def photo(msg: Message):
         await msg.answer("⚠️ Бот не активирован. Напишите /start (только для админов)")
         return
     
-    await msg.answer("🔍 Ищу фото...")
+    await msg.answer("🔍 Ищу фото и генерирую описание...")
     await send_photo(chat_id)
 
 @dp.message(Command("stop"))
@@ -299,7 +452,6 @@ async def stop(msg: Message):
     user_id = msg.from_user.id
     chat_type = msg.chat.type
     
-    # Только админы могут остановить
     if chat_type in ["group", "supergroup"]:
         if not await is_user_admin(chat_id, user_id):
             await msg.reply("⛔ Только администраторы могут отключить бота.")
@@ -318,7 +470,6 @@ async def status(msg: Message):
     user_id = msg.from_user.id
     chat_type = msg.chat.type
     
-    # Только админы могут смотреть статус
     if chat_type in ["group", "supergroup"]:
         if not await is_user_admin(chat_id, user_id):
             await msg.reply("⛔ Только администраторы могут смотреть статус.")
@@ -326,12 +477,15 @@ async def status(msg: Message):
     
     is_active = chat_id in active_chats
     
+    ai_status = "✅ OpenAI (GPT-3.5)" if OPENAI_API_KEY else "❌ Резервные описания"
+    
     status_text = (
         f"📊 Статус бота:\n"
         f"• В этом чате: {'✅ Активен' if is_active else '❌ Неактивен'}\n"
         f"• Всего чатов: {len(active_chats)}\n"
+        f"• Нейросеть: {ai_status}\n"
         f"• Поиск: Bing + Google + Pexels\n"
-        f"• Фото: только азиатки\n"
+        f"• Фото: только азиатки с AI-описаниями"
     )
     
     if is_active and chat_id in active_chats:
@@ -368,6 +522,20 @@ async def list_chats(msg: Message):
     
     await msg.answer(text)
 
+@dp.message(Command("test_ai"))
+async def test_ai(msg: Message):
+    """Тестирует генерацию описания (только для владельца)"""
+    OWNER_ID = int(os.getenv("CHAT_ID", 0))
+    
+    if msg.from_user.id != OWNER_ID:
+        await msg.answer("⛔ Доступ запрещён.")
+        return
+    
+    await msg.answer("🧠 Генерирую описание через AI...")
+    
+    caption = generate_caption_with_openai()
+    await msg.answer(f"📝 Результат:\n\n{caption}")
+
 # ===== ЗАПУСК =====
 
 async def main():
@@ -375,6 +543,14 @@ async def main():
     print("🤖 Бот запущен")
     print("🔍 Поиск в: Bing → Google → Pexels")
     print("🌏 Только азиатки: японки, китаянки, кореянки")
+    
+    if OPENAI_API_KEY:
+        print("🧠 Нейросеть: OpenAI (GPT-3.5) ✅")
+        print("📝 Генерация уникальных описаний")
+    else:
+        print("📝 Резервные описания (AI не настроен)")
+        print("ℹ️ Добавьте OPENAI_API_KEY в .env для AI-генерации")
+    
     print("🔒 Команды только для администраторов")
     print("=" * 60)
     
@@ -385,7 +561,5 @@ async def main():
     asyncio.create_task(scheduler())
     await dp.start_polling(bot)
 
-if __name__ == "__main__":
-    asyncio.run(main())
 if __name__ == "__main__":
     asyncio.run(main())
