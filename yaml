@@ -1,0 +1,14 @@
+# railway.yml
+build:
+  docker:
+    image: python:3.11-slim
+  commands:
+    - pip install -r requirements.txt
+
+start:
+  command: python bot.py
+
+env:
+  - BOT_TOKEN
+  - CHAT_ID
+  - PEXELS_KEY
