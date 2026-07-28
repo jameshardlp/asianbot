@@ -50,11 +50,11 @@ def save_chats():
 
 active_chats = load_chats()
 
-# ===== ГЕНЕРАЦИЯ ОПИСАНИЙ ЧЕРЕЗ DEEPSEEK =====
+# ===== ГЕНЕРАЦИЯ ЮМОРИСТИЧЕСКИХ ОПИСАНИЙ =====
 
 def generate_caption_with_deepseek() -> str:
     """
-    Генерирует описание через DeepSeek API
+    Генерирует юмористическое описание через DeepSeek API
     """
     if not DEEPSEEK_API_KEY:
         print("⚠️ Нет ключа DeepSeek")
@@ -67,28 +67,41 @@ def generate_caption_with_deepseek() -> str:
             "Content-Type": "application/json"
         }
         
-        prompt = """Напиши одно романтичное предложение для фото азиатской девушки.
-Пример: "🌸 Японская весна. Нежность и изящество сакуры в каждом взгляде."
-Только предложение, без пояснений."""
+        prompt = """Напиши короткий юмористический текст (2-3 предложения) в стиле "мужской разговор" для поста с фото азиатской девушки.
+
+Стиль: разговорный, с лёгким сарказмом, можно про:
+- текущие мировые события
+- популярных русскоязычных блогеров
+- бытовые ситуации
+- самоиронию
+
+Примеры:
+"Бля, базаришь, Илья. Я что-то тоже в последнее время поднабрал на японской лапше в наваристом свином бульоне. Пиздец, похоже старость приходит."
+
+"США уже не торт. Раньше это была самая пиздатая страна на планете. Но потом они зачем-то отменили рабство..."
+
+"Сижу вот, думаю, может сделать ларпинг на Ютубе. Куплю говняный микрофон, создам канал Larpysson, и буду делать обзор на Месть Боксёра... а потом трахну торт."
+
+Напиши ТОЛЬКО текст, без кавычек и пояснений."""
 
         data = {
             "model": "deepseek-v4-flash",
             "messages": [
-                {"role": "system", "content": "Ты поэт. Отвечай только готовым текстом, без рассуждений. Максимум 1 предложение."},
+                {"role": "system", "content": "Ты стендап-комик. Пиши коротко, остроумно, с юмором. Только на русском."},
                 {"role": "user", "content": prompt}
             ],
-            "temperature": 0.9,
-            "max_tokens": 200,
+            "temperature": 1.2,
+            "max_tokens": 150,
         }
         
-        print("🔄 Запрос к DeepSeek...")
+        print("🔄 Запрос к DeepSeek (юмор)...")
         response = requests.post(url, headers=headers, json=data, timeout=30)
         
         print(f"📊 DeepSeek статус: {response.status_code}")
         
         if response.status_code != 200:
             print(f"❌ Ошибка: {response.status_code}")
-            print(f"📄 Ответ: {response.text[:500]}")
+            print(f"📄 Ответ: {response.text[:300]}")
             return get_fallback_caption()
         
         result = response.json()
@@ -97,10 +110,10 @@ def generate_caption_with_deepseek() -> str:
         reasoning = result["choices"][0].get("message", {}).get("reasoning_content", "")
         
         print(f"📝 content: '{content}'")
-        print(f"📝 reasoning: '{reasoning[:80]}...'")
         
         # Если content пустой — берём reasoning
         if not content and reasoning:
+            print("📝 reasoning: '{reasoning[:80]}...'")
             sentences = reasoning.replace('"', '').split('.')
             content = sentences[0].strip() + "." if sentences else reasoning[:100]
         
@@ -113,7 +126,7 @@ def generate_caption_with_deepseek() -> str:
         tags = ["🇯🇵 Япония", "🇰🇷 Корея", "🇨🇳 Китай"]
         tag = random.choice(tags)
         
-        print(f"✅ Описание: {caption[:50]}...")
+        print(f"✅ Юмор: {caption[:50]}...")
         return f"{caption}\n\n{tag} 📸"
             
     except Exception as e:
@@ -121,23 +134,21 @@ def generate_caption_with_deepseek() -> str:
         return get_fallback_caption()
 
 def get_fallback_caption() -> str:
-    """Резервные описания"""
+    """Резервные юмористические описания"""
     captions = [
-        "🌸 Японская весна. Нежность и изящество сакуры в каждом взгляде.",
-        "💫 K-Beauty. Сияние, которое невозможно не заметить.",
-        "🏮 Шанхай. Огонь и элегантность в каждом движении.",
-        "🌏 Восточная красота. Утончённость и гармония.",
-        "✨ Азиатский шарм — в каждой детали.",
-        "🌺 Красота, которая вдохновляет.",
-        "🌸 Симфония восточной красоты.",
-        "💕 Азия в кадре — искренность и свет.",
-        "🌟 Восточная эстетика. Минимализм и изящество.",
-        "🌺 Цветущая сакура и нежный взгляд."
+        "Бля, базаришь, Илья. Я что-то тоже в последнее время поднабрал на японской лапше. Пиздец, похоже старость приходит. 🇯🇵",
+        "США уже не торт. Раньше это была самая пиздатая страна. Но потом они зачем-то отменили рабство... 🇺🇸",
+        "Сижу вот, думаю, может сделать ларпинг на Ютубе. Куплю говняный микрофон, создам канал Larpysson. 🇯🇵",
+        "Ищу кучерявого напарника для канала Юрий Ларпинкий. Сыграем Пушкина в видосе Городок. 🇷🇺",
+        "Хочу заларпить видос 'Слава Роду'. Родинку на груди уже нарисовал, а вот футболку найти не могу. 🇷🇺",
+        "Пиздец, похоже старость приходит. Хорошо, что хотя бы лысина стороной обошла (тьфу-тьфу-тьфу). 🇯🇵",
+        "Вроде у бати и у деда нет лысины, поэтому шансы кажется в мою пользу. 🇯🇵",
+        "Скуфяры в чате - присоединяйтесь. Завтра все встаём с утра и начинаем считать калории. 🇷🇺",
+        "Едим овощи, варим гречку, и побольше мяса - лучше куриную грудку. Держимся минимум 2 месяца. 🇷🇺",
+        "Вольно, бойцы. Бля, базаришь, Илья. Всё взвешиваем, скидываем в ChatGPT, чтобы подсчитал калории. 🇯🇵",
     ]
     caption = random.choice(captions)
-    tags = ["🇯🇵 Япония", "🇰🇷 Корея", "🇨🇳 Китай"]
-    tag = random.choice(tags)
-    return f"{caption}\n\n{tag} 📸"
+    return caption
 
 # ===== ОСТАЛЬНОЙ КОД =====
 
@@ -354,8 +365,8 @@ async def start(msg: Message):
     await msg.answer(
         f"✅ Бот активирован!\n"
         f"📌 Тип: {chat_type}\n"
-        f"🧠 Нейросеть: {'✅ DeepSeek V4' if DEEPSEEK_API_KEY else '❌ Резервные описания'}\n"
-        f"📸 Фото азиаток каждые 3 часа\n"
+        f"🧠 Нейросеть: {'✅ DeepSeek V4 (юмор)' if DEEPSEEK_API_KEY else '❌ Резервные описания'}\n"
+        f"📸 Фото азиаток с юмором каждые 3 часа\n"
         f"🔄 /photo - получить фото сейчас\n"
         f"🛑 /stop - отключить бота"
     )
@@ -378,7 +389,7 @@ async def photo(msg: Message):
         await msg.answer("⚠️ Бот не активирован. Напишите /start")
         return
     
-    await msg.answer("🔍 Ищу фото...")
+    await msg.answer("🔍 Ищу фото и придумываю шутку...")
     await send_photo(chat_id)
 
 @dp.message(Command("stop"))
@@ -414,7 +425,7 @@ async def status(msg: Message):
         f"📊 Статус бота:\n"
         f"• В этом чате: {'✅ Активен' if is_active else '❌ Неактивен'}\n"
         f"• Всего чатов: {len(active_chats)}\n"
-        f"• Нейросеть: {'✅ DeepSeek V4' if DEEPSEEK_API_KEY else '❌ Резервные описания'}\n"
+        f"• Нейросеть: {'✅ DeepSeek V4 (юмор)' if DEEPSEEK_API_KEY else '❌ Резервные описания'}\n"
         f"• Поиск: Bing + Google + Pexels"
     )
     
@@ -428,19 +439,20 @@ async def test_ai(msg: Message):
         await msg.answer("⛔ Доступ запрещён.")
         return
     
-    await msg.answer("🧠 Генерирую описание через DeepSeek V4...")
+    await msg.answer("🧠 Генерирую юмористическое описание через DeepSeek V4...")
     
     caption = generate_caption_with_deepseek()
     await msg.answer(f"📝 Результат:\n\n{caption}")
 
 async def main():
     print("=" * 60)
-    print("🤖 Бот запущен")
+    print("🤖 Бот запущен (юмористический режим)")
     print("🔍 Поиск в: Bing → Google → Pexels")
     print("🌏 Только азиатки: японки, китаянки, кореянки")
     
     if DEEPSEEK_API_KEY:
         print("🧠 Нейросеть: DeepSeek V4 ✅")
+        print("📝 Режим: юмористические описания")
     else:
         print("📝 Резервные описания (AI не настроен)")
     
