@@ -50,11 +50,11 @@ def save_chats():
 
 active_chats = load_chats()
 
-# ===== ГЕНЕРАЦИЯ ОПИСАНИЙ ЧЕРЕЗ DEEPSEEK =====
+# ===== ГЕНЕРАЦИЯ ОПИСАНИЙ ЧЕРЕЗ DEEPSEEK (БЕЗ РАССУЖДЕНИЙ) =====
 
 def generate_caption_with_deepseek() -> str:
     """
-    Генерирует описание через DeepSeek API
+    Генерирует описание через DeepSeek API (модель без reasoning)
     """
     if not DEEPSEEK_API_KEY:
         print("⚠️ Нет ключа DeepSeek")
@@ -83,27 +83,24 @@ def generate_caption_with_deepseek() -> str:
 Напиши ТОЛЬКО описание, без кавычек."""
 
         data = {
-            "model": "deepseek-v4-flash",
+            "model": "deepseek-v4-flash-instruct",  # ← МОДЕЛЬ БЕЗ РАССУЖДЕНИЙ
             "messages": [
-                {"role": "system", "content": "Ты поэт. Пиши красиво и романтично, только на русском языке."},
+                {"role": "system", "content": "Ты поэт. Пиши красиво и романтично, только на русском языке. Отвечай сразу готовым текстом."},
                 {"role": "user", "content": prompt}
             ],
             "temperature": 0.9,
-            "max_tokens": 80
+            "max_tokens": 150,
         }
         
-        print("🔄 Запрос к DeepSeek...")
+        print("🔄 Запрос к DeepSeek (без reasoning)...")
         response = requests.post(url, headers=headers, json=data, timeout=20)
         
         print(f"📊 DeepSeek статус: {response.status_code}")
         
         if response.status_code != 200:
             print(f"❌ DeepSeek ошибка: {response.status_code}")
+            print(f"📄 Ответ: {response.text[:300]}")
             return get_fallback_caption()
-        
-        # ДИАГНОСТИКА
-        print(f"📦 ПОЛНЫЙ ОТВЕТ:\n{response.text[:1000]}")
-        print("=" * 50)
         
         try:
             result = response.json()
@@ -111,10 +108,12 @@ def generate_caption_with_deepseek() -> str:
             print("❌ Ошибка парсинга JSON")
             return get_fallback_caption()
         
+        # Проверяем структуру ответа
         if "choices" not in result or len(result["choices"]) == 0:
             print("❌ Нет 'choices' в ответе")
             return get_fallback_caption()
         
+        # Извлекаем content (без reasoning!)
         content = result["choices"][0].get("message", {}).get("content", "")
         print(f"📝 Сырой content: '{content}'")
         
@@ -153,7 +152,7 @@ def get_fallback_caption() -> str:
     tag = random.choice(tags)
     return f"{caption}\n\n{tag} 📸"
 
-# ===== ОСТАЛЬНОЙ КОД =====
+# ===== ОСТАЛЬНОЙ КОД (без изменений) =====
 
 async def is_user_admin(chat_id: int, user_id: int) -> bool:
     try:
@@ -368,7 +367,7 @@ async def start(msg: Message):
     await msg.answer(
         f"✅ Бот активирован!\n"
         f"📌 Тип: {chat_type}\n"
-        f"🧠 Нейросеть: {'✅ DeepSeek V4' if DEEPSEEK_API_KEY else '❌ Резервные описания'}\n"
+        f"🧠 Нейросеть: {'✅ DeepSeek V4 (без рассуждений)' if DEEPSEEK_API_KEY else '❌ Резервные описания'}\n"
         f"📸 Фото азиаток каждые 3 часа\n"
         f"🔄 /photo - получить фото сейчас\n"
         f"🛑 /stop - отключить бота"
@@ -428,7 +427,7 @@ async def status(msg: Message):
         f"📊 Статус бота:\n"
         f"• В этом чате: {'✅ Активен' if is_active else '❌ Неактивен'}\n"
         f"• Всего чатов: {len(active_chats)}\n"
-        f"• Нейросеть: {'✅ DeepSeek V4' if DEEPSEEK_API_KEY else '❌ Резервные описания'}\n"
+        f"• Нейросеть: {'✅ DeepSeek V4 (без рассуждений)' if DEEPSEEK_API_KEY else '❌ Резервные описания'}\n"
         f"• Поиск: Bing + Google + Pexels"
     )
     
@@ -442,7 +441,7 @@ async def test_ai(msg: Message):
         await msg.answer("⛔ Доступ запрещён.")
         return
     
-    await msg.answer("🧠 Генерирую описание через DeepSeek V4...")
+    await msg.answer("🧠 Генерирую описание через DeepSeek V4 (без рассуждений)...")
     
     caption = generate_caption_with_deepseek()
     await msg.answer(f"📝 Результат:\n\n{caption}")
@@ -454,7 +453,8 @@ async def main():
     print("🌏 Только азиатки: японки, китаянки, кореянки")
     
     if DEEPSEEK_API_KEY:
-        print("🧠 Нейросеть: DeepSeek V4 ✅")
+        print("🧠 Нейросеть: DeepSeek V4 (без рассуждений) ✅")
+        print("📝 Модель: deepseek-v4-flash-instruct")
     else:
         print("📝 Резервные описания (AI не настроен)")
     
