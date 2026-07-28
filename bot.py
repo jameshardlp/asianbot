@@ -97,58 +97,45 @@ def generate_caption_with_deepseek() -> str:
         
         print(f"📊 DeepSeek статус: {response.status_code}")
         
-        # Проверяем ошибки
-        if response.status_code == 401:
-            print("❌ Неверный API ключ DeepSeek")
-            return get_fallback_caption()
-        
-        if response.status_code == 402:
-            print("❌ Недостаточно баланса на счете DeepSeek")
-            return get_fallback_caption()
-        
         if response.status_code != 200:
             print(f"❌ DeepSeek ошибка: {response.status_code}")
-            print(f"📄 Ответ: {response.text[:300]}")
             return get_fallback_caption()
         
-        # Парсим ответ
+        # ДИАГНОСТИКА
+        print(f"📦 ПОЛНЫЙ ОТВЕТ:\n{response.text[:1000]}")
+        print("=" * 50)
+        
         try:
             result = response.json()
         except json.JSONDecodeError:
             print("❌ Ошибка парсинга JSON")
             return get_fallback_caption()
         
-        # Извлекаем текст
-        if "choices" in result and len(result["choices"]) > 0:
-            content = result["choices"][0].get("message", {}).get("content", "")
-            
-            if not content or len(content.strip()) < 5:
-                print("❌ Пустой или короткий ответ от DeepSeek")
-                return get_fallback_caption()
-            
-            caption = content.strip()
-            caption = caption.strip('"').strip("'")
-            
-            # Добавляем флаг
-            tags = ["🇯🇵 Япония", "🇰🇷 Корея", "🇨🇳 Китай"]
-            tag = random.choice(tags)
-            
-            print(f"✅ Описание сгенерировано: {caption[:40]}...")
-            return f"{caption}\n\n{tag} 📸"
-        else:
-            print("❌ Неожиданный ответ DeepSeek")
-            print(f"📦 Ответ: {json.dumps(result, indent=2, ensure_ascii=False)[:300]}")
+        if "choices" not in result or len(result["choices"]) == 0:
+            print("❌ Нет 'choices' в ответе")
             return get_fallback_caption()
+        
+        content = result["choices"][0].get("message", {}).get("content", "")
+        print(f"📝 Сырой content: '{content}'")
+        
+        if not content or len(content.strip()) < 5:
+            print("❌ Пустой или короткий ответ")
+            return get_fallback_caption()
+        
+        caption = content.strip().strip('"').strip("'")
+        
+        tags = ["🇯🇵 Япония", "🇰🇷 Корея", "🇨🇳 Китай"]
+        tag = random.choice(tags)
+        
+        print(f"✅ Описание: {caption[:50]}...")
+        return f"{caption}\n\n{tag} 📸"
             
-    except requests.exceptions.Timeout:
-        print("⏰ Таймаут DeepSeek")
-        return get_fallback_caption()
     except Exception as e:
         print(f"❌ Ошибка: {e}")
         return get_fallback_caption()
 
 def get_fallback_caption() -> str:
-    """Резервные описания (если AI не работает)"""
+    """Резервные описания"""
     captions = [
         "🌸 Японская весна. Нежность и изящество сакуры в каждом взгляде.",
         "💫 K-Beauty. Сияние, которое невозможно не заметить.",
@@ -468,7 +455,6 @@ async def main():
     
     if DEEPSEEK_API_KEY:
         print("🧠 Нейросеть: DeepSeek V4 ✅")
-        print(f"🔑 Ключ: {DEEPSEEK_API_KEY[:10]}...")
     else:
         print("📝 Резервные описания (AI не настроен)")
     
@@ -499,7 +485,5 @@ async def main():
     finally:
         await bot.session.close()
 
-if __name__ == "__main__":
-    asyncio.run(main())
 if __name__ == "__main__":
     asyncio.run(main())
