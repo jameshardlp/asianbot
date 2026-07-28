@@ -30,14 +30,11 @@ SEARCH_QUERIES = [
     "beautiful japanese woman",
     "korean girl model",
     "chinese woman portrait",
-    "east asian beauty",
 ]
 
-# ===== ХРАНЕНИЕ ЧАТОВ В ФАЙЛЕ (экономия памяти) =====
 ACTIVE_CHATS_FILE = "active_chats.json"
 
 def load_chats():
-    """Загружает чаты из файла"""
     try:
         with open(ACTIVE_CHATS_FILE, "r") as f:
             return json.load(f)
@@ -45,7 +42,6 @@ def load_chats():
         return {}
 
 def save_chats():
-    """Сохраняет чаты в файл"""
     try:
         with open(ACTIVE_CHATS_FILE, "w") as f:
             json.dump(active_chats, f)
@@ -54,10 +50,14 @@ def save_chats():
 
 active_chats = load_chats()
 
-# ===== ГЕНЕРАЦИЯ ТЕКСТА ЧЕРЕЗ DeepSeek API =====
+# ===== ГЕНЕРАЦИЯ ОПИСАНИЙ ЧЕРЕЗ DEEPSEEK =====
 
 def generate_caption_with_deepseek() -> str:
+    """
+    Генерирует описание через DeepSeek API
+    """
     if not DEEPSEEK_API_KEY:
+        print("⚠️ Нет ключа DeepSeek")
         return get_fallback_caption()
     
     try:
@@ -69,7 +69,7 @@ def generate_caption_with_deepseek() -> str:
         
         prompt = """Напиши короткое, романтичное и красивое описание (на русском языке) для фотографии азиатской девушки.
 
-Примеры стиля:
+Примеры:
 - "🌸 Японская весна. Нежность и изящество сакуры в каждом взгляде."
 - "💫 K-Beauty. Сияние, которое невозможно не заметить."
 - "🏮 Шанхай. Огонь и элегантность в каждом движении."
@@ -77,46 +77,78 @@ def generate_caption_with_deepseek() -> str:
 Требования:
 - 1-2 предложения
 - Романтичный и поэтичный стиль
-- Упоминание восточной культуры (Япония, Корея, Китай)
+- Упоминание восточной культуры
 - Без кавычек и лишних слов
-- КАЖДЫЙ РАЗ НОВОЕ, НЕ ПОВТОРЯЙСЯ
 
-Напиши ТОЛЬКО описание."""
+Напиши ТОЛЬКО описание, без кавычек."""
 
         data = {
             "model": "deepseek-v4-flash",
             "messages": [
-                {"role": "system", "content": "Ты поэт, пишущий красивые описания для фотографий."},
+                {"role": "system", "content": "Ты поэт. Пиши красиво и романтично, только на русском языке."},
                 {"role": "user", "content": prompt}
             ],
             "temperature": 0.9,
             "max_tokens": 80
         }
         
+        print("🔄 Запрос к DeepSeek...")
         response = requests.post(url, headers=headers, json=data, timeout=20)
+        
+        print(f"📊 DeepSeek статус: {response.status_code}")
+        
+        # Проверяем ошибки
+        if response.status_code == 401:
+            print("❌ Неверный API ключ DeepSeek")
+            return get_fallback_caption()
+        
+        if response.status_code == 402:
+            print("❌ Недостаточно баланса на счете DeepSeek")
+            return get_fallback_caption()
         
         if response.status_code != 200:
             print(f"❌ DeepSeek ошибка: {response.status_code}")
+            print(f"📄 Ответ: {response.text[:300]}")
             return get_fallback_caption()
         
-        result = response.json()
+        # Парсим ответ
+        try:
+            result = response.json()
+        except json.JSONDecodeError:
+            print("❌ Ошибка парсинга JSON")
+            return get_fallback_caption()
         
+        # Извлекаем текст
         if "choices" in result and len(result["choices"]) > 0:
-            caption = result["choices"][0]["message"]["content"].strip()
+            content = result["choices"][0].get("message", {}).get("content", "")
+            
+            if not content or len(content.strip()) < 5:
+                print("❌ Пустой или короткий ответ от DeepSeek")
+                return get_fallback_caption()
+            
+            caption = content.strip()
             caption = caption.strip('"').strip("'")
             
-            tags = ["🇯🇵 Япония", "🇰🇷 Корея", "🇨🇳 Китай", "🇹🇭 Таиланд"]
+            # Добавляем флаг
+            tags = ["🇯🇵 Япония", "🇰🇷 Корея", "🇨🇳 Китай"]
             tag = random.choice(tags)
             
+            print(f"✅ Описание сгенерировано: {caption[:40]}...")
             return f"{caption}\n\n{tag} 📸"
         else:
+            print("❌ Неожиданный ответ DeepSeek")
+            print(f"📦 Ответ: {json.dumps(result, indent=2, ensure_ascii=False)[:300]}")
             return get_fallback_caption()
             
+    except requests.exceptions.Timeout:
+        print("⏰ Таймаут DeepSeek")
+        return get_fallback_caption()
     except Exception as e:
-        print(f"❌ Ошибка генерации: {e}")
+        print(f"❌ Ошибка: {e}")
         return get_fallback_caption()
 
 def get_fallback_caption() -> str:
+    """Резервные описания (если AI не работает)"""
     captions = [
         "🌸 Японская весна. Нежность и изящество сакуры в каждом взгляде.",
         "💫 K-Beauty. Сияние, которое невозможно не заметить.",
@@ -134,7 +166,7 @@ def get_fallback_caption() -> str:
     tag = random.choice(tags)
     return f"{caption}\n\n{tag} 📸"
 
-# ===== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ =====
+# ===== ОСТАЛЬНОЙ КОД =====
 
 async def is_user_admin(chat_id: int, user_id: int) -> bool:
     try:
@@ -298,7 +330,7 @@ async def send_photo(chat_id):
             return False
             
     except Exception as e:
-        print(f"❌ Ошибка отправки: {e}")
+        print(f"❌ Ошибка: {e}")
         return False
 
 async def send_to_all():
@@ -316,8 +348,6 @@ async def scheduler():
     while True:
         await asyncio.sleep(3 * 3600)
         await send_to_all()
-
-# ===== КОМАНДЫ БОТА =====
 
 @dp.message(Command("start"))
 async def start(msg: Message):
@@ -430,36 +460,30 @@ async def test_ai(msg: Message):
     caption = generate_caption_with_deepseek()
     await msg.answer(f"📝 Результат:\n\n{caption}")
 
-# ===== ЗАПУСК =====
-
 async def main():
     print("=" * 60)
-    print("🤖 Бот запущен (оптимизированная версия)")
+    print("🤖 Бот запущен")
     print("🔍 Поиск в: Bing → Google → Pexels")
     print("🌏 Только азиатки: японки, китаянки, кореянки")
     
     if DEEPSEEK_API_KEY:
         print("🧠 Нейросеть: DeepSeek V4 ✅")
+        print(f"🔑 Ключ: {DEEPSEEK_API_KEY[:10]}...")
     else:
         print("📝 Резервные описания (AI не настроен)")
     
     print("=" * 60)
     
-    # Очищаем память
     gc.collect()
-    print("✅ Сборка мусора выполнена")
     
-    # Удаляем webhook
     try:
         await bot.delete_webhook(drop_pending_updates=True)
         print("✅ Webhook удалён")
     except Exception as e:
         print(f"⚠️ Ошибка webhook: {e}")
     
-    # Запускаем планировщик
     asyncio.create_task(scheduler())
     
-    # Запускаем бота
     try:
         await dp.start_polling(
             bot,
@@ -475,5 +499,7 @@ async def main():
     finally:
         await bot.session.close()
 
+if __name__ == "__main__":
+    asyncio.run(main())
 if __name__ == "__main__":
     asyncio.run(main())
