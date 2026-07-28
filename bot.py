@@ -67,7 +67,8 @@ def search_bing(query):
             img = img.replace('\\u0026', '&')
             img = img.replace('\\/', '/')
             
-            if any(ext in img.lower() ext in ['.jpg', '.jpeg', '.png', '.webp']):
+            # ИСПРАВЛЕННАЯ СТРОКА 70:
+            if any(ext in img.lower() for ext in ['.jpg', '.jpeg', '.png', '.webp']):
                 if not any(x in img.lower() for x in ['gstatic', 'google', 'favicon', 'logo', 'bing']):
                     clean_images.append(img)
         
@@ -107,6 +108,7 @@ def search_google_direct(query):
             img = img.replace('\\u0026', '&')
             img = img.replace('\\/', '/')
             
+            # ИСПРАВЛЕННАЯ СТРОКА (аналогичная):
             if any(ext in img.lower() for ext in ['.jpg', '.jpeg', '.png', '.webp']):
                 if not any(x in img.lower() for x in ['gstatic', 'google', 'favicon', 'logo']):
                     if not img.startswith('data:'):
@@ -383,5 +385,7 @@ async def main():
     asyncio.create_task(scheduler())
     await dp.start_polling(bot)
 
+if __name__ == "__main__":
+    asyncio.run(main())
 if __name__ == "__main__":
     asyncio.run(main())
