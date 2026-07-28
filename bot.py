@@ -46,7 +46,7 @@ def generate_caption_with_gemini() -> str:
             print("⚠️ GEMINI_KEY не задан")
             return get_fallback_caption()
         
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={GEMINI_KEY}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_KEY}"
         
         prompt = """Напиши случайную идею, новость или актуальное события, грубым и юмористическим стилем, можно использовать матерные слова.
 
