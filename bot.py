@@ -23,7 +23,6 @@ if not BOT_TOKEN:
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-# Поисковые запросы
 SEARCH_QUERIES = [
     "asian beautiful girl portrait",
     "beautiful japanese woman",
@@ -32,15 +31,12 @@ SEARCH_QUERIES = [
     "east asian beauty",
 ]
 
-# Хранилище активных чатов
 active_chats = {}
 
-# ===== ГЕНЕРАЦИЯ ТЕКСТА ЧЕРЕЗ GOOGLE GEMINI (С ИСПРАВЛЕНИЕМ 429) =====
+# ===== ГЕНЕРАЦИЯ ТЕКСТА ЧЕРЕЗ GOOGLE GEMINI (БЕЗ КЭША) =====
 
 def generate_caption_with_gemini() -> str:
-    """
-    Генерирует описание через Google Gemini 2.0 Flash с обработкой ошибки 429
-    """
+    """Генерирует уникальное описание для каждого фото"""
     print(f"🔑 Ключ Gemini: {'✅ задан' if GEMINI_KEY else '❌ НЕ ЗАДАН'}")
     
     if not GEMINI_KEY:
@@ -62,65 +58,33 @@ def generate_caption_with_gemini() -> str:
 - Романтичный и поэтичный стиль
 - Упоминание восточной культуры (Япония, Корея, Китай)
 - Без кавычек и лишних слов
-- Разные описания каждый раз
+- КАЖДЫЙ РАЗ НОВОЕ, НЕ ПОВТОРЯЙСЯ
 
 Напиши ТОЛЬКО описание."""
 
-        data = {
-            "contents": [{
-                "parts": [{"text": prompt}]
-            }]
-        }
-        
+        data = {"contents": [{"parts": [{"text": prompt}]}]}
         headers = {"Content-Type": "application/json"}
         
-        print("🔄 Генерация описания через Gemini 2.0 Flash...")
+        print("🔄 Генерация уникального описания через Gemini 2.0 Flash...")
         
-        # ===== ОБРАБОТКА ОШИБКИ 429 (Too Many Requests) =====
-        max_retries = 3
-        response = None
-        
-        for attempt in range(max_retries):
-            try:
-                response = requests.post(url, headers=headers, json=data, timeout=20)
-                
-                if response.status_code == 429:
-                    wait_time = (attempt + 1) * 5  # 5, 10, 15 секунд
-                    print(f"⚠️ Ошибка 429 (лимит запросов). Попытка {attempt+1}/{max_retries}, ждём {wait_time} сек...")
-                    time.sleep(wait_time)
-                    continue
-                
-                # Если не 429 - выходим из цикла
-                break
-                
-            except requests.exceptions.RequestException as e:
-                print(f"❌ Ошибка запроса: {e}")
-                if attempt < max_retries - 1:
-                    time.sleep(3)
-                    continue
-                else:
-                    return get_fallback_caption()
-        
-        # Если после всех попыток ответа нет
-        if response is None:
-            print("❌ Не удалось получить ответ от Gemini")
-            return get_fallback_caption()
-        
-        print(f"📊 Статус ответа: {response.status_code}")
+        # Повторные попытки при ошибке 429
+        for attempt in range(3):
+            response = requests.post(url, headers=headers, json=data, timeout=20)
+            
+            if response.status_code == 429:
+                wait_time = (attempt + 1) * 10
+                print(f"⚠️ Ошибка 429 (лимит). Ждём {wait_time} сек...")
+                time.sleep(wait_time)
+                continue
+            
+            break
         
         if response.status_code != 200:
             print(f"❌ Gemini ошибка: {response.status_code}")
-            print(f"📄 Текст ответа: {response.text[:200]}")
             return get_fallback_caption()
         
-        # Парсим ответ
-        try:
-            result = response.json()
-        except json.JSONDecodeError as e:
-            print(f"❌ Ошибка парсинга JSON: {e}")
-            return get_fallback_caption()
+        result = response.json()
         
-        # Извлекаем текст
         if "candidates" in result and len(result["candidates"]) > 0:
             caption = result["candidates"][0]["content"]["parts"][0]["text"].strip()
             caption = caption.strip('"').strip("'")
@@ -128,18 +92,12 @@ def generate_caption_with_gemini() -> str:
             tags = ["🇯🇵 Япония", "🇰🇷 Корея", "🇨🇳 Китай", "🇹🇭 Таиланд"]
             tag = random.choice(tags)
             
-            print(f"✅ Сгенерировано: {caption[:50]}...")
+            print(f"✅ Уникальное описание сгенерировано: {caption[:50]}...")
             return f"{caption}\n\n{tag} 📸"
         else:
             print("❌ Нет candidates в ответе")
             return get_fallback_caption()
             
-    except requests.exceptions.Timeout:
-        print("⏰ Таймаут Gemini")
-        return get_fallback_caption()
-    except requests.exceptions.RequestException as e:
-        print(f"❌ Ошибка запроса: {e}")
-        return get_fallback_caption()
     except Exception as e:
         print(f"❌ Ошибка генерации: {e}")
         return get_fallback_caption()
@@ -166,7 +124,6 @@ def get_fallback_caption() -> str:
 # ===== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ =====
 
 async def is_user_admin(chat_id: int, user_id: int) -> bool:
-    """Проверяет, является ли пользователь администратором чата"""
     try:
         chat_member = await bot.get_chat_member(chat_id, user_id)
         return chat_member.status in ["administrator", "creator"]
@@ -174,7 +131,6 @@ async def is_user_admin(chat_id: int, user_id: int) -> bool:
         return False
 
 def search_bing(query):
-    """Ищет фото через Bing Images"""
     try:
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -214,7 +170,6 @@ def search_bing(query):
         return None
 
 def search_google_direct(query):
-    """Ищет фото через Google Images"""
     try:
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -255,7 +210,6 @@ def search_google_direct(query):
         return None
 
 def search_pexels(query):
-    """Ищет фото через Pexels API"""
     try:
         PEXELS_KEY = os.getenv("PEXELS_KEY")
         if not PEXELS_KEY:
@@ -286,11 +240,9 @@ def search_pexels(query):
         return None
 
 def get_random_photo():
-    """Получает случайное фото азиатки из интернета"""
     queries = SEARCH_QUERIES.copy()
     random.shuffle(queries)
     
-    # 1. Bing
     print("🔍 Поиск в Bing...")
     for query in queries:
         photo = search_bing(query)
@@ -299,7 +251,6 @@ def get_random_photo():
             return photo
         time.sleep(0.3)
     
-    # 2. Google
     print("🔍 Поиск в Google...")
     for query in queries:
         photo = search_google_direct(query)
@@ -308,7 +259,6 @@ def get_random_photo():
             return photo
         time.sleep(0.3)
     
-    # 3. Pexels
     print("🔍 Поиск в Pexels...")
     for query in queries:
         photo = search_pexels(query)
@@ -321,12 +271,11 @@ def get_random_photo():
     return None
 
 async def send_photo(chat_id):
-    """Отправляет фото с AI-описанием"""
     try:
         photo_url = get_random_photo()
         
         if photo_url:
-            # Генерируем описание через Gemini
+            # ===== КАЖДЫЙ РАЗ НОВОЕ ОПИСАНИЕ (БЕЗ КЭША) =====
             caption = generate_caption_with_gemini()
             
             await bot.send_photo(
@@ -348,7 +297,6 @@ async def send_photo(chat_id):
         return False
 
 async def send_to_all():
-    """Отправляет фото во все активные чаты"""
     if not active_chats:
         print("⚠️ Нет активных чатов")
         return
@@ -357,10 +305,9 @@ async def send_to_all():
     
     for chat_id in list(active_chats.keys()):
         await send_photo(chat_id)
-        await asyncio.sleep(3)  # Задержка 3 секунды между чатами
+        await asyncio.sleep(5)  # 5 секунд между чатами
 
 async def scheduler():
-    """Отправляет каждые 3 часа во все чаты"""
     await asyncio.sleep(5)
     await send_to_all()
     
@@ -376,13 +323,11 @@ async def start(msg: Message):
     user_id = msg.from_user.id
     chat_type = msg.chat.type
     
-    # Проверяем админа (для групп)
     if chat_type in ["group", "supergroup"]:
         if not await is_user_admin(chat_id, user_id):
             await msg.reply("⛔ Эта команда только для администраторов группы.")
             return
         
-        # Проверяем, админ ли бот в группе
         try:
             chat_member = await bot.get_chat_member(chat_id, bot.id)
             is_admin = chat_member.status in ["administrator", "creator"]
@@ -393,7 +338,6 @@ async def start(msg: Message):
             await msg.answer("❌ Я должен быть администратором группы!\nНазначьте меня админом и попробуйте снова.")
             return
     
-    # Добавляем чат в список активных
     active_chats[chat_id] = {
         "type": chat_type,
         "added_by": user_id,
@@ -401,13 +345,14 @@ async def start(msg: Message):
         "name": msg.chat.title or msg.chat.first_name or str(chat_id)
     }
     
-    ai_status = "✅ Gemini 2.0 Flash" if GEMINI_KEY else "❌ Резервные описания"
+    ai_status = "✅ Gemini 2.0 Flash (уникальные описания)" if GEMINI_KEY else "❌ Резервные описания"
     
     await msg.answer(
         f"✅ Бот активирован!\n"
         f"📌 Тип: {chat_type}\n"
         f"🧠 Нейросеть: {ai_status}\n"
-        f"📸 Фото азиаток с AI-описаниями каждые 3 часа\n"
+        f"📸 Уникальные AI-описания к КАЖДОМУ фото\n"
+        f"📸 Фото азиаток каждые 3 часа\n"
         f"🔄 /photo - получить фото сейчас\n"
         f"📊 /status - статус бота\n"
         f"🛑 /stop - отключить бота"
@@ -424,7 +369,6 @@ async def photo(msg: Message):
     user_id = msg.from_user.id
     chat_type = msg.chat.type
     
-    # Только админы могут запрашивать фото в группах
     if chat_type in ["group", "supergroup"]:
         if not await is_user_admin(chat_id, user_id):
             await msg.reply("⛔ Только администраторы могут запрашивать фото.")
@@ -434,7 +378,7 @@ async def photo(msg: Message):
         await msg.answer("⚠️ Бот не активирован. Напишите /start (только для админов)")
         return
     
-    await msg.answer("🔍 Ищу фото и генерирую описание...")
+    await msg.answer("🔍 Ищу фото и генерирую уникальное описание...")
     await send_photo(chat_id)
 
 @dp.message(Command("stop"))
@@ -468,7 +412,7 @@ async def status(msg: Message):
     
     is_active = chat_id in active_chats
     
-    ai_status = "✅ Gemini 2.0 Flash" if GEMINI_KEY else "❌ Резервные описания"
+    ai_status = "✅ Gemini 2.0 Flash (уникальные описания)" if GEMINI_KEY else "❌ Резервные описания"
     
     status_text = (
         f"📊 Статус бота:\n"
@@ -479,15 +423,10 @@ async def status(msg: Message):
         f"• Фото: только азиатки с AI-описаниями"
     )
     
-    if is_active and chat_id in active_chats:
-        info = active_chats[chat_id]
-        status_text += f"\n📌 Тип: {info.get('type', 'unknown')}"
-    
     await msg.answer(status_text)
 
 @dp.message(Command("chats"))
 async def list_chats(msg: Message):
-    """Список всех чатов (только для владельца)"""
     OWNER_ID = int(os.getenv("CHAT_ID", 0))
     
     if msg.from_user.id != OWNER_ID:
@@ -515,19 +454,18 @@ async def list_chats(msg: Message):
 
 @dp.message(Command("test_ai"))
 async def test_ai(msg: Message):
-    """Тестирует генерацию описания (только для владельца)"""
     OWNER_ID = int(os.getenv("CHAT_ID", 0))
     
     if msg.from_user.id != OWNER_ID:
         await msg.answer("⛔ Доступ запрещён.")
         return
     
-    await msg.answer("🧠 Генерирую описание через Gemini 2.0 Flash...")
+    await msg.answer("🧠 Генерирую уникальное описание через Gemini 2.0 Flash...")
     
     caption = generate_caption_with_gemini()
     await msg.answer(f"📝 Результат:\n\n{caption}")
 
-# ===== ЗАПУСК =====
+# ===== ЗАПУСК (С ЗАЩИТОЙ ОТ КОНФЛИКТОВ) =====
 
 async def main():
     print("=" * 60)
@@ -536,8 +474,8 @@ async def main():
     print("🌏 Только азиатки: японки, китаянки, кореянки")
     
     if GEMINI_KEY:
-        print("🧠 Нейросеть: Gemini 2.0 Flash ✅ (с обработкой ошибки 429)")
-        print("📝 Генерация уникальных описаний")
+        print("🧠 Нейросеть: Gemini 2.0 Flash ✅")
+        print("📝 Уникальные описания к КАЖДОМУ фото (без кэша)")
     else:
         print("📝 Резервные описания (AI не настроен)")
         print("ℹ️ Получите ключ: makersuite.google.com/app/apikey")
@@ -549,8 +487,24 @@ async def main():
     print(f"👤 ID владельца: {owner_id}")
     print("=" * 60)
     
+    # ===== УДАЛЯЕМ СТАРЫЕ WEBHOOK'И (чтобы избежать конфликтов) =====
+    try:
+        await bot.delete_webhook(drop_pending_updates=True)
+        print("✅ Старые webhook'и удалены, конфликтов не будет")
+    except Exception as e:
+        print(f"⚠️ Ошибка удаления webhook: {e}")
+    
+    # Запускаем планировщик
     asyncio.create_task(scheduler())
-    await dp.start_polling(bot)
+    
+    # Запускаем бота
+    try:
+        await dp.start_polling(bot)
+    except Exception as e:
+        print(f"❌ Ошибка запуска: {e}")
+    finally:
+        await bot.session.close()
+        print("👋 Бот остановлен")
 
 if __name__ == "__main__":
     asyncio.run(main())
