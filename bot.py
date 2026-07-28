@@ -50,11 +50,11 @@ def save_chats():
 
 active_chats = load_chats()
 
-# ===== ГЕНЕРАЦИЯ ОПИСАНИЙ ЧЕРЕЗ DEEPSEEK (С MINIMAL REASONING) =====
+# ===== ГЕНЕРАЦИЯ ОПИСАНИЙ ЧЕРЕЗ DEEPSEEK =====
 
 def generate_caption_with_deepseek() -> str:
     """
-    Генерирует описание через DeepSeek API с минимальными рассуждениями
+    Генерирует описание через DeepSeek API
     """
     if not DEEPSEEK_API_KEY:
         print("⚠️ Нет ключа DeepSeek")
@@ -67,7 +67,7 @@ def generate_caption_with_deepseek() -> str:
             "Content-Type": "application/json"
         }
         
-        prompt = """Напиши одно романтичное предложение для фото азиатской девушки. 
+        prompt = """Напиши одно романтичное предложение для фото азиатской девушки.
 Пример: "🌸 Японская весна. Нежность и изящество сакуры в каждом взгляде."
 Только предложение, без пояснений."""
 
@@ -77,9 +77,8 @@ def generate_caption_with_deepseek() -> str:
                 {"role": "system", "content": "Ты поэт. Отвечай только готовым текстом, без рассуждений. Максимум 1 предложение."},
                 {"role": "user", "content": prompt}
             ],
-            "temperature": 1.0,
-            "max_tokens": 150,
-            "reasoning_effort": "minimal",
+            "temperature": 0.9,
+            "max_tokens": 200,
         }
         
         print("🔄 Запрос к DeepSeek...")
@@ -89,6 +88,7 @@ def generate_caption_with_deepseek() -> str:
         
         if response.status_code != 200:
             print(f"❌ Ошибка: {response.status_code}")
+            print(f"📄 Ответ: {response.text[:500]}")
             return get_fallback_caption()
         
         result = response.json()
@@ -99,7 +99,7 @@ def generate_caption_with_deepseek() -> str:
         print(f"📝 content: '{content}'")
         print(f"📝 reasoning: '{reasoning[:80]}...'")
         
-        # Если content пустой — берём reasoning, но обрезаем
+        # Если content пустой — берём reasoning
         if not content and reasoning:
             sentences = reasoning.replace('"', '').split('.')
             content = sentences[0].strip() + "." if sentences else reasoning[:100]
@@ -109,11 +109,6 @@ def generate_caption_with_deepseek() -> str:
             return get_fallback_caption()
         
         caption = content.strip().strip('"').strip("'")
-        
-        # Если ответ начинается с "Мы должны" — это рассуждение, а не ответ
-        if caption.lower().startswith(("мы должны", "нужно", "напиши")):
-            print("⚠️ Модель выдала рассуждение, использую fallback")
-            return get_fallback_caption()
         
         tags = ["🇯🇵 Япония", "🇰🇷 Корея", "🇨🇳 Китай"]
         tag = random.choice(tags)
@@ -144,7 +139,7 @@ def get_fallback_caption() -> str:
     tag = random.choice(tags)
     return f"{caption}\n\n{tag} 📸"
 
-# ===== ОСТАЛЬНОЙ КОД (БЕЗ ИЗМЕНЕНИЙ) =====
+# ===== ОСТАЛЬНОЙ КОД =====
 
 async def is_user_admin(chat_id: int, user_id: int) -> bool:
     try:
@@ -446,7 +441,6 @@ async def main():
     
     if DEEPSEEK_API_KEY:
         print("🧠 Нейросеть: DeepSeek V4 ✅")
-        print("📝 Режим: minimal reasoning")
     else:
         print("📝 Резервные описания (AI не настроен)")
     
