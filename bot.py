@@ -14,7 +14,7 @@ from aiogram.types import Message, ChatMember
 
 # ===== НАСТРОЙКИ =====
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+GEMINI_KEY = os.getenv("GEMINI_KEY")
 
 if not BOT_TOKEN:
     print("Ошибка: BOT_TOKEN не задан")
@@ -35,26 +35,28 @@ SEARCH_QUERIES = [
 # Хранилище активных чатов
 active_chats = {}
 
-# ===== ГЕНЕРАЦИЯ ТЕКСТА ЧЕРЕЗ OPENAI =====
+# ===== ГЕНЕРАЦИЯ ТЕКСТА ЧЕРЕЗ GOOGLE GEMINI =====
 
-def generate_caption_with_openai() -> str:
+def generate_caption_with_gemini() -> str:
     """
-    Генерирует описание для фото через OpenAI API
+    Генерирует описание для фото через Google Gemini API (БЕСПЛАТНО!)
     """
     try:
-        if not OPENAI_API_KEY:
-            print("⚠️ OPENAI_API_KEY не задан")
+        if not GEMINI_KEY:
+            print("⚠️ GEMINI_KEY не задан")
             return get_fallback_caption()
         
-        url = "https://api.openai.com/v1/chat/completions"
-        headers = {
-            "Authorization": f"Bearer {OPENAI_API_KEY}",
-            "Content-Type": "application/json"
-        }
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={GEMINI_KEY}"
         
-        prompt = """Напиши описание (на русском языке) для фотографии азиатской девушки.
+        prompt = """Напиши случайную идею, новость или актуальное события, грубым и юмористическим стилем, можно использовать матерные слова.
 
 Примеры стиля:
+- "Ничего-ничего, после Городка с Хованским они уже ни на что не в обиде.
+Даже на Миротворец тебя в благодарность записали.
+
+Ты кстати случаем в Россию не вернулся? 🤔
+А то что-то последние посты начал всё чаще в адекватное для малюток время писать, а не в 4-5 утра, как раньше.
+Если так, то надеюсь это не Росов тебя через Новосибирский аэропорт убедил прилететь..."
 - "Бля, базаришь, Илья.
 Я что-то тоже в последнее время поднабрал на японской лапше в наваристом свином бульоне.
 Всегда был тонкий как спица, и вот впервые в жизни заметил у себя признаки скуфского пузика.
@@ -79,16 +81,10 @@ def generate_caption_with_openai() -> str:
 Ищу кучерявого напарника, который готов создать канал Юрий Ларпинкий, чтобы сыграть роль Пушкина в моём запланированном видосе Городок.
 Пишите.
 Ещё хочу заларпить видос "Слава Роду" - родинку на груди уже нарисовал, а вот где такую футболку заказать не могу найти."
-- "Ничего-ничего, после Городка с Хованским они уже ни на что не в обиде.
-Даже на Миротворец тебя в благодарность записали.
-
-Ты кстати случаем в Россию не вернулся? 🤔
-А то что-то последние посты начал всё чаще в адекватное для малюток время писать, а не в 4-5 утра, как раньше.
-Если так, то надеюсь это не Росов тебя через Новосибирский аэропорт убедил прилететь..."
 
 Требования:
 - 1-2 предложения
-- Грубый и юмористический стиль с насмешкой
+- Грубый и юмористический стиль
 - Упоминание восточной культуры (Япония, Корея, Китай)
 - Без кавычек и лишних слов
 - Разные описания каждый раз
@@ -96,22 +92,19 @@ def generate_caption_with_openai() -> str:
 Напиши ТОЛЬКО описание."""
 
         data = {
-            "model": "gpt-3.5-turbo",
-            "messages": [
-                {"role": "system", "content": "Ты поэт, пишущий красивые описания для фотографий."},
-                {"role": "user", "content": prompt}
-            ],
-            "temperature": 0.9,
-            "max_tokens": 80,
-            "n": 1
+            "contents": [{
+                "parts": [{"text": prompt}]
+            }]
         }
         
-        print("🔄 Генерация описания через OpenAI...")
+        headers = {"Content-Type": "application/json"}
+        
+        print("🔄 Генерация описания через Gemini...")
         response = requests.post(url, headers=headers, json=data, timeout=20)
         
         # Проверяем статус ответа
         if response.status_code != 200:
-            print(f"❌ OpenAI ошибка: {response.status_code}")
+            print(f"❌ Gemini ошибка: {response.status_code}")
             print(f"📄 Ответ: {response.text[:200]}")
             return get_fallback_caption()
         
@@ -123,8 +116,8 @@ def generate_caption_with_openai() -> str:
             return get_fallback_caption()
         
         # Извлекаем текст
-        if "choices" in result and len(result["choices"]) > 0:
-            caption = result["choices"][0]["message"]["content"].strip()
+        if "candidates" in result and len(result["candidates"]) > 0:
+            caption = result["candidates"][0]["content"]["parts"][0]["text"].strip()
             # Очищаем от кавычек
             caption = caption.strip('"').strip("'")
             
@@ -135,11 +128,11 @@ def generate_caption_with_openai() -> str:
             print(f"✅ Сгенерировано: {caption[:50]}...")
             return f"{caption}\n\n{tag} 📸"
         else:
-            print("❌ Неожиданный ответ от OpenAI")
+            print("❌ Неожиданный ответ от Gemini")
             return get_fallback_caption()
             
     except requests.exceptions.Timeout:
-        print("⏰ Таймаут OpenAI")
+        print("⏰ Таймаут Gemini")
         return get_fallback_caption()
     except requests.exceptions.RequestException as e:
         print(f"❌ Ошибка запроса: {e}")
@@ -331,8 +324,8 @@ async def send_photo(chat_id):
         photo_url = get_random_photo()
         
         if photo_url:
-            # Генерируем описание через AI
-            caption = generate_caption_with_openai()
+            # Генерируем описание через Gemini
+            caption = generate_caption_with_gemini()
             
             await bot.send_photo(
                 chat_id=chat_id, 
@@ -410,7 +403,7 @@ async def start(msg: Message):
         "name": msg.chat.title or msg.chat.first_name or str(chat_id)
     }
     
-    ai_status = "✅ OpenAI (GPT-3.5)" if OPENAI_API_KEY else "❌ Резервные описания"
+    ai_status = "✅ Google Gemini" if GEMINI_KEY else "❌ Резервные описания"
     
     await msg.answer(
         f"✅ Бот активирован!\n"
@@ -477,7 +470,7 @@ async def status(msg: Message):
     
     is_active = chat_id in active_chats
     
-    ai_status = "✅ OpenAI (GPT-3.5)" if OPENAI_API_KEY else "❌ Резервные описания"
+    ai_status = "✅ Google Gemini" if GEMINI_KEY else "❌ Резервные описания"
     
     status_text = (
         f"📊 Статус бота:\n"
@@ -531,9 +524,9 @@ async def test_ai(msg: Message):
         await msg.answer("⛔ Доступ запрещён.")
         return
     
-    await msg.answer("🧠 Генерирую описание через AI...")
+    await msg.answer("🧠 Генерирую описание через Google Gemini...")
     
-    caption = generate_caption_with_openai()
+    caption = generate_caption_with_gemini()
     await msg.answer(f"📝 Результат:\n\n{caption}")
 
 # ===== ЗАПУСК =====
@@ -544,12 +537,12 @@ async def main():
     print("🔍 Поиск в: Bing → Google → Pexels")
     print("🌏 Только азиатки: японки, китаянки, кореянки")
     
-    if OPENAI_API_KEY:
-        print("🧠 Нейросеть: OpenAI (GPT-3.5) ✅")
+    if GEMINI_KEY:
+        print("🧠 Нейросеть: Google Gemini ✅ (БЕСПЛАТНО!)")
         print("📝 Генерация уникальных описаний")
     else:
         print("📝 Резервные описания (AI не настроен)")
-        print("ℹ️ Добавьте OPENAI_API_KEY в .env для AI-генерации")
+        print("ℹ️ Получите ключ: makersuite.google.com/app/apikey")
     
     print("🔒 Команды только для администраторов")
     print("=" * 60)
