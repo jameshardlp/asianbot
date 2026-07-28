@@ -50,11 +50,12 @@ def save_chats():
 
 active_chats = load_chats()
 
-# ===== ГЕНЕРАЦИЯ ОПИСАНИЙ ЧЕРЕЗ DEEPSEEK (БЕЗ РАССУЖДЕНИЙ) =====
+# ===== ГЕНЕРАЦИЯ ОПИСАНИЙ ЧЕРЕЗ DEEPSEEK (ИЗВЛЕКАЕТ ИЗ reasoning_content) =====
 
 def generate_caption_with_deepseek() -> str:
     """
-    Генерирует описание через DeepSeek API (модель без reasoning)
+    Генерирует описание через DeepSeek API
+    Берёт ответ из reasoning_content (т.к. content всегда пустой)
     """
     if not DEEPSEEK_API_KEY:
         print("⚠️ Нет ключа DeepSeek")
@@ -83,17 +84,17 @@ def generate_caption_with_deepseek() -> str:
 Напиши ТОЛЬКО описание, без кавычек."""
 
         data = {
-            "model": "deepseek-v4-flash-instruct",  # ← МОДЕЛЬ БЕЗ РАССУЖДЕНИЙ
+            "model": "deepseek-v4-flash",
             "messages": [
-                {"role": "system", "content": "Ты поэт. Пиши красиво и романтично, только на русском языке. Отвечай сразу готовым текстом."},
+                {"role": "system", "content": "Ты поэт. Пиши красиво и романтично, только на русском языке."},
                 {"role": "user", "content": prompt}
             ],
             "temperature": 0.9,
-            "max_tokens": 150,
+            "max_tokens": 300,
         }
         
-        print("🔄 Запрос к DeepSeek (без reasoning)...")
-        response = requests.post(url, headers=headers, json=data, timeout=20)
+        print("🔄 Запрос к DeepSeek...")
+        response = requests.post(url, headers=headers, json=data, timeout=30)
         
         print(f"📊 DeepSeek статус: {response.status_code}")
         
@@ -108,20 +109,32 @@ def generate_caption_with_deepseek() -> str:
             print("❌ Ошибка парсинга JSON")
             return get_fallback_caption()
         
-        # Проверяем структуру ответа
-        if "choices" not in result or len(result["choices"]) == 0:
-            print("❌ Нет 'choices' в ответе")
-            return get_fallback_caption()
-        
-        # Извлекаем content (без reasoning!)
+        # Извлекаем reasoning_content (где DeepSeek хранит ответ)
+        reasoning = result["choices"][0].get("message", {}).get("reasoning_content", "")
         content = result["choices"][0].get("message", {}).get("content", "")
-        print(f"📝 Сырой content: '{content}'")
         
-        if not content or len(content.strip()) < 5:
-            print("❌ Пустой или короткий ответ")
+        print(f"📝 reasoning_content: '{reasoning[:100]}...'")
+        print(f"📝 content: '{content}'")
+        
+        # Используем reasoning_content как основной ответ
+        answer = reasoning if reasoning else content
+        
+        if not answer or len(answer.strip()) < 10:
+            print("❌ Пустой ответ")
             return get_fallback_caption()
         
-        caption = content.strip().strip('"').strip("'")
+        # Очищаем
+        caption = answer.strip().strip('"').strip("'")
+        
+        # Обрезаем лишнее (DeepSeek часто пишет много)
+        # Берём первое предложение или первые 150 символов
+        if len(caption) > 200:
+            # Пробуем взять первое предложение
+            sentences = caption.replace('"', '').split('.')
+            if len(sentences) > 1:
+                caption = sentences[0].strip() + "."
+            else:
+                caption = caption[:150] + "..."
         
         tags = ["🇯🇵 Япония", "🇰🇷 Корея", "🇨🇳 Китай"]
         tag = random.choice(tags)
@@ -152,7 +165,7 @@ def get_fallback_caption() -> str:
     tag = random.choice(tags)
     return f"{caption}\n\n{tag} 📸"
 
-# ===== ОСТАЛЬНОЙ КОД (без изменений) =====
+# ===== ОСТАЛЬНОЙ КОД =====
 
 async def is_user_admin(chat_id: int, user_id: int) -> bool:
     try:
@@ -367,7 +380,7 @@ async def start(msg: Message):
     await msg.answer(
         f"✅ Бот активирован!\n"
         f"📌 Тип: {chat_type}\n"
-        f"🧠 Нейросеть: {'✅ DeepSeek V4 (без рассуждений)' if DEEPSEEK_API_KEY else '❌ Резервные описания'}\n"
+        f"🧠 Нейросеть: {'✅ DeepSeek V4' if DEEPSEEK_API_KEY else '❌ Резервные описания'}\n"
         f"📸 Фото азиаток каждые 3 часа\n"
         f"🔄 /photo - получить фото сейчас\n"
         f"🛑 /stop - отключить бота"
@@ -427,7 +440,7 @@ async def status(msg: Message):
         f"📊 Статус бота:\n"
         f"• В этом чате: {'✅ Активен' if is_active else '❌ Неактивен'}\n"
         f"• Всего чатов: {len(active_chats)}\n"
-        f"• Нейросеть: {'✅ DeepSeek V4 (без рассуждений)' if DEEPSEEK_API_KEY else '❌ Резервные описания'}\n"
+        f"• Нейросеть: {'✅ DeepSeek V4' if DEEPSEEK_API_KEY else '❌ Резервные описания'}\n"
         f"• Поиск: Bing + Google + Pexels"
     )
     
@@ -441,7 +454,7 @@ async def test_ai(msg: Message):
         await msg.answer("⛔ Доступ запрещён.")
         return
     
-    await msg.answer("🧠 Генерирую описание через DeepSeek V4 (без рассуждений)...")
+    await msg.answer("🧠 Генерирую описание через DeepSeek V4...")
     
     caption = generate_caption_with_deepseek()
     await msg.answer(f"📝 Результат:\n\n{caption}")
@@ -453,8 +466,8 @@ async def main():
     print("🌏 Только азиатки: японки, китаянки, кореянки")
     
     if DEEPSEEK_API_KEY:
-        print("🧠 Нейросеть: DeepSeek V4 (без рассуждений) ✅")
-        print("📝 Модель: deepseek-v4-flash-instruct")
+        print("🧠 Нейросеть: DeepSeek V4 ✅")
+        print("📝 Извлечение из reasoning_content")
     else:
         print("📝 Резервные описания (AI не настроен)")
     
