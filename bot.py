@@ -109,7 +109,6 @@ def generate_caption_with_deepseek() -> str:
         # Если content пустой — пробуем извлечь из reasoning
         if not content and reasoning:
             print(f"📝 reasoning: '{reasoning[:80]}...'")
-            # Ищем готовый текст в reasoning
             lines = reasoning.split('\n')
             for line in lines:
                 line = line.strip()
@@ -117,14 +116,12 @@ def generate_caption_with_deepseek() -> str:
                     content = line
                     break
             if not content:
-                # Берём последнюю строку, обычно там готовый ответ
                 content = lines[-1].strip() if lines else reasoning[:150]
         
         if not content or len(content.strip()) < 5:
             print("❌ Пустой ответ")
             return get_fallback_caption()
         
-        # Очищаем
         caption = content.strip().strip('"').strip("'")
         
         # Если ответ начинается с мета-текста — это рассуждение
@@ -132,18 +129,15 @@ def generate_caption_with_deepseek() -> str:
             print("⚠️ DeepSeek выдал рассуждение, использую fallback")
             return get_fallback_caption()
         
-        tags = ["🇯🇵 Япония", "🇰🇷 Корея", "🇨🇳 Китай"]
-        tag = random.choice(tags)
-        
         print(f"✅ Юмор: {caption[:50]}...")
-        return f"{caption}\n\n{tag} 📸"
+        return caption  # ← ТОЛЬКО ТЕКСТ, БЕЗ ФЛАГОВ И ФОТОАППАРАТА
             
     except Exception as e:
         print(f"❌ Ошибка: {e}")
         return get_fallback_caption()
 
 def get_fallback_caption() -> str:
-    """Резервные юмористические описания"""
+    """Резервные юмористические описания (без флагов)"""
     captions = [
         "Бля, базаришь, Илья. Я что-то тоже в последнее время поднабрал на японской лапше. Пиздец, похоже старость приходит.",
         "США уже не торт. Раньше это была самая пиздатая страна. Но потом они зачем-то отменили рабство...",
@@ -161,7 +155,7 @@ def get_fallback_caption() -> str:
     ]
     return random.choice(captions)
 
-# ===== ОСТАЛЬНОЙ КОД =====
+# ===== ОСТАЛЬНОЙ КОД (БЕЗ ИЗМЕНЕНИЙ) =====
 
 async def is_user_admin(chat_id: int, user_id: int) -> bool:
     try:
@@ -463,7 +457,7 @@ async def main():
     
     if DEEPSEEK_API_KEY:
         print("🧠 Нейросеть: DeepSeek V4 ✅")
-        print("📝 Режим: юмористические описания")
+        print("📝 Режим: юмористические описания (без флагов)")
     else:
         print("📝 Резервные описания (AI не настроен)")
     
