@@ -11,10 +11,11 @@ from datetime import datetime
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import Message, ChatMember
+from aiogram.exceptions import TelegramConflictError
 
 # ===== НАСТРОЙКИ =====
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-GEMINI_KEY = os.getenv("GEMINI_KEY")
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 
 if not BOT_TOKEN:
     print("❌ Ошибка: BOT_TOKEN не задан")
@@ -23,6 +24,7 @@ if not BOT_TOKEN:
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
+# Поисковые запросы для фото
 SEARCH_QUERIES = [
     "asian beautiful girl portrait",
     "beautiful japanese woman",
@@ -31,20 +33,28 @@ SEARCH_QUERIES = [
     "east asian beauty",
 ]
 
+# Хранилище активных чатов
 active_chats = {}
 
-# ===== ГЕНЕРАЦИЯ ТЕКСТА ЧЕРЕЗ GOOGLE GEMINI (БЕЗ КЭША) =====
+# ===== ГЕНЕРАЦИЯ ТЕКСТА ЧЕРЕЗ DeepSeek API =====
 
-def generate_caption_with_gemini() -> str:
-    """Генерирует уникальное описание для каждого фото"""
-    print(f"🔑 Ключ Gemini: {'✅ задан' if GEMINI_KEY else '❌ НЕ ЗАДАН'}")
+def generate_caption_with_deepseek() -> str:
+    """
+    Генерирует уникальное описание через DeepSeek V4 API
+    """
+    print(f"🔑 DeepSeek ключ: {'✅ задан' if DEEPSEEK_API_KEY else '❌ НЕ ЗАДАН'}")
     
-    if not GEMINI_KEY:
-        print("⚠️ GEMINI_KEY не задан, использую резерв")
+    if not DEEPSEEK_API_KEY:
+        print("⚠️ DEEPSEEK_API_KEY не задан, использую резерв")
         return get_fallback_caption()
     
     try:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_KEY}"
+        # DeepSeek API endpoint (совместим с OpenAI)
+        url = "https://api.deepseek.com/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+            "Content-Type": "application/json"
+        }
         
         prompt = """Напиши короткое, романтичное и красивое описание (на русском языке) для фотографии азиатской девушки.
 
@@ -62,42 +72,71 @@ def generate_caption_with_gemini() -> str:
 
 Напиши ТОЛЬКО описание."""
 
-        data = {"contents": [{"parts": [{"text": prompt}]}]}
-        headers = {"Content-Type": "application/json"}
+        data = {
+            "model": "deepseek-v4-flash",  # Экономичная и быстрая модель
+            "messages": [
+                {"role": "system", "content": "Ты поэт, пишущий красивые описания для фотографий."},
+                {"role": "user", "content": prompt}
+            ],
+            "temperature": 0.9,
+            "max_tokens": 80
+        }
         
-        print("🔄 Генерация уникального описания через Gemini 2.0 Flash...")
+        print("🔄 Генерация уникального описания через DeepSeek V4...")
         
-        # Повторные попытки при ошибке 429
+        # Повторные попытки при ошибках
         for attempt in range(3):
             response = requests.post(url, headers=headers, json=data, timeout=20)
             
+            # Если ошибка 429 (Too Many Requests) - ждём
             if response.status_code == 429:
                 wait_time = (attempt + 1) * 10
                 print(f"⚠️ Ошибка 429 (лимит). Ждём {wait_time} сек...")
                 time.sleep(wait_time)
                 continue
             
+            # Если ошибка 401 (неверный ключ)
+            if response.status_code == 401:
+                print("❌ Ошибка 401: неверный DeepSeek API ключ")
+                return get_fallback_caption()
+            
             break
         
+        # Проверяем статус ответа
         if response.status_code != 200:
-            print(f"❌ Gemini ошибка: {response.status_code}")
+            print(f"❌ DeepSeek ошибка: {response.status_code}")
+            print(f"📄 Текст ответа: {response.text[:200]}")
             return get_fallback_caption()
         
-        result = response.json()
+        # Парсим JSON
+        try:
+            result = response.json()
+        except json.JSONDecodeError as e:
+            print(f"❌ Ошибка парсинга JSON: {e}")
+            return get_fallback_caption()
         
-        if "candidates" in result and len(result["candidates"]) > 0:
-            caption = result["candidates"][0]["content"]["parts"][0]["text"].strip()
+        # Извлекаем текст из ответа (формат как у OpenAI)
+        if "choices" in result and len(result["choices"]) > 0:
+            caption = result["choices"][0]["message"]["content"].strip()
             caption = caption.strip('"').strip("'")
             
+            # Добавляем случайный флаг
             tags = ["🇯🇵 Япония", "🇰🇷 Корея", "🇨🇳 Китай", "🇹🇭 Таиланд"]
             tag = random.choice(tags)
             
             print(f"✅ Уникальное описание сгенерировано: {caption[:50]}...")
             return f"{caption}\n\n{tag} 📸"
         else:
-            print("❌ Нет candidates в ответе")
+            print("❌ Нет 'choices' в ответе DeepSeek")
+            print(f"📦 Ответ: {json.dumps(result, indent=2)[:300]}")
             return get_fallback_caption()
             
+    except requests.exceptions.Timeout:
+        print("⏰ Таймаут DeepSeek")
+        return get_fallback_caption()
+    except requests.exceptions.RequestException as e:
+        print(f"❌ Ошибка запроса: {e}")
+        return get_fallback_caption()
     except Exception as e:
         print(f"❌ Ошибка генерации: {e}")
         return get_fallback_caption()
@@ -124,6 +163,7 @@ def get_fallback_caption() -> str:
 # ===== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ =====
 
 async def is_user_admin(chat_id: int, user_id: int) -> bool:
+    """Проверяет, является ли пользователь администратором чата"""
     try:
         chat_member = await bot.get_chat_member(chat_id, user_id)
         return chat_member.status in ["administrator", "creator"]
@@ -131,6 +171,7 @@ async def is_user_admin(chat_id: int, user_id: int) -> bool:
         return False
 
 def search_bing(query):
+    """Ищет фото через Bing Images"""
     try:
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -170,6 +211,7 @@ def search_bing(query):
         return None
 
 def search_google_direct(query):
+    """Ищет фото через Google Images"""
     try:
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -210,6 +252,7 @@ def search_google_direct(query):
         return None
 
 def search_pexels(query):
+    """Ищет фото через Pexels API"""
     try:
         PEXELS_KEY = os.getenv("PEXELS_KEY")
         if not PEXELS_KEY:
@@ -240,9 +283,11 @@ def search_pexels(query):
         return None
 
 def get_random_photo():
+    """Получает случайное фото азиатки из интернета"""
     queries = SEARCH_QUERIES.copy()
     random.shuffle(queries)
     
+    # 1. Bing
     print("🔍 Поиск в Bing...")
     for query in queries:
         photo = search_bing(query)
@@ -251,6 +296,7 @@ def get_random_photo():
             return photo
         time.sleep(0.3)
     
+    # 2. Google
     print("🔍 Поиск в Google...")
     for query in queries:
         photo = search_google_direct(query)
@@ -259,6 +305,7 @@ def get_random_photo():
             return photo
         time.sleep(0.3)
     
+    # 3. Pexels
     print("🔍 Поиск в Pexels...")
     for query in queries:
         photo = search_pexels(query)
@@ -271,12 +318,13 @@ def get_random_photo():
     return None
 
 async def send_photo(chat_id):
+    """Отправляет фото с описанием от DeepSeek"""
     try:
         photo_url = get_random_photo()
         
         if photo_url:
-            # ===== КАЖДЫЙ РАЗ НОВОЕ ОПИСАНИЕ (БЕЗ КЭША) =====
-            caption = generate_caption_with_gemini()
+            # Генерируем описание через DeepSeek
+            caption = generate_caption_with_deepseek()
             
             await bot.send_photo(
                 chat_id=chat_id, 
@@ -297,6 +345,7 @@ async def send_photo(chat_id):
         return False
 
 async def send_to_all():
+    """Отправляет фото во все активные чаты"""
     if not active_chats:
         print("⚠️ Нет активных чатов")
         return
@@ -305,9 +354,10 @@ async def send_to_all():
     
     for chat_id in list(active_chats.keys()):
         await send_photo(chat_id)
-        await asyncio.sleep(5)  # 5 секунд между чатами
+        await asyncio.sleep(5)
 
 async def scheduler():
+    """Отправляет каждые 3 часа"""
     await asyncio.sleep(5)
     await send_to_all()
     
@@ -323,11 +373,13 @@ async def start(msg: Message):
     user_id = msg.from_user.id
     chat_type = msg.chat.type
     
+    # Проверяем админа (для групп)
     if chat_type in ["group", "supergroup"]:
         if not await is_user_admin(chat_id, user_id):
             await msg.reply("⛔ Эта команда только для администраторов группы.")
             return
         
+        # Проверяем, админ ли бот в группе
         try:
             chat_member = await bot.get_chat_member(chat_id, bot.id)
             is_admin = chat_member.status in ["administrator", "creator"]
@@ -338,6 +390,7 @@ async def start(msg: Message):
             await msg.answer("❌ Я должен быть администратором группы!\nНазначьте меня админом и попробуйте снова.")
             return
     
+    # Добавляем чат в список активных
     active_chats[chat_id] = {
         "type": chat_type,
         "added_by": user_id,
@@ -345,7 +398,7 @@ async def start(msg: Message):
         "name": msg.chat.title or msg.chat.first_name or str(chat_id)
     }
     
-    ai_status = "✅ Gemini 2.0 Flash (уникальные описания)" if GEMINI_KEY else "❌ Резервные описания"
+    ai_status = "✅ DeepSeek V4" if DEEPSEEK_API_KEY else "❌ Резервные описания"
     
     await msg.answer(
         f"✅ Бот активирован!\n"
@@ -355,7 +408,8 @@ async def start(msg: Message):
         f"📸 Фото азиаток каждые 3 часа\n"
         f"🔄 /photo - получить фото сейчас\n"
         f"📊 /status - статус бота\n"
-        f"🛑 /stop - отключить бота"
+        f"🛑 /stop - отключить бота\n"
+        f"🧪 /test_ai - проверить AI (только владелец)"
     )
     
     await asyncio.sleep(1)
@@ -369,6 +423,7 @@ async def photo(msg: Message):
     user_id = msg.from_user.id
     chat_type = msg.chat.type
     
+    # Только админы могут запрашивать фото в группах
     if chat_type in ["group", "supergroup"]:
         if not await is_user_admin(chat_id, user_id):
             await msg.reply("⛔ Только администраторы могут запрашивать фото.")
@@ -412,7 +467,7 @@ async def status(msg: Message):
     
     is_active = chat_id in active_chats
     
-    ai_status = "✅ Gemini 2.0 Flash (уникальные описания)" if GEMINI_KEY else "❌ Резервные описания"
+    ai_status = "✅ DeepSeek V4" if DEEPSEEK_API_KEY else "❌ Резервные описания"
     
     status_text = (
         f"📊 Статус бота:\n"
@@ -423,10 +478,15 @@ async def status(msg: Message):
         f"• Фото: только азиатки с AI-описаниями"
     )
     
+    if is_active and chat_id in active_chats:
+        info = active_chats[chat_id]
+        status_text += f"\n📌 Тип: {info.get('type', 'unknown')}"
+    
     await msg.answer(status_text)
 
 @dp.message(Command("chats"))
 async def list_chats(msg: Message):
+    """Список всех чатов (только для владельца)"""
     OWNER_ID = int(os.getenv("CHAT_ID", 0))
     
     if msg.from_user.id != OWNER_ID:
@@ -454,18 +514,61 @@ async def list_chats(msg: Message):
 
 @dp.message(Command("test_ai"))
 async def test_ai(msg: Message):
+    """Тестирует генерацию описания (только для владельца)"""
     OWNER_ID = int(os.getenv("CHAT_ID", 0))
     
     if msg.from_user.id != OWNER_ID:
-        await msg.answer("⛔ Доступ запрещён.")
+        await msg.answer("⛔ Доступ запрещён. Только для владельца.")
         return
     
-    await msg.answer("🧠 Генерирую уникальное описание через Gemini 2.0 Flash...")
+    await msg.answer("🧠 Генерирую уникальное описание через DeepSeek V4...")
     
-    caption = generate_caption_with_gemini()
+    caption = generate_caption_with_deepseek()
     await msg.answer(f"📝 Результат:\n\n{caption}")
 
-# ===== ЗАПУСК (С ЗАЩИТОЙ ОТ КОНФЛИКТОВ) =====
+# ===== ЗАПУСК С ЗАЩИТОЙ ОТ КОНФЛИКТОВ =====
+
+async def safe_start_polling():
+    """Запускает бота с автоматическим восстановлением при конфликте"""
+    max_retries = 5
+    retry_delay = 5
+    
+    for attempt in range(max_retries):
+        try:
+            print(f"🚀 Попытка запуска {attempt + 1}/{max_retries}...")
+            
+            # Принудительно удаляем webhook
+            await bot.delete_webhook(drop_pending_updates=True)
+            await asyncio.sleep(2)
+            
+            # Проверяем, что webhook действительно удалён
+            webhook_info = await bot.get_webhook_info()
+            if webhook_info.url:
+                print(f"⚠️ Webhook всё ещё активен: {webhook_info.url}")
+                await bot.delete_webhook(drop_pending_updates=True)
+                await asyncio.sleep(2)
+            
+            print("✅ Webhook удалён, запускаем polling...")
+            
+            await dp.start_polling(
+                bot,
+                allowed_updates=["message", "callback_query"],
+                skip_updates=True
+            )
+            return True
+            
+        except TelegramConflictError as e:
+            print(f"⚠️ Конфликт: {e}")
+            print(f"⏳ Ждём {retry_delay} секунд и пробуем снова...")
+            await asyncio.sleep(retry_delay)
+            retry_delay += 5
+            
+        except Exception as e:
+            print(f"❌ Ошибка: {e}")
+            return False
+    
+    print("❌ Не удалось запустить бота после всех попыток")
+    return False
 
 async def main():
     print("=" * 60)
@@ -473,12 +576,13 @@ async def main():
     print("🔍 Поиск в: Bing → Google → Pexels")
     print("🌏 Только азиатки: японки, китаянки, кореянки")
     
-    if GEMINI_KEY:
-        print("🧠 Нейросеть: Gemini 2.0 Flash ✅")
-        print("📝 Уникальные описания к КАЖДОМУ фото (без кэша)")
+    if DEEPSEEK_API_KEY:
+        print("🧠 Нейросеть: DeepSeek V4 ✅")
+        print("📝 Уникальные описания к КАЖДОМУ фото")
+        print("💰 Экономичная модель (до 10x дешевле конкурентов)")
     else:
         print("📝 Резервные описания (AI не настроен)")
-        print("ℹ️ Получите ключ: makersuite.google.com/app/apikey")
+        print("ℹ️ Получите ключ: platform.deepseek.com")
     
     print("🔒 Команды только для администраторов")
     print("=" * 60)
@@ -487,24 +591,11 @@ async def main():
     print(f"👤 ID владельца: {owner_id}")
     print("=" * 60)
     
-    # ===== УДАЛЯЕМ СТАРЫЕ WEBHOOK'И (чтобы избежать конфликтов) =====
-    try:
-        await bot.delete_webhook(drop_pending_updates=True)
-        print("✅ Старые webhook'и удалены, конфликтов не будет")
-    except Exception as e:
-        print(f"⚠️ Ошибка удаления webhook: {e}")
-    
     # Запускаем планировщик
     asyncio.create_task(scheduler())
     
-    # Запускаем бота
-    try:
-        await dp.start_polling(bot)
-    except Exception as e:
-        print(f"❌ Ошибка запуска: {e}")
-    finally:
-        await bot.session.close()
-        print("👋 Бот остановлен")
+    # Запускаем бота с защитой
+    await safe_start_polling()
 
 if __name__ == "__main__":
     asyncio.run(main())
