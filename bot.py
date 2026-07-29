@@ -38,10 +38,29 @@ HISTORY_FILE = "history.json"
 # ===== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ =====
 
 def truncate_caption(text: str, max_length: int = 1000) -> str:
-    """Обрезает текст до указанной длины, добавляя '...' в конце"""
+    """
+    Обрезает текст до максимальной длины, заканчивая на последней точке.
+    Если текст длиннее max_length, обрезает до последней точки перед лимитом.
+    """
     if len(text) <= max_length:
         return text
-    return text[:max_length - 3] + "..."
+    
+    truncated = text[:max_length]
+    
+    last_punctuation = -1
+    for punct in ['.', '!', '?']:
+        pos = truncated.rfind(punct)
+        if pos > last_punctuation:
+            last_punctuation = pos
+    
+    if last_punctuation > 0:
+        return truncated[:last_punctuation + 1]
+    
+    last_space = truncated.rfind(' ')
+    if last_space > 50:
+        return truncated[:last_space] + '.'
+    
+    return truncated
 
 def clean_text(text: str) -> str:
     """Заменяет длинное тире на обычное"""
@@ -85,85 +104,135 @@ def save_history(history):
 
 history = load_history()
 
+# ===== КЭШ ДЛЯ ПОСЛЕДНИХ ПОСТОВ (ЧТОБЫ ИЗБЕЖАТЬ ПОВТОРОВ) =====
+last_posts = []
+
+def add_to_last_posts(text: str):
+    """Добавляет пост в историю последних постов"""
+    global last_posts
+    # Берём первые 100 символов как ключ для сравнения
+    key = text[:100]
+    last_posts.append(key)
+    if len(last_posts) > 20:
+        last_posts.pop(0)
+
+def is_similar(text: str) -> bool:
+    """Проверяет, не похож ли новый пост на недавние"""
+    global last_posts
+    key = text[:100]
+    for post in last_posts:
+        # Если первые 100 символов совпадают на 80% - считаем похожим
+        same_chars = sum(1 for a, b in zip(key, post) if a == b)
+        if len(key) > 10 and same_chars / len(key) > 0.7:
+            return True
+    return False
+
 # ===== ГЕНЕРАЦИЯ ПОСТОВ ЧЕРЕЗ DEEPSEEK API =====
 
 def generate_caption() -> str:
     """
-    Генерирует провокационный пост в стиле @maddysontg через DeepSeek API
+    Генерирует провокационный пост в стиле @maddysontg через DeepSeek API.
+    Всегда старается создать уникальный текст.
     """
-    print("🧠 Генерирую пост через DeepSeek...")
+    print("🧠 Генерирую уникальный пост через DeepSeek...")
     
     if not DEEPSEEK_API_KEY:
         print("⚠️ Нет ключа DeepSeek, использую резерв")
         return clean_text(get_fallback_caption())
     
-    try:
-        url = "https://api.deepseek.com/chat/completions"
-        headers = {
-            "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
-            "Content-Type": "application/json"
-        }
-        
-        prompt = """Ты - известный блогер с канала @maddysontg. Твой стиль - провокационный, пошлый, с черным юмором, самоиронией и матом. Пиши ТОЛЬКО готовый пост, без рассуждений, без пояснений, без кавычек. ИСПОЛЬЗУЙ ТОЛЬКО ОБЫЧНОЕ ТИРЕ "-", НЕ ИСПОЛЬЗУЙ ДЛИННОЕ ТИРЕ "—" И "–".
+    # Разные варианты промптов для разнообразия
+    prompt_templates = [
+        """Ты - известный блогер @maddysontg. Твой стиль - провокационный, пошлый, с черным юмором. Пиши ТОЛЬКО готовый пост, без рассуждений. ИСПОЛЬЗУЙ ТОЛЬКО ОБЫЧНОЕ ТИРЕ "-".
 
-Напиши пост про азиатских женщин (японок, китаянок, кореянок). Пост должен быть:
+Напиши пост про азиатских женщин. Будь оригинален, не повторяйся. Пост должен быть:
 - 700-900 символов
 - Провокационным, с острым юмором
-- С элементами пошлости
-- С матом для усиления эмоций
-- Начинаться с "Бля" или "Слушай" или "Пиздец"
-- Закончиваться неожиданной мыслью
+- С матом
+- С неожиданной концовкой
 
-Пример стиля:
-"Бля, смотрю на азиатку и думаю: вот это поворот. Я-то думал, что люблю блондинок, а тут такая хуйня. Глаза, сука, такие, что забываешь, как дышать. И улыбка от которой у меня встал не только член, но и желание жить. Сижу и думаю: нахуя я тратил время на всех этих ебаных моделей из Инстаграма? Теперь я хочу учить японский, есть палочками и смотреть аниме. Пиздец, куда качусь. Раньше был нормальным пацаном, а теперь готов уебать в Токио только ради того, чтобы она продолжала так смотреть."
+Твой ответ (ТОЛЬКО пост):""",
+
+        """Ты - @maddysontg. Твой стиль - эпатаж, пошлость и черный юмор. Пиши только готовый пост. Только обычное тире "-".
+
+Напиши пост про азиатских женщин. Придумай что-то новое, не банальное. Требования:
+- 700-900 символов
+- Острый юмор, провокация
+- Мат для эмоций
+- Завершённая мысль
+
+Твой ответ (ТОЛЬКО пост):""",
+
+        """Ты - блогер @maddysontg. Пиши в своём стиле - провокационно, с самоиронией и матом. Только готовый пост, без пояснений. Используй только обычное тире "-".
+
+Сгенерируй пост про азиатских женщин. Сделай его уникальным, не похожим на предыдущие. Пост:
+- 700-900 символов
+- С острым юмором и пошлостью
+- С матом
+- С неожиданной мыслью в конце
 
 Твой ответ (ТОЛЬКО пост):"""
-
-        data = {
-            "model": "deepseek-v4-flash",
-            "messages": [
-                {"role": "system", "content": "Ты стендап-комик и блогер. Отвечай только готовым постом. Никаких рассуждений. Только текст поста. Используй только обычное тире '-'."},
-                {"role": "user", "content": prompt}
-            ],
-            "temperature": 1.2,
-            "max_tokens": 600,
-        }
-        
-        response = requests.post(url, headers=headers, json=data, timeout=30)
-        
-        if response.status_code != 200:
-            print(f"❌ DeepSeek ошибка: {response.status_code}")
-            return clean_text(get_fallback_caption())
-        
-        result = response.json()
-        content = result["choices"][0].get("message", {}).get("content", "")
-        
-        if not content:
-            content = result["choices"][0].get("message", {}).get("reasoning_content", "")
-        
-        if not content or len(content.strip()) < 20:
-            print("❌ Пустой или короткий ответ")
-            return clean_text(get_fallback_caption())
-        
-        caption = content.strip().strip('"').strip("'")
-        
-        if caption.lower().startswith(("мы должны", "нужно", "я должен", "напиши")):
-            print("⚠️ DeepSeek выдал рассуждение, пробую ещё раз...")
-            response = requests.post(url, headers=headers, json=data, timeout=30)
-            if response.status_code == 200:
-                result = response.json()
-                content = result["choices"][0].get("message", {}).get("content", "")
-                if content and len(content.strip()) > 20 and not content.lower().startswith(("мы должны", "нужно", "я должен", "напиши")):
-                    caption = content.strip().strip('"').strip("'")
-                    print(f"✅ Сгенерирован пост: {caption[:50]}...")
-                    return clean_text(caption)
-        
-        print(f"✅ Сгенерирован пост: {caption[:50]}...")
-        return clean_text(caption)
+    ]
+    
+    for attempt in range(3):  # 3 попытки с разными промптами
+        try:
+            url = "https://api.deepseek.com/chat/completions"
+            headers = {
+                "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+                "Content-Type": "application/json"
+            }
             
-    except Exception as e:
-        print(f"❌ Ошибка генерации: {e}")
-        return clean_text(get_fallback_caption())
+            prompt = random.choice(prompt_templates)
+            
+            data = {
+                "model": "deepseek-v4-flash",
+                "messages": [
+                    {"role": "system", "content": "Ты стендап-комик и блогер. Отвечай только готовым постом. Никаких рассуждений. Только текст поста. Используй только обычное тире '-'."},
+                    {"role": "user", "content": prompt}
+                ],
+                "temperature": 1.3,  # Повышаем для большей креативности
+                "max_tokens": 600,
+            }
+            
+            response = requests.post(url, headers=headers, json=data, timeout=30)
+            
+            if response.status_code != 200:
+                print(f"❌ DeepSeek ошибка: {response.status_code}")
+                continue
+            
+            result = response.json()
+            content = result["choices"][0].get("message", {}).get("content", "")
+            
+            if not content:
+                content = result["choices"][0].get("message", {}).get("reasoning_content", "")
+            
+            if not content or len(content.strip()) < 20:
+                print("❌ Пустой или короткий ответ")
+                continue
+            
+            caption = content.strip().strip('"').strip("'")
+            
+            # Проверяем, не рассуждение ли это
+            if caption.lower().startswith(("мы должны", "нужно", "я должен", "напиши", "вот")):
+                print("⚠️ DeepSeek выдал рассуждение, пробуем другой промпт...")
+                continue
+            
+            # Проверяем на уникальность
+            if is_similar(caption):
+                print("⚠️ Пост похож на недавний, пробуем ещё...")
+                continue
+            
+            # Добавляем в кэш и возвращаем
+            add_to_last_posts(caption)
+            print(f"✅ Сгенерирован уникальный пост: {caption[:50]}...")
+            return clean_text(caption)
+            
+        except Exception as e:
+            print(f"❌ Ошибка генерации (попытка {attempt+1}): {e}")
+            continue
+    
+    # Если все попытки не удались
+    print("⚠️ Не удалось сгенерировать уникальный пост, использую резерв")
+    return clean_text(get_fallback_caption())
 
 def get_fallback_caption() -> str:
     """Резервные посты (если API не работает)"""
@@ -176,7 +245,13 @@ def get_fallback_caption() -> str:
         
         "Бля, встретил азиатку в кафе. Она такая маленькая, что я думал, это школьница сбежала с уроков. А ей 28 лет. Вот это я попал. Она смеётся, а я думаю: 'Господи, как я докатился до такой жизни?' Но потом она говорит: 'Ты милый, когда пытаешься'. И я понимаю, что это комплимент. Но бля, я не хочу быть милым, я хочу быть крутым. А она щипает меня за щеку, и я таю. Что за нахуй?"
     ]
-    return random.choice(fallbacks)
+    # При использовании резерва - меняем немного текст для уникальности
+    fallback = random.choice(fallbacks)
+    # Добавляем случайную концовку для разнообразия
+    endings = [" Вот так вот.", " И всё такое.", " Ну и хуй с ним.", " А вы как думаете?"]
+    if not fallback.endswith((".", "!", "?")):
+        fallback += random.choice(endings)
+    return fallback
 
 # ===== ПОИСК ФОТО С ИСТОРИЕЙ =====
 
@@ -359,7 +434,6 @@ async def send_photo(chat_id):
         
         if photo_url:
             caption = generate_caption()
-            # ===== ОБРЕЗАЕМ ТЕКСТ ДО 1000 СИМВОЛОВ =====
             caption = truncate_caption(caption, 1000)
             
             await bot.send_photo(
@@ -462,7 +536,7 @@ async def start(msg: Message):
     
     await msg.answer(
         f"✅ Вы подписаны на рассылку!\n"
-        f"📸 Я буду присылать фото азиаток с острым юмором 2 раза в день\n"
+        f"📸 Я буду присылать уникальные посты про азиаток с острым юмором 2 раза в день\n"
         f"⏰ Первый пост: 12:00-15:00\n"
         f"⏰ Второй пост: 17:00-22:00\n"
         f"🔄 /photo - получить фото сейчас\n"
@@ -538,7 +612,7 @@ async def test(msg: Message):
         await msg.answer("⛔ Доступ запрещён.")
         return
     
-    await msg.answer("🧠 Генерирую провокационный пост через DeepSeek...")
+    await msg.answer("🧠 Генерирую уникальный провокационный пост через DeepSeek...")
     
     caption = generate_caption()
     caption = truncate_caption(caption, 1000)
@@ -596,12 +670,12 @@ async def broadcast(msg: Message):
 
 async def main():
     print("=" * 60)
-    print("🤖 Бот запущен (генерация через DeepSeek)")
+    print("🤖 Бот запущен (генерация уникальных постов через DeepSeek)")
     print("🔍 Поиск в: Bing → Google → Pexels")
     print(f"📊 Подписчиков: {len(users)}")
     print(f"📸 Фото в истории: {len(history)}")
     print("⏰ Расписание: 12:00-15:00 и 17:00-22:00")
-    print("📝 Максимальная длина подписи: 1000 символов")
+    print("📝 Уникальные посты, без повторов")
     print("=" * 60)
     
     gc.collect()
