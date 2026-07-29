@@ -26,6 +26,11 @@ if not BOT_TOKEN:
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
+# ===== ФАЙЛЫ ДЛЯ ХРАНЕНИЯ ДАННЫХ =====
+USERS_FILE = "users.json"
+HISTORY_FILE = "history.json"
+SCHEDULE_FILE = "schedule.json"
+
 # ===== ПОИСКОВЫЕ ЗАПРОСЫ =====
 SEARCH_QUERIES = [
     "asian girl casual portrait",
@@ -108,10 +113,25 @@ def is_traditional_clothing(url: str) -> bool:
             return True
     return False
 
-# ===== РАБОТА С ПОЛЬЗОВАТЕЛЯМИ =====
+# ===== РАБОТА С РАСПИСАНИЕМ =====
 
-USERS_FILE = "users.json"
-HISTORY_FILE = "history.json"
+def load_schedule():
+    try:
+        with open(SCHEDULE_FILE, "r") as f:
+            return json.load(f)
+    except:
+        return {"times": ["12:00", "21:00"]}
+
+def save_schedule(schedule):
+    try:
+        with open(SCHEDULE_FILE, "w") as f:
+            json.dump(schedule, f)
+    except:
+        pass
+
+schedule = load_schedule()
+
+# ===== РАБОТА С ПОЛЬЗОВАТЕЛЯМИ =====
 
 def load_users():
     try:
@@ -166,7 +186,7 @@ def is_similar(text: str) -> bool:
             return True
     return False
 
-# ===== ГЕНЕРАЦИЯ ПОСТОВ (С МАТОМ, БЕЗ ОСКОРБЛЕНИЙ) =====
+# ===== ГЕНЕРАЦИЯ ПОСТОВ =====
 
 def generate_caption() -> str:
     print("🧠 Генерирую уникальный пост...")
@@ -302,6 +322,30 @@ async def is_user_admin(chat_id: int, user_id: int) -> bool:
         return chat_member.status in ["administrator", "creator"]
     except:
         return False
+
+async def get_channel_id() -> str:
+    """Автоматически получает ID канала, где бот администратор"""
+    if CHANNEL_ID:
+        return CHANNEL_ID
+    
+    try:
+        # Пытаемся найти канал, где бот администратор
+        updates = await bot.get_updates(offset=-1, limit=1)
+        for update in updates:
+            if update.channel_post:
+                chat_id = update.channel_post.chat.id
+                # Проверяем, админ ли бот в этом канале
+                try:
+                    chat_member = await bot.get_chat_member(chat_id, bot.id)
+                    if chat_member.status in ["administrator", "creator"]:
+                        print(f"✅ Найден канал: {chat_id}")
+                        return str(chat_id)
+                except:
+                    pass
+    except Exception as e:
+        print(f"⚠️ Ошибка поиска канала: {e}")
+    
+    return None
 
 def search_bing(query):
     try:
@@ -571,9 +615,65 @@ async def send_to_all_users():
         await send_post(chat_id, photo_url, caption)
         await asyncio.sleep(3)
     
-    if CHANNEL_ID:
-        print(f"📤 Отправка в канал {CHANNEL_ID}...")
-        await send_post(CHANNEL_ID, photo_url, caption)
+    # Автоматическое определение канала
+    channel_id = CHANNEL_ID
+    if not channel_id:
+        channel_id = await get_channel_id()
+    
+    if channel_id:
+        print(f"📤 Отправка в канал {channel_id}...")
+        await send_post(channel_id, photo_url, caption)
+
+# ===== РАСПИСАНИЕ =====
+
+is_sending = False
+
+async def scheduler():
+    global is_sending
+    
+    while True:
+        now = datetime.now()
+        times = schedule.get("times", ["12:00", "21:00"])
+        
+        target_times = []
+        for time_str in times:
+            try:
+                hour, minute = map(int, time_str.split(':'))
+                target = datetime(now.year, now.month, now.day, hour, minute, 0)
+                if target <= now:
+                    target += timedelta(days=1)
+                target_times.append(target)
+            except:
+                continue
+        
+        if not target_times:
+            target_times = [
+                datetime(now.year, now.month, now.day, 12, 0, 0),
+                datetime(now.year, now.month, now.day, 21, 0, 0)
+            ]
+            if target_times[0] <= now:
+                target_times[0] += timedelta(days=1)
+            if target_times[1] <= now:
+                target_times[1] += timedelta(days=1)
+        
+        target_times.sort()
+        
+        for target_time in target_times:
+            wait_seconds = (target_time - now).total_seconds()
+            if wait_seconds > 0:
+                print(f"⏳ Следующая отправка в {target_time.strftime('%H:%M')} (через {wait_seconds/3600:.1f} часов)")
+                await asyncio.sleep(wait_seconds)
+            
+            if not is_sending:
+                is_sending = True
+                try:
+                    await send_to_all_users()
+                finally:
+                    is_sending = False
+            else:
+                print("⚠️ Отправка уже идёт, пропускаем")
+            
+            now = datetime.now()
 
 # ===== КОМАНДЫ =====
 
@@ -609,15 +709,17 @@ async def start(msg: Message):
         save_users(users)
         print(f"✅ Добавлен пользователь: {chat_id}")
     
-    channel_status = f"\n📢 Канал: {'✅ подключён' if CHANNEL_ID else '❌ не настроен'}"
+    channel_status = f"\n📢 Канал: {'✅ подключён' if CHANNEL_ID else '🔄 авто-поиск'}"
+    times = ", ".join(schedule.get("times", ["12:00", "21:00"]))
     
     await msg.answer(
         f"✅ Вы подписаны на рассылку!\n"
-        f"📸 Уникальные посты про азиаток с острым юмором 2 раза в день\n"
-        f"⏰ Первый пост: 12:00-15:00\n"
-        f"⏰ Второй пост: 17:00-22:00\n"
+        f"📸 Уникальные посты про азиаток с острым юмором\n"
+        f"⏰ Расписание: {times}\n"
+        f"📢 Авто-канал: {'найден' if await get_channel_id() else 'не найден'}\n"
         f"{channel_status}\n"
         f"🔄 /photo - получить фото сейчас\n"
+        f"⏰ /schedule - изменить расписание\n"
         f"🛑 /stop - отписаться"
     )
     
@@ -674,9 +776,10 @@ async def status(msg: Message):
     chat_type = msg.chat.type
     
     if chat_type == "channel":
-        await msg.answer(f"📊 Статус канала:\n"
-                        f"• Канал: {'✅ подключён' if CHANNEL_ID else '❌ не настроен'}\n"
-                        f"• ID канала: {CHANNEL_ID or 'не задан'}")
+        channel_info = f"📊 Статус канала:\n"
+        channel_info += f"• ID: {chat_id}\n"
+        channel_info += f"• Бот: {'✅ админ' if await is_user_admin(chat_id, bot.id) else '❌ не админ'}"
+        await msg.answer(channel_info)
         return
     
     if chat_type in ["group", "supergroup"]:
@@ -685,17 +788,64 @@ async def status(msg: Message):
             return
     
     is_subscribed = chat_id in users
+    channel_id = CHANNEL_ID or await get_channel_id()
+    times = ", ".join(schedule.get("times", ["12:00", "21:00"]))
     
     status_text = (
         f"📊 Статус бота:\n"
         f"• Подписка: {'✅ Активна' if is_subscribed else '❌ Неактивна'}\n"
         f"• Всего подписчиков: {len(users)}\n"
         f"• Фото в истории: {len(history)}\n"
-        f"• Расписание: 12:00-15:00 и 17:00-22:00\n"
-        f"• Канал: {'✅ подключён' if CHANNEL_ID else '❌ не настроен'}"
+        f"• Расписание: {times}\n"
+        f"• Канал: {'✅ ' + channel_id if channel_id else '❌ не найден'}"
     )
     
     await msg.answer(status_text)
+
+@dp.message(Command("schedule"))
+async def schedule(msg: Message):
+    OWNER_ID = int(os.getenv("CHAT_ID", 0))
+    
+    if msg.from_user.id != OWNER_ID:
+        await msg.answer("⛔ Доступ запрещён. Только для владельца.")
+        return
+    
+    args = msg.text.replace("/schedule", "").strip()
+    
+    if not args:
+        times = ", ".join(schedule.get("times", ["12:00", "21:00"]))
+        await msg.answer(
+            f"📅 Текущее расписание: {times}\n\n"
+            f"Чтобы изменить, напишите:\n"
+            f"/schedule 10:00, 15:00, 22:00\n\n"
+            f"Укажите от 1 до 4 времен в формате ЧЧ:ММ через запятую."
+        )
+        return
+    
+    # Парсим времена
+    new_times = []
+    for time_str in args.split(','):
+        time_str = time_str.strip()
+        try:
+            hour, minute = map(int, time_str.split(':'))
+            if 0 <= hour <= 23 and 0 <= minute <= 59:
+                new_times.append(f"{hour:02d}:{minute:02d}")
+        except:
+            continue
+    
+    if not new_times:
+        await msg.answer("❌ Неверный формат. Используйте: /schedule 12:00, 21:00")
+        return
+    
+    if len(new_times) > 4:
+        await msg.answer("❌ Максимум 4 времени.")
+        return
+    
+    schedule["times"] = new_times
+    save_schedule(schedule)
+    
+    times = ", ".join(new_times)
+    await msg.answer(f"✅ Расписание обновлено: {times}")
 
 @dp.message(Command("test"))
 async def test(msg: Message):
@@ -758,80 +908,28 @@ async def broadcast(msg: Message):
                 users.remove(chat_id)
                 save_users(users)
     
-    if CHANNEL_ID:
+    channel_id = CHANNEL_ID or await get_channel_id()
+    if channel_id:
         try:
-            await bot.send_message(chat_id=CHANNEL_ID, text=text)
+            await bot.send_message(chat_id=channel_id, text=text)
             sent += 1
-            print(f"✅ Отправлено в канал {CHANNEL_ID}")
+            print(f"✅ Отправлено в канал {channel_id}")
         except Exception as e:
             print(f"❌ Ошибка отправки в канал: {e}")
     
-    await msg.answer(f"✅ Отправлено {sent} получателям (включая канал)")
-
-# ===== РАСПИСАНИЕ =====
-
-is_sending = False
-
-async def scheduler():
-    global is_sending
-    
-    while True:
-        now = datetime.now()
-        
-        minute1 = random.randint(0, 59)
-        minute2 = random.randint(0, 59)
-        
-        hour1 = random.randint(12, 14)
-        hour2 = random.randint(17, 21)
-        
-        times = [(hour1, minute1), (hour2, minute2)]
-        times.sort()
-        
-        target_times = []
-        for hour, minute in times:
-            target = datetime(now.year, now.month, now.day, hour, minute, 0)
-            if target <= now:
-                target += timedelta(days=1)
-            target_times.append(target)
-        
-        wait_seconds = (target_times[0] - now).total_seconds()
-        if wait_seconds > 0:
-            print(f"⏳ Первая отправка в {target_times[0].strftime('%H:%M')} (через {wait_seconds/3600:.1f} часов)")
-            await asyncio.sleep(wait_seconds)
-        
-        if not is_sending:
-            is_sending = True
-            try:
-                await send_to_all_users()
-            finally:
-                is_sending = False
-        else:
-            print("⚠️ Отправка уже идёт, пропускаем")
-        
-        wait_seconds = (target_times[1] - target_times[0]).total_seconds()
-        if wait_seconds > 0:
-            print(f"⏳ Вторая отправка в {target_times[1].strftime('%H:%M')} (через {wait_seconds/3600:.1f} часов)")
-            await asyncio.sleep(wait_seconds)
-        
-        if not is_sending:
-            is_sending = True
-            try:
-                await send_to_all_users()
-            finally:
-                is_sending = False
-        else:
-            print("⚠️ Отправка уже идёт, пропускаем")
+    await msg.answer(f"✅ Отправлено {sent} получателям")
 
 # ===== ЗАПУСК =====
 
 async def main():
     print("=" * 60)
-    print("🤖 Бот запущен (с матом, без оскорблений)")
+    print("🤖 Бот запущен (с управлением расписанием и авто-каналом)")
     print("🔍 Приоритет: Bing → Google → Yandex → Pexels")
     print(f"📊 Подписчиков: {len(users)}")
     print(f"📸 Фото в истории: {len(history)}")
-    print("⏰ Расписание: 12:00-15:00 и 17:00-22:00")
-    print(f"📢 Канал: {CHANNEL_ID if CHANNEL_ID else '❌ не настроен'}")
+    times = ", ".join(schedule.get("times", ["12:00", "21:00"]))
+    print(f"⏰ Расписание: {times}")
+    print(f"📢 Канал: {CHANNEL_ID if CHANNEL_ID else 'авто-поиск'}")
     print("=" * 60)
     
     gc.collect()
