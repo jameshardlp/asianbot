@@ -410,7 +410,7 @@ def truncate_by_sentences(text: str, max_length: int = 1023) -> str:
         final_text = ensure_ends_with_dot(final_text)
     return final_text
 
-def validate_caption(text: str, min_length: int = 700, max_length: int = 1023) -> tuple:
+def validate_caption(text: str, min_length: int = 700, max_length: int = 1023) -> Tuple[str, Optional[str]]:
     if not text:
         return '', 'Текст пустой'
     
@@ -1048,7 +1048,6 @@ class TaskQueue:
                 print(f"❌ Ошибка добавления в Redis: {e}")
                 return False
         else:
-            # Локальная очередь
             if queue_name not in self._local_queue:
                 self._local_queue[queue_name] = []
             self._local_queue[queue_name].append(data)
@@ -1067,7 +1066,6 @@ class TaskQueue:
                 print(f"❌ Ошибка получения из Redis: {e}")
                 return None
         else:
-            # Локальная очередь
             if queue_name in self._local_queue and self._local_queue[queue_name]:
                 return self._local_queue[queue_name].pop(0)
             return None
@@ -1285,23 +1283,36 @@ async def queue_processor():
             task = await task_queue.pop(QUEUE_NAME)
             
             if task:
-                print(f"📨 Получена задача из очереди: {task.get('id')}")
+                print(f"📨 Получена задача из очереди: {task.get('id', 'unknown')}")
                 
-                if task.get('data', {}).get('needs_moderation', False):
-                    await task_queue.push(MODERATION_QUEUE, task['data'])
+                # Извлекаем данные из задачи
+                if 'data' in task:
+                    data = task['data']
+                else:
+                    data = task
+                
+                if data.get('needs_moderation', False):
+                    await task_queue.push(MODERATION_QUEUE, data)
                     print("📋 Задача отправлена на модерацию")
                     continue
                 
-                await process_post_task(task['data'])
+                await process_post_task(data)
             
             mod_task = await task_queue.pop(MODERATION_QUEUE)
             if mod_task:
-                await process_moderation_task(mod_task)
+                print(f"📋 Получена задача модерации: {mod_task.get('id', 'unknown')}")
+                if 'data' in mod_task:
+                    data = mod_task['data']
+                else:
+                    data = mod_task
+                await process_moderation_task(data)
             
             await asyncio.sleep(1)
             
         except Exception as e:
             print(f"❌ Ошибка в обработчике очереди: {e}")
+            import traceback
+            traceback.print_exc()
             await asyncio.sleep(5)
 
 async def process_post_task(data: Dict[str, Any]):
@@ -1324,8 +1335,12 @@ async def process_post_task(data: Dict[str, Any]):
 async def process_moderation_task(data: Dict[str, Any]):
     """Обработка задачи модерации"""
     try:
-        post_id = data.get('id')
+        # Проверяем структуру данных
         post_data = data.get('post_data', {})
+        if not post_data:
+            post_data = data
+        
+        post_id = post_data.get('id', f"post_{int(time.time())}")
         
         post = PostContent(
             photo_url=post_data.get('photo_url', ''),
@@ -1342,10 +1357,13 @@ async def process_moderation_task(data: Dict[str, Any]):
             print(f"✅ Пост {post_id} автоматически одобрен: {reason}")
             
             await task_queue.push(QUEUE_NAME, {
+                'id': post_id,
                 'chat_id': post.chat_id,
                 'photo_url': post.photo_url,
                 'caption': post.caption,
-                'post_id': post_id
+                'user_id': post.user_id,
+                'timestamp': post.timestamp,
+                'needs_moderation': False
             })
             
         elif approved is None:
@@ -1361,6 +1379,8 @@ async def process_moderation_task(data: Dict[str, Any]):
             
     except Exception as e:
         print(f"❌ Ошибка модерации: {e}")
+        import traceback
+        traceback.print_exc()
 
 async def notify_owner_for_moderation(post_id: str, post: PostContent):
     """Уведомление владельца о необходимости модерации"""
@@ -1419,7 +1439,10 @@ async def generate_and_queue_post(chat_id: str, user_id: int = 0, skip_moderatio
             print(f"✅ Пост {post_id} добавлен в очередь отправки")
             return True
         
-        await task_queue.push(MODERATION_QUEUE, {'id': post_id, 'post_data': post_data})
+        await task_queue.push(MODERATION_QUEUE, {
+            'id': post_id,
+            'post_data': post_data
+        })
         print(f"📋 Пост {post_id} добавлен в очередь модерации")
         return True
         
@@ -1455,11 +1478,11 @@ async def send_to_all_users():
         if validated:
             caption = validated
     
+    base_post_id = f"post_{int(time.time())}"
+    
     for chat_id in users:
-        post_id = f"post_{int(time.time())}_{chat_id}_{hashlib.md5(caption.encode()).hexdigest()[:6]}"
-        
-        task_data = {
-            'id': post_id,
+        post_data = {
+            'id': f"{base_post_id}_{chat_id}",
             'chat_id': chat_id,
             'photo_url': photo_url,
             'caption': caption,
@@ -1468,16 +1491,15 @@ async def send_to_all_users():
             'needs_moderation': False
         }
         
-        await task_queue.push(QUEUE_NAME, task_data)
+        await task_queue.push(QUEUE_NAME, post_data)
     
     channel_id = CHANNEL_ID
     if not channel_id or not channel_id.strip():
         channel_id = await get_channel_id()
     
     if channel_id:
-        channel_post_id = f"post_{int(time.time())}_channel_{hashlib.md5(caption.encode()).hexdigest()[:6]}"
         await task_queue.push(QUEUE_NAME, {
-            'id': channel_post_id,
+            'id': f"{base_post_id}_channel",
             'chat_id': channel_id,
             'photo_url': photo_url,
             'caption': caption,
@@ -1563,10 +1585,13 @@ async def handle_moderation_callback(callback: CallbackQuery):
         await moderator.manual_moderate(post_id, True, callback.from_user.id, "Одобрено владельцем")
         
         await task_queue.push(QUEUE_NAME, {
+            'id': post_id,
             'chat_id': post.chat_id,
             'photo_url': post.photo_url,
             'caption': post.caption,
-            'post_id': post_id
+            'user_id': 0,
+            'timestamp': time.time(),
+            'needs_moderation': False
         })
         
         await callback.answer("✅ Пост одобрен и отправлен в очередь", show_alert=True)
