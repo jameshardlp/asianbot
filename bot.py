@@ -18,14 +18,14 @@ from aiogram.exceptions import TelegramConflictError
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 CHANNEL_ID = os.getenv("CHANNEL_ID")
-OWNER_ID = int(os.getenv("OWNER_ID", 0))  # <-- НОВАЯ ПЕРЕМЕННАЯ
+OWNER_ID = int(os.getenv("OWNER_ID", 0))
 
 if not BOT_TOKEN:
     print("❌ Ошибка: BOT_TOKEN не задан")
     sys.exit(1)
 
 if not OWNER_ID:
-    print("⚠️ ВНИМАНИЕ: OWNER_ID не задан. Команды /test, /schedule, /broadcast, /clear_history будут недоступны.")
+    print("⚠️ ВНИМАНИЕ: OWNER_ID не задан. Команды для владельца НЕ РАБОТАЮТ.")
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
@@ -123,20 +123,19 @@ def load_schedule():
     try:
         with open(SCHEDULE_FILE, "r") as f:
             data = json.load(f)
-            if not data.get("times"):
+            if not data or not data.get("times"):
                 return {"times": ["12:00", "21:00"]}
             return data
     except:
         return {"times": ["12:00", "21:00"]}
 
-def save_schedule(schedule):
+def save_schedule(schedule_data):
     try:
         with open(SCHEDULE_FILE, "w") as f:
-            json.dump(schedule, f)
+            json.dump(schedule_data, f)
+        return True
     except:
-        pass
-
-schedule = load_schedule()
+        return False
 
 # ===== РАБОТА С ПОЛЬЗОВАТЕЛЯМИ =====
 
@@ -186,10 +185,10 @@ def add_to_last_posts(text: str):
 
 def is_similar(text: str) -> bool:
     global last_posts
-    key = text[:100]
+    key = text[:150]
     for post in last_posts:
         same_chars = sum(1 for a, b in zip(key, post) if a == b)
-        if len(key) > 10 and same_chars / len(key) > 0.7:
+        if len(key) > 10 and same_chars / len(key) > 0.65:
             return True
     return False
 
@@ -205,7 +204,7 @@ def generate_caption() -> str:
     style = random.choice(['everyday', 'funny', 'romantic', 'envy'])
     
     style_prompts = {
-        'everyday': """Ты - Анатолий, холостой блогер с ироничным юмором. Пиши ТОЛЬКО готовый пост. Используй МАТ 1-2 раза (бля, сука, пиздец, хуйня - но без оскорблений людей). ОБРАЩАЙСЯ К ЧИТАТЕЛЯМ ВО МНОЖЕСТВЕННОМ ЧИСЛЕ (вы, вам, вас). НЕ УПОМИНАЙ ЖЕНУ. Можно вспомнить бывшую, но не обязательно.
+        'everyday': """Ты - Анатолий, холостой блогер с ироничным юмором. Пиши ТОЛЬКО готовый пост. Используй МАТ 1-2 раза (бля, сука, пиздец, хуйня - но без оскорблений людей). ОБРАЩАЙСЯ К ЧИТАТЕЛЯМ ВО МНОЖЕСТВЕННОМ ЧИСЛЕ (вы, вам, вас). НЕ УПОМИНАЙ ЖЕНУ.
 
 Напиши пост про азиатских женщин. Придумай забавную бытовую ситуацию. Стиль - ироничный, с юмором, простая житейская мудрость. Без оскорблений национальностей.
 
@@ -215,15 +214,15 @@ def generate_caption() -> str:
 - С юмором
 - Завершённая мысль""",
 
-        'funny': """Ты - Анатолий, холостой смешной блогер. Пиши ТОЛЬКО готовый пост. Используй МАТ 1-2 раза (бля, сука, пиздец, хуйня - но без оскорблений людей). ОБРАЩАЙСЯ К ЧИТАТЕЛЯМ ВО МНОЖЕСТВЕННОМ ЧИСЛЕ (вы, вам, вас). НЕ УПОМИНАЙ ЖЕНУ. Можно вспомнить бывшую, но не обязательно.
+        'funny': """Ты - Анатолий, холостой смешной блогер. Пиши ТОЛЬКО готовый пост. Используй МАТ 1-2 раза (бля, сука, пиздец, хуйня - но без оскорблений людей). ОБРАЩАЙСЯ К ЧИТАТЕЛЯМ ВО МНОЖЕСТВЕННОМ ЧИСЛЕ (вы, вам, вас). НЕ УПОМИНАЙ ЖЕНУ.
 
 Напиши смешной пост про азиатских женщин. С иронией, без оскорблений. 500-650 символов. Завершённая мысль.""",
 
-        'romantic': """Ты - Анатолий, холостой романтичный блогер. Пиши ТОЛЬКО готовый пост. Используй МАТ 1 раз (бля, сука, пиздец - но без оскорблений). ОБРАЩАЙСЯ К ЧИТАТЕЛЯМ ВО МНОЖЕСТВЕННОМ ЧИСЛЕ (вы, вам, вас). НЕ УПОМИНАЙ ЖЕНУ. Можно вспомнить бывшую, но не обязательно.
+        'romantic': """Ты - Анатолий, холостой романтичный блогер. Пиши ТОЛЬКО готовый пост. Используй МАТ 1 раз (бля, сука, пиздец - но без оскорблений). ОБРАЩАЙСЯ К ЧИТАТЕЛЯМ ВО МНОЖЕСТВЕННОМ ЧИСЛЕ (вы, вам, вас). НЕ УПОМИНАЙ ЖЕНУ.
 
 Напиши романтичный пост про азиатских женщин. С юмором и лёгким матом. 500-650 символов. Завершённая мысль.""",
 
-        'envy': """Ты - Анатолий, холостой успешный блогер. Пиши ТОЛЬКО готовый пост. Используй МАТ 1-2 раза (бля, сука, пиздец - но без оскорблений). ОБРАЩАЙСЯ К ЧИТАТЕЛЯМ ВО МНОЖЕСТВЕННОМ ЧИСЛЕ (вы, вам, вас). НЕ УПОМИНАЙ ЖЕНУ. Можно вспомнить бывшую, но не обязательно.
+        'envy': """Ты - Анатолий, холостой успешный блогер. Пиши ТОЛЬКО готовый пост. Используй МАТ 1-2 раза (бля, сука, пиздец - но без оскорблений). ОБРАЩАЙСЯ К ЧИТАТЕЛЯМ ВО МНОЖЕСТВЕННОМ ЧИСЛЕ (вы, вам, вас). НЕ УПОМИНАЙ ЖЕНУ.
 
 Напиши пост, вызывающий лёгкую зависть. С юмором и матом. 500-650 символов. Завершённая мысль.""",
     }
@@ -296,7 +295,6 @@ def generate_caption() -> str:
                 print("⚠️ Пост слишком короткий, пробуем ещё...")
                 continue
             
-            # Дополнительная фильтрация упоминаний жены
             if re.search(r'\b(жена|жены|жене|моя жена|своя жена)\b', caption, re.IGNORECASE):
                 print("⚠️ Пост содержит упоминание жены, пробуем другой промпт...")
                 continue
@@ -345,17 +343,21 @@ async def get_channel_id() -> str:
         me = await bot.get_me()
         print(f"🤖 Бот: @{me.username}")
         
-        updates = await bot.get_updates(offset=-1, limit=10)
-        for update in updates:
-            if update.channel_post:
-                chat_id = update.channel_post.chat.id
-                try:
-                    chat_member = await bot.get_chat_member(chat_id, bot.id)
-                    if chat_member.status in ["administrator", "creator"]:
-                        print(f"✅ Найден канал: {chat_id}")
-                        return str(chat_id)
-                except:
-                    pass
+        try:
+            updates = await bot.get_updates(offset=-1, limit=10)
+            for update in updates:
+                if update.channel_post:
+                    chat_id = update.channel_post.chat.id
+                    try:
+                        chat_member = await bot.get_chat_member(chat_id, bot.id)
+                        if chat_member.status in ["administrator", "creator"]:
+                            print(f"✅ Найден канал: {chat_id}")
+                            return str(chat_id)
+                    except:
+                        pass
+        except Exception as e:
+            print(f"⚠️ Ошибка получения обновлений: {e}")
+            
     except Exception as e:
         print(f"⚠️ Ошибка поиска канала: {e}")
     
@@ -602,6 +604,12 @@ async def send_post(chat_id, photo_url=None, caption=None):
         
     except Exception as e:
         print(f"❌ Ошибка отправки в {chat_id}: {e}")
+        # Если бот заблокирован или чат недоступен — удаляем пользователя
+        if "forbidden" in str(e).lower() or "chat not found" in str(e).lower():
+            if chat_id in users:
+                users.remove(chat_id)
+                save_users(users)
+                print(f"🗑️ Пользователь {chat_id} удалён из-за ошибки")
         return False
 
 async def send_to_all_users():
@@ -628,16 +636,22 @@ async def send_to_all_users():
         caption = truncate_by_sentences(get_fallback_caption(), 900)
     
     for chat_id in users:
-        await send_post(chat_id, photo_url, caption)
-        await asyncio.sleep(3)
+        try:
+            await send_post(chat_id, photo_url, caption)
+            await asyncio.sleep(3)
+        except Exception as e:
+            print(f"❌ Ошибка отправки в {chat_id}: {e}")
     
     channel_id = CHANNEL_ID
     if not channel_id:
         channel_id = await get_channel_id()
     
     if channel_id:
-        print(f"📤 Отправка в канал {channel_id}...")
-        await send_post(channel_id, photo_url, caption)
+        try:
+            print(f"📤 Отправка в канал {channel_id}...")
+            await send_post(channel_id, photo_url, caption)
+        except Exception as e:
+            print(f"❌ Ошибка отправки в канал: {e}")
 
 # ===== РАСПИСАНИЕ =====
 
@@ -651,7 +665,8 @@ async def scheduler():
     
     while True:
         now = datetime.now()
-        times = schedule.get("times", ["12:00", "21:00"])
+        current_schedule = load_schedule()
+        times = current_schedule.get("times", ["12:00", "21:00"])
         
         target_times = []
         for time_str in times:
@@ -730,7 +745,8 @@ async def start(msg: Message):
         print(f"✅ Добавлен пользователь: {chat_id}")
     
     channel_status = f"\n📢 Канал: {'✅ подключён' if CHANNEL_ID else '🔄 авто-поиск'}"
-    times = ", ".join(schedule.get("times", ["12:00", "21:00"]))
+    current_schedule = load_schedule()
+    times = ", ".join(current_schedule.get("times", ["12:00", "21:00"]))
     
     await msg.answer(
         f"✅ Вы подписаны на рассылку!\n"
@@ -809,7 +825,8 @@ async def status(msg: Message):
     
     is_subscribed = chat_id in users
     channel_id = CHANNEL_ID or await get_channel_id()
-    times = ", ".join(schedule.get("times", ["12:00", "21:00"]))
+    current_schedule = load_schedule()
+    times = ", ".join(current_schedule.get("times", ["12:00", "21:00"]))
     
     status_text = (
         f"📊 Статус бота:\n"
@@ -825,15 +842,17 @@ async def status(msg: Message):
 @dp.message(Command("schedule"))
 async def schedule(msg: Message):
     global OWNER_ID
+    global schedule_data
     
-    if msg.from_user.id != OWNER_ID:
+    if not OWNER_ID or msg.from_user.id != OWNER_ID:
         await msg.answer("⛔ Доступ запрещён. Только для владельца.")
         return
     
     args = msg.text.replace("/schedule", "").strip()
     
     if not args:
-        times = ", ".join(schedule.get("times", ["12:00", "21:00"]))
+        current_schedule = load_schedule()
+        times = ", ".join(current_schedule.get("times", ["12:00", "21:00"]))
         await msg.answer(
             f"📅 Текущее расписание: {times}\n\n"
             f"Чтобы изменить, напишите:\n"
@@ -860,8 +879,9 @@ async def schedule(msg: Message):
         await msg.answer("❌ Максимум 4 времени.")
         return
     
-    schedule["times"] = new_times
-    save_schedule(schedule)
+    # ОБНОВЛЯЕМ глобальную переменную
+    schedule_data["times"] = new_times
+    save_schedule(schedule_data)
     
     times = ", ".join(new_times)
     await msg.answer(f"✅ Расписание обновлено: {times}")
@@ -870,7 +890,7 @@ async def schedule(msg: Message):
 async def test(msg: Message):
     global OWNER_ID
     
-    if msg.from_user.id != OWNER_ID:
+    if not OWNER_ID or msg.from_user.id != OWNER_ID:
         await msg.answer("⛔ Доступ запрещён.")
         return
     
@@ -885,7 +905,7 @@ async def test(msg: Message):
 async def clear_history(msg: Message):
     global history, OWNER_ID
     
-    if msg.from_user.id != OWNER_ID:
+    if not OWNER_ID or msg.from_user.id != OWNER_ID:
         await msg.answer("⛔ Доступ запрещён.")
         return
     
@@ -897,7 +917,7 @@ async def clear_history(msg: Message):
 async def broadcast(msg: Message):
     global OWNER_ID
     
-    if msg.from_user.id != OWNER_ID:
+    if not OWNER_ID or msg.from_user.id != OWNER_ID:
         await msg.answer("⛔ Доступ запрещён.")
         return
     
@@ -940,12 +960,15 @@ async def broadcast(msg: Message):
 
 async def main():
     print("=" * 60)
-    print("🤖 Бот запущен (без CHAT_ID, с OWNER_ID)")
+    print("🤖 Бот запущен")
     print("🔍 Приоритет: Bing → Google → Yandex → Pexels")
     print(f"📊 Подписчиков: {len(users)}")
     print(f"📸 Фото в истории: {len(history)}")
-    times = ", ".join(schedule.get("times", ["12:00", "21:00"]))
+    
+    current_schedule = load_schedule()
+    times = ", ".join(current_schedule.get("times", ["12:00", "21:00"]))
     print(f"⏰ Расписание: {times}")
+    
     print(f"📢 Канал: {CHANNEL_ID if CHANNEL_ID else 'авто-поиск'}")
     print(f"👤 Владелец: {OWNER_ID if OWNER_ID else '❌ не задан'}")
     print("=" * 60)
