@@ -13,6 +13,14 @@ from datetime import datetime, timedelta
 from typing import Optional, Tuple, List, Dict, Any
 from dataclasses import dataclass, asdict
 from enum import Enum
+import logging
+
+# Настройка логирования
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 # Для Redis (опционально)
 try:
@@ -20,13 +28,13 @@ try:
     REDIS_AVAILABLE = True
 except ImportError:
     REDIS_AVAILABLE = False
-    print("⚠️ Redis не установлен. Использую локальную очередь")
+    logger.warning("Redis не установлен. Использую локальную очередь")
 
 # Для Telegram
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import Message, ChatMember, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
-from aiogram.exceptions import TelegramConflictError
+from aiogram.exceptions import TelegramConflictError, TelegramAPIError
 
 # ===== КОНФИГУРАЦИЯ =====
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -46,11 +54,11 @@ QUEUE_NAME = "post_queue"
 MODERATION_QUEUE = "moderation_queue"
 
 if not BOT_TOKEN:
-    print("❌ Ошибка: BOT_TOKEN не задан")
+    logger.error("BOT_TOKEN не задан")
     sys.exit(1)
 
 if not OWNER_ID:
-    print("⚠️ ВНИМАНИЕ: OWNER_ID не задан. Команды для владельца НЕ РАБОТАЮТ.")
+    logger.warning("OWNER_ID не задан. Команды для владельца НЕ РАБОТАЮТ.")
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
@@ -60,91 +68,288 @@ USERS_FILE = "users.json"
 HISTORY_FILE = "history.json"
 SCHEDULE_FILE = "schedule.json"
 
-# ===== ПОИСКОВЫЕ ЗАПРОСЫ =====
+# ===== РАСШИРЕННЫЕ СПИСКИ КЛЮЧЕВЫХ СЛОВ =====
+
+# Азиатские страны и национальности
+ASIAN_KEYWORDS = [
+    'asian', 'japanese', 'korean', 'chinese', 'thai', 'vietnamese', 
+    'filipino', 'indonesian', 'malaysian', 'singaporean', 'taiwanese',
+    'mongolian', 'burmese', 'cambodian', 'laotian', 'east asian',
+    'south east asian', 'oriental', 'asia girl', 'asia woman',
+    'japan', 'korea', 'china', 'thailand', 'vietnam', 'philippines',
+    'indonesia', 'malaysia', 'singapore', 'taiwan', 'mongolia',
+    'myanmar', 'cambodia', 'laos', 'hong kong', 'macau',
+]
+
+# Не азиатские страны и национальности
+NON_ASIAN_KEYWORDS = [
+    'african', 'black', 'white', 'caucasian', 'european', 'american',
+    'latina', 'mexican', 'brazilian', 'indian', 'middle eastern',
+    'arab', 'persian', 'turkish', 'russian', 'ukrainian', 'polish',
+    'german', 'french', 'italian', 'spanish', 'british', 'swedish',
+    'norwegian', 'danish', 'dutch', 'belgian', 'swiss', 'austrian',
+    'australian', 'canadian', 'colombian', 'peruvian', 'chilean',
+    'argentinian', 'venezuelan', 'ecuadorian', 'bolivian', 'paraguayan',
+    'uruguayan', 'guyanese', 'surinamese', 'egyptian', 'moroccan',
+    'algerian', 'tunisian', 'libyan', 'nigerian', 'kenyan',
+    'south african', 'ethiopian', 'ghanaian', 'senegalese', 'ugandan',
+    'rwandan', 'somali', 'sudanese', 'american girl', 'european girl',
+    'russian girl', 'ukrainian girl', 'indian girl', 'african girl',
+    'american woman', 'european woman', 'russian woman', 'ukrainian woman',
+    'latina girl', 'brazilian girl', 'mexican girl', 'arab girl',
+    'persian girl', 'turkish girl', 'caucasian girl', 'white girl',
+    'black girl', 'african woman', 'latina woman', 'brazilian woman',
+]
+
+# Азиатские имена (для дополнительной фильтрации)
+ASIAN_NAMES = [
+    'yuki', 'haruka', 'sakura', 'ai', 'miyu', 'rina', 'mika', 'kaori',
+    'hana', 'momoko', 'chihiro', 'nanami', 'hinata', 'yui', 'mizuki',
+    'yeon', 'jiwoo', 'eunji', 'yuna', 'hyejin', 'sooyoung', 'jisoo',
+    'minji', 'nayeon', 'jeongyeon', 'momo', 'sana', 'mina', 'dahyun',
+    'chaeyoung', 'tzuyu', 'jungkook', 'taehyung', 'jimin', 'namjoon',
+    'seokjin', 'yoongi', 'hoseok', 'jennie', 'lisa', 'rosé', 'jisoo',
+    'xiao', 'mei', 'ling', 'fang', 'li', 'hua', 'xia', 'wei', 'ting',
+    'chen', 'wang', 'zhang', 'liu', 'yang', 'zhao', 'huang', 'wu',
+    'somchai', 'somsak', 'somporn', 'nong', 'lek', 'noi', 'kaew',
+    'mai', 'ploy', 'fah', 'mild', 'baitoey', 'gift', 'new', 'oil',
+    'aom', 'joong', 'ki', 'hoon', 'jin', 'soo', 'young', 'sun',
+]
+
+# Упоминания возраста (для азиаток часто указывают возраст)
+AGE_POSITIVE_KEYWORDS = [
+    '18', '19', '20', '21', '22', '23', '24', '25',
+    '26', '27', '28', '29', '30',
+    '18year', '19year', '20year', '21year', '22year',
+    '18yo', '19yo', '20yo', '21yo', '22yo', '23yo',
+    '20s', 'twenties', 'young', 'college', 'university',
+    'student', 'freshman', 'sophomore', 'junior', 'senior',
+]
+
+# Традиционная одежда (исключаем)
+TRADITIONAL_EXCLUDE = [
+    'kimono', 'hanbok', 'cheongsam', 'qi pao', 'sari', 'ao dai',
+    'traditional', 'folk costume', 'national dress', 'hanfu',
+    'mongolian traditional', 'tibetan traditional', 'uyghur traditional',
+]
+
+# ===== ПОИСКОВЫЕ ЗАПРОСЫ (улучшенные) =====
 SEARCH_QUERIES = [
-    "japanese girl casual selfie",
-    "japanese woman everyday life",
-    "japanese girl instagram photo",
-    "japanese woman casual style",
-    "japanese girl natural portrait",
-    "japanese woman street style",
-    "japanese girl city selfie",
-    "japanese woman cafe selfie",
-    "japanese girl summer outfit",
-    "japanese woman modern style",
-    "chinese girl casual selfie",
-    "chinese woman everyday life",
-    "chinese girl instagram photo",
-    "chinese woman casual style",
-    "chinese girl natural portrait",
-    "chinese woman street style",
-    "chinese girl city selfie",
-    "chinese woman cafe selfie",
-    "chinese girl summer dress",
-    "chinese woman modern outfit",
-    "korean girl casual selfie",
-    "korean woman everyday life",
-    "korean girl instagram photo",
-    "korean woman casual style",
-    "korean girl natural portrait",
-    "korean woman street style",
-    "korean girl city selfie",
-    "korean woman cafe selfie",
-    "korean girl summer dress",
-    "korean woman modern style",
-    "thai girl casual selfie",
-    "thai woman everyday life",
-    "thai girl instagram photo",
-    "thai woman casual style",
-    "thai girl natural portrait",
-    "thai woman street style",
-    "thai girl city selfie",
-    "thai woman cafe selfie",
-    "thai girl summer outfit",
-    "thai woman modern dress",
-    "japanese girl bikini beach",
-    "korean girl bikini photo",
-    "chinese girl swimsuit",
-    "thai girl bikini",
-    "japanese woman swimsuit",
-    "korean woman bikini beach",
+    # Японки
+    "japanese girl casual selfie 20",
+    "japanese woman everyday life 20s",
+    "japanese girl instagram photo 20",
+    "japanese woman casual style 20",
+    "japanese girl natural portrait 20",
+    "japanese woman street style 20",
+    "japanese girl city selfie 20",
+    "japanese woman cafe selfie 20",
+    "japanese girl summer outfit 20",
+    "japanese woman modern style 20",
+    "japanese college girl 20",
+    "japanese university student 20",
+    "japanese girl 20s portrait",
+    
+    # Китаянки
+    "chinese girl casual selfie 20",
+    "chinese woman everyday life 20s",
+    "chinese girl instagram photo 20",
+    "chinese woman casual style 20",
+    "chinese girl natural portrait 20",
+    "chinese woman street style 20",
+    "chinese girl city selfie 20",
+    "chinese woman cafe selfie 20",
+    "chinese girl summer dress 20",
+    "chinese woman modern outfit 20",
+    "chinese college girl 20",
+    "chinese university student 20",
+    
+    # Кореянки
+    "korean girl casual selfie 20",
+    "korean woman everyday life 20s",
+    "korean girl instagram photo 20",
+    "korean woman casual style 20",
+    "korean girl natural portrait 20",
+    "korean woman street style 20",
+    "korean girl city selfie 20",
+    "korean woman cafe selfie 20",
+    "korean girl summer dress 20",
+    "korean woman modern style 20",
+    "korean college girl 20",
+    "korean university student 20",
+    
+    # Тайки
+    "thai girl casual selfie 20",
+    "thai woman everyday life 20s",
+    "thai girl instagram photo 20",
+    "thai woman casual style 20",
+    "thai girl natural portrait 20",
+    "thai woman street style 20",
+    "thai girl city selfie 20",
+    "thai woman cafe selfie 20",
+    "thai girl summer outfit 20",
+    "thai woman modern dress 20",
+    "thai college girl 20",
+    "thai university student 20",
+    
+    # Общие с уточнением
+    "asian girl 20 years old instagram",
+    "east asian woman 20s casual",
+    "southeast asian girl 20s photo",
+    "young asian woman 20s portrait",
+    "asian college girl 20",
+    "asian university student 20s",
+    "asian girl 20s fashion",
+    "asian woman 20s lifestyle",
 ]
 
 FITNESS_QUERIES = [
-    "japanese fitness girl",
-    "korean gym girl",
-    "chinese fitness woman",
-    "thai sport girl",
+    "japanese fitness girl 20s",
+    "korean gym girl 20s",
+    "chinese fitness woman 20s",
+    "thai sport girl 20s",
 ]
 
-# ===== КЛЮЧЕВЫЕ СЛОВА =====
-AGE_POSITIVE_KEYWORDS = [
-    '18', '19', '20', '21', '22', '23', '24', '25',
-    '26', '27', '28', '29', '30', '20s',
-    'young', 'college', 'university'
-]
+# ===== УЛУЧШЕННАЯ ФИЛЬТРАЦИЯ =====
 
-EXCLUDE_KEYWORDS = [
-    'african', 'black', 'white', 'caucasian', 'european', 'american',
-    'latina', 'mexican', 'brazilian', 'indian', 'middle eastern',
-    'arab', 'persian', 'turkish',
-    'malaysian', 'filipina', 'vietnamese', 'indonesian',
-    'mature', 'old', 'age 40', 'age 50', 'age 60', 'senior',
-    'grandma', 'elderly', 'wrinkles',
-    'kid', 'child', 'baby', 'toddler', 'infant', 'girl 12', 'girl 13',
-    'girl 14', 'girl 15', 'girl 16', 'girl 17', 'teenager', 'teen',
-    'man', 'male', 'guy', 'boy', 'men', 'dude', 'bro', 'brother',
-    'father', 'dad', 'son', 'husband', 'boyfriend', 'gentleman',
-    'мужчина', 'парень', 'мужик', 'пацан', 'мальчик', 'юноша',
-    'мужской', 'мужские', 'man model', 'male model', 'fitness man',
-    'korean man', 'japanese man', 'chinese man', 'thai man',
-    'asian male', 'asian man', 'guy portrait', 'male portrait',
-]
+def is_asian_photo(url: str, additional_context: str = "") -> bool:
+    """
+    Улучшенная проверка на азиатскую внешность
+    Проверяет несколько источников: URL, описание, метаданные
+    """
+    if not url:
+        return False
+    
+    # Объединяем все источники для проверки
+    text_to_check = url.lower()
+    if additional_context:
+        text_to_check += " " + additional_context.lower()
+    
+    # 1. Проверка на явные указания азиатского происхождения
+    for keyword in ASIAN_KEYWORDS:
+        if keyword in text_to_check:
+            return True
+    
+    # 2. Проверка на исключения (не азиатки)
+    for keyword in NON_ASIAN_KEYWORDS:
+        if keyword in text_to_check:
+            logger.debug(f"❌ Не азиатка: найдено '{keyword}' в {url[:60]}...")
+            return False
+    
+    # 3. Проверка на наличие азиатских имен
+    for name in ASIAN_NAMES:
+        if name in text_to_check:
+            return True
+    
+    # 4. Проверка на возраст (для азиаток часто указывают возраст)
+    has_age = False
+    for pattern in AGE_POSITIVE_KEYWORDS:
+        if pattern in text_to_check:
+            has_age = True
+            break
+    
+    # Если есть возраст, но нет явных признаков не-азиатки - считаем азиаткой
+    if has_age:
+        # Но проверяем, что нет явных признаков европейской внешности
+        for keyword in ['blonde', 'blue eyes', 'green eyes', 'redhead', 'ginger']:
+            if keyword in text_to_check:
+                return False
+        return True
+    
+    # 5. Проверка на типичные азиатские черты в описании
+    asian_features = [
+        'slender', 'petite', 'olive skin', 'dark hair', 'black hair',
+        'straight hair', 'bangs', 'double eyelid', 'monolid',
+        'kawaii', 'cute', 'innocent', 'pure', 'delicate',
+        'slender figure', 'small face', 'fair skin',
+    ]
+    
+    for feature in asian_features:
+        if feature in text_to_check:
+            return True
+    
+    # 6. Проверка на азиатские домены или источники
+    asian_domains = ['.jp', '.kr', '.cn', '.tw', '.hk', '.mo', '.sg', '.th', '.vn', '.ph', '.my', '.id']
+    for domain in asian_domains:
+        if domain in url.lower():
+            return True
+    
+    # Если ничего не найдено - считаем, что фото не азиатское
+    logger.debug(f"❌ Не азиатка: нет признаков в {url[:60]}...")
+    return False
 
-TRADITIONAL_EXCLUDE = [
-    'kimono', 'hanbok', 'cheongsam', 'qi pao', 'sari', 'ao dai',
-    'traditional', 'folk costume', 'national dress'
-]
+def is_age_appropriate(url: str) -> bool:
+    """Проверка на подходящий возраст"""
+    if not url:
+        return False
+    
+    url_lower = url.lower()
+    
+    # Проверяем наличие указания возраста
+    for word in AGE_POSITIVE_KEYWORDS:
+        if word in url_lower:
+            return True
+    
+    # Проверяем паттерны возраста
+    if re.search(r'\b(age|years?|yo|y/o)\b', url_lower, re.IGNORECASE):
+        for word in AGE_POSITIVE_KEYWORDS:
+            if word in url_lower:
+                return True
+        return False
+    
+    # Если возраст не указан - считаем, что подходит (но не для всех)
+    # Проверяем, что нет явных признаков детей или пожилых
+    if 'child' in url_lower or 'kid' in url_lower or 'baby' in url_lower:
+        return False
+    
+    if 'mature' in url_lower or 'old' in url_lower or 'senior' in url_lower:
+        return False
+    
+    return True
+
+def is_traditional_clothing(url: str) -> bool:
+    """Проверка на традиционную одежду"""
+    if not url:
+        return False
+    
+    url_lower = url.lower()
+    for word in TRADITIONAL_EXCLUDE:
+        if word in url_lower:
+            return True
+    
+    # Дополнительная проверка
+    if 'traditional dress' in url_lower or 'folk costume' in url_lower:
+        return True
+    
+    return False
+
+def is_photo_acceptable(url: str, additional_context: str = "") -> Tuple[bool, str]:
+    """
+    Улучшенная проверка на допустимость фото
+    Возвращает: (допустимо, причина)
+    """
+    if not url:
+        return False, "Пустой URL"
+    
+    # Проверяем, что это фото азиатки
+    if not is_asian_photo(url, additional_context):
+        return False, "Не азиатская внешность"
+    
+    # Проверяем возраст
+    if not is_age_appropriate(url):
+        return False, "Возраст не подходит"
+    
+    # Проверяем на традиционную одежду
+    if is_traditional_clothing(url):
+        return False, "Традиционная одежда"
+    
+    # Проверяем на нежелательные темы
+    unwanted = ['naked', 'nude', 'porn', 'xxx', 'sex', 'erotic', 'bikini']
+    for word in unwanted:
+        if word in url.lower():
+            return False, f"Нежелательное содержание: {word}"
+    
+    return True, "OK"
 
 # ===== СТИЛИ ДЛЯ ГЕНЕРАЦИИ =====
 style_prompts = {
@@ -446,7 +651,7 @@ def validate_caption(text: str, min_length: int = 700, max_length: int = 1023) -
                 return '', f'Последнее предложение слишком короткое ({word_count} слов)'
         
         if not is_sentence_complete(last_sentence):
-            print(f"⚠️ Последнее предложение логически не завершено: '{last_sentence}'")
+            logger.warning(f"Последнее предложение логически не завершено: '{last_sentence}'")
             if len(all_sentences) > 1:
                 text = ' '.join(all_sentences[:-1]).strip()
                 text = ensure_ends_with_dot(text)
@@ -469,54 +674,7 @@ def clean_text(text: str) -> str:
     text = clean_punctuation(text)
     return text
 
-def is_age_appropriate(url: str) -> bool:
-    if not url:
-        return False
-    url_lower = url.lower()
-    for word in AGE_POSITIVE_KEYWORDS:
-        if word in url_lower:
-            return True
-    if re.search(r'\b(age|years?|yo|y/o)\b', url_lower, re.IGNORECASE):
-        for word in AGE_POSITIVE_KEYWORDS:
-            if word in url_lower:
-                return True
-        return False
-    return True
-
-def is_traditional_clothing(url: str) -> bool:
-    if not url:
-        return False
-    url_lower = url.lower()
-    for word in TRADITIONAL_EXCLUDE:
-        if word in url_lower:
-            return True
-    return False
-
-def is_definitely_not_asian(url: str) -> bool:
-    if not url:
-        return False
-    url_lower = url.lower()
-    for word in EXCLUDE_KEYWORDS:
-        if word in url_lower:
-            return True
-    return False
-
-def is_photo_acceptable(url: str) -> bool:
-    if not url:
-        return False
-    
-    if is_definitely_not_asian(url):
-        return False
-    
-    if not is_age_appropriate(url):
-        return False
-    
-    if is_traditional_clothing(url):
-        return False
-    
-    return True
-
-# ===== РАБОТА С РАСПИСАНИЕМ =====
+# ===== РАБОТА С ФАЙЛАМИ =====
 
 def load_schedule():
     try:
@@ -534,11 +692,7 @@ def save_schedule(schedule_data):
             json.dump(schedule_data, f)
         return True
     except:
-        return False
-
-schedule_data = load_schedule()
-
-# ===== РАБОТА С ПОЛЬЗОВАТЕЛЯМИ =====
+        return Falseschedule_data = load_schedule()
 
 def load_users():
     try:
@@ -621,24 +775,24 @@ def request_continuation(previous_text: str) -> str:
             result = response.json()
             return result["choices"][0].get("message", {}).get("content", "").strip()
     except Exception as e:
-        print(f"⚠️ Ошибка запроса продолжения: {e}")
+        logger.error(f"Ошибка запроса продолжения: {e}")
     return ""
 
 def complete_truncated_text(content: str, finish_reason: str) -> str:
     if finish_reason == "length" and content:
-        print(f"⚠️ Текст обрезан (finish_reason=length, {len(content)} символов). Запрашиваю продолжение...")
+        logger.warning(f"Текст обрезан (finish_reason=length, {len(content)} символов). Запрашиваю продолжение...")
         continuation = request_continuation(content)
         if continuation:
             continuation = clean_text(continuation)
             tail_100 = content[-100:].lower()
             cont_start = continuation[:100].lower()
             if tail_100 and cont_start and (tail_100 in cont_start or cont_start in tail_100):
-                print("⚠️ Продолжение дублирует хвост, не склеиваю")
+                logger.warning("Продолжение дублирует хвост, не склеиваю")
             elif continuation:
                 content = content.rstrip() + " " + continuation.strip()
-                print(f"✅ Продолжение получено (+{len(continuation)} символов)")
+                logger.info(f"Продолжение получено (+{len(continuation)} символов)")
         else:
-            print("⚠️ Продолжение не получено, работаю с тем что есть")
+            logger.warning("Продолжение не получено, работаю с тем что есть")
     return content
 
 # ===== ГЕНЕРАЦИЯ ПОСТОВ =====
@@ -660,10 +814,10 @@ def get_fallback_caption() -> str:
     return random.choice(fallbacks)
 
 def generate_caption() -> str:
-    print("🧠 Генерирую уникальный пост...")
+    logger.info("Генерирую уникальный пост...")
     
     if not DEEPSEEK_API_KEY:
-        print("⚠️ Нет ключа DeepSeek, использую резерв")
+        logger.warning("Нет ключа DeepSeek, использую резерв")
         caption = get_fallback_caption()
         caption = clean_text(caption)
         caption = truncate_by_sentences(caption)
@@ -694,7 +848,7 @@ def generate_caption() -> str:
             current_prompt = prompt
             if attempt > 0:
                 current_prompt = random.choice(alternative_prompts) + "\n\nТвой ответ (ТОЛЬКО ПОСТ, БЕЗ РАССУЖДЕНИЙ):"
-                print(f"🔄 Пробую альтернативный промпт (попытка {attempt+1})...")
+                logger.info(f"Пробую альтернативный промпт (попытка {attempt+1})...")
             
             data = {
                 "model": "deepseek-v4-flash",
@@ -711,11 +865,11 @@ def generate_caption() -> str:
             if response.status_code == 400:
                 error_text = response.text.lower()
                 if "извините" in error_text or "не могу" in error_text or "не разрешено" in error_text:
-                    print(f"⚠️ Контент заблокирован, пробую другой промпт (попытка {attempt+1})...")
+                    logger.warning(f"Контент заблокирован, пробую другой промпт (попытка {attempt+1})...")
                     continue
             
             if response.status_code != 200:
-                print(f"❌ DeepSeek ошибка: {response.status_code}")
+                logger.error(f"DeepSeek ошибка: {response.status_code}")
                 continue
             
             result = response.json()
@@ -723,23 +877,23 @@ def generate_caption() -> str:
             content = choice.get("message", {}).get("content", "")
             finish_reason = choice.get("finish_reason", "")
             usage = result.get("usage", {})
-            print(f"📊 finish_reason={finish_reason} | tokens={usage.get('completion_tokens', '?')} | chars={len(content)}")
+            logger.info(f"finish_reason={finish_reason} | tokens={usage.get('completion_tokens', '?')} | chars={len(content)}")
             
             if finish_reason == "length":
                 content = complete_truncated_text(content, finish_reason)
             
             if not content or len(content.strip()) < 20:
-                print("❌ Пустой или короткий ответ")
+                logger.warning("Пустой или короткий ответ")
                 continue
             
             caption = content.strip().strip('"').strip("'")
             
             if caption.lower().startswith(("мы должны", "нужно", "я должен", "напиши", "вот", "давайте", "попробуем", "извините")):
-                print("⚠️ DeepSeek выдал рассуждение или отказ, пробуем другой промпт...")
+                logger.warning("DeepSeek выдал рассуждение или отказ, пробуем другой промпт...")
                 continue
             
             if is_similar(caption):
-                print("⚠️ Пост похож на недавний, пробуем ещё...")
+                logger.warning("Пост похож на недавний, пробуем ещё...")
                 continue
             
             caption = clean_text(caption)
@@ -747,18 +901,18 @@ def generate_caption() -> str:
             
             validated, error = validate_caption(caption)
             if validated:
-                print(f"✅ Сгенерирован пост ({len(validated)} символов)")
+                logger.info(f"Сгенерирован пост ({len(validated)} символов)")
                 add_to_last_posts(validated)
                 return validated
             else:
-                print(f"⚠️ Текст не прошёл проверку: {error}, пробуем ещё...")
+                logger.warning(f"Текст не прошёл проверку: {error}, пробуем ещё...")
                 continue
             
         except Exception as e:
-            print(f"❌ Ошибка генерации (попытка {attempt+1}): {e}")
+            logger.error(f"Ошибка генерации (попытка {attempt+1}): {e}")
             continue
     
-    print("⚠️ Не удалось сгенерировать уникальный пост, использую резерв")
+    logger.warning("Не удалось сгенерировать уникальный пост, использую резерв")
     caption = get_fallback_caption()
     caption = clean_text(caption)
     caption = truncate_by_sentences(caption)
@@ -767,9 +921,10 @@ def generate_caption() -> str:
         return validated
     return clean_text(get_fallback_caption())
 
-# ===== ПОИСК ФОТО =====
+# ===== УЛУЧШЕННЫЙ ПОИСК ФОТО =====
 
 def search_bing(query):
+    """Поиск с двойной проверкой на азиатскую внешность"""
     if not query:
         return None
     
@@ -785,31 +940,53 @@ def search_bing(query):
         
         response = requests.get(url, headers=headers, timeout=15)
         
-        pattern = r'"murl":"([^"]+)"'
-        images = re.findall(pattern, response.text)
+        # Ищем все возможные URL
+        patterns = [
+            r'"murl":"([^"]+)"',
+            r'"mediaurl":"([^"]+)"',
+            r'"contentUrl":"([^"]+)"',
+            r'"url":"([^"]+)"',
+        ]
         
-        pattern2 = r'"mediaurl":"([^"]+)"'
-        images.extend(re.findall(pattern2, response.text))
+        images = []
+        for pattern in patterns:
+            found = re.findall(pattern, response.text)
+            images.extend(found)
+        
+        # Также ищем в тексте описания
+        titles = re.findall(r'"title":"([^"]+)"', response.text)
+        descriptions = re.findall(r'"description":"([^"]+)"', response.text)
         
         clean_images = []
         for img in images:
-            img = img.replace('\\u0026', '&')
-            img = img.replace('\\/', '/')
+            img = img.replace('\\u0026', '&').replace('\\/', '/')
             
-            if any(ext in img.lower() for ext in ['.jpg', '.jpeg', '.png', '.webp']):
-                if not any(x in img.lower() for x in ['gstatic', 'google', 'favicon', 'logo', 'bing', 'avatar']):
-                    if is_photo_acceptable(img):
-                        clean_images.append(img)
+            # Базовые проверки
+            if not any(ext in img.lower() for ext in ['.jpg', '.jpeg', '.png', '.webp']):
+                continue
+            
+            if any(x in img.lower() for x in ['gstatic', 'google', 'favicon', 'logo', 'bing', 'avatar']):
+                continue
+            
+            # Проверяем, что фото азиатской внешности
+            if not is_asian_photo(img):
+                continue
+            
+            # Проверяем возраст
+            if not is_age_appropriate(img):
+                continue
+            
+            clean_images.append(img)
         
-        clean_images = list(dict.fromkeys(clean_images))
-        
+        # Если есть фото - возвращаем
         if clean_images:
+            clean_images = list(dict.fromkeys(clean_images))
             return random.choice(clean_images)
         
         return None
         
     except Exception as e:
-        print(f"Ошибка Bing: {e}")
+        logger.error(f"Ошибка Bing: {e}")
         return None
 
 def search_google_direct(query):
@@ -842,7 +1019,7 @@ def search_google_direct(query):
             if any(ext in img.lower() for ext in ['.jpg', '.jpeg', '.png', '.webp']):
                 if not any(x in img.lower() for x in ['gstatic', 'google', 'favicon', 'logo']):
                     if not img.startswith('data:'):
-                        if is_photo_acceptable(img):
+                        if is_asian_photo(img) and is_age_appropriate(img):
                             clean_images.append(img)
         
         clean_images = list(dict.fromkeys(clean_images))
@@ -853,7 +1030,7 @@ def search_google_direct(query):
         return None
         
     except Exception as e:
-        print(f"Ошибка Google: {e}")
+        logger.error(f"Ошибка Google: {e}")
         return None
 
 def search_yandex(query):
@@ -893,7 +1070,7 @@ def search_yandex(query):
             if any(ext in img.lower() for ext in ['.jpg', '.jpeg', '.png', '.webp']):
                 if not any(x in img.lower() for x in ['gstatic', 'google', 'favicon', 'logo']):
                     if not img.startswith('data:'):
-                        if is_photo_acceptable(img):
+                        if is_asian_photo(img) and is_age_appropriate(img):
                             clean_images.append(img)
         
         clean_images = list(dict.fromkeys(clean_images))
@@ -904,7 +1081,7 @@ def search_yandex(query):
         return None
         
     except Exception as e:
-        print(f"Ошибка Yandex: {e}")
+        logger.error(f"Ошибка Yandex: {e}")
         return None
 
 def search_pexels(query):
@@ -931,22 +1108,23 @@ def search_pexels(query):
             data = response.json()
             if data.get("photos"):
                 photos = data["photos"]
-                photo = random.choice(photos)
-                url = photo["src"]["large"]
-                if is_photo_acceptable(url):
-                    return url
+                random.shuffle(photos)
+                for photo in photos:
+                    url = photo["src"]["large"]
+                    if is_asian_photo(url) and is_age_appropriate(url):
+                        return url
         
         return None
         
     except Exception as e:
-        print(f"Ошибка Pexels: {e}")
+        logger.error(f"Ошибка Pexels: {e}")
         return None
 
 def get_random_photo():
     global history
     
     if len(history) > 80:
-        print("📊 История переполнена, очищаю...")
+        logger.info("История переполнена, очищаю...")
         history = []
         save_history(history)
     
@@ -954,7 +1132,7 @@ def get_random_photo():
     
     if random.random() < 0.1:
         queries.extend(FITNESS_QUERIES)
-        print("💪 Добавлен фитнес-запрос (редко)")
+        logger.info("Добавлен фитнес-запрос (редко)")
     
     random.shuffle(queries)
     
@@ -965,38 +1143,62 @@ def get_random_photo():
         ('Pexels', search_pexels),
     ]
     
+    # Проверяем несколько запросов для каждого источника
     for query in queries:
         for source_name, search_func in search_functions:
             try:
-                print(f"🔍 Поиск в {source_name}: {query}")
+                logger.info(f"Поиск в {source_name}: {query}")
+                
+                # Пробуем найти фото
                 photo = search_func(query)
-                if photo and photo not in history and is_photo_acceptable(photo):
+                
+                # Двойная проверка
+                if photo and photo not in history:
+                    # Проверяем, что это действительно азиатка
+                    if not is_asian_photo(photo):
+                        logger.debug(f"Пропущено (не азиатка): {photo[:60]}...")
+                        continue
+                    
+                    # Проверяем возраст
+                    if not is_age_appropriate(photo):
+                        logger.debug(f"Пропущено (возраст): {photo[:60]}...")
+                        continue
+                    
+                    # Проверяем традиционную одежду
+                    if is_traditional_clothing(photo):
+                        logger.debug(f"Пропущено (традиционная одежда): {photo[:60]}...")
+                        continue
+                    
+                    # Все проверки пройдены
                     history.append(photo)
                     save_history(history)
-                    print(f"✅ Найдено фото в {source_name}: {photo[:60]}...")
+                    logger.info(f"Найдено подходящее фото: {photo[:60]}...")
                     return photo
+                    
             except Exception as e:
-                print(f"⚠️ Ошибка в {source_name}: {e}")
+                logger.error(f"Ошибка в {source_name}: {e}")
                 continue
             
             time.sleep(0.3)
     
-    print("⚠️ Не удалось найти новое фото, очищаю историю...")
+    logger.warning("Не удалось найти новое фото, очищаю историю...")
     history = []
     save_history(history)
     
-    for query in queries:
+    # Повторяем поиск с очищенной историей
+    for query in queries[:10]:  # Ограничиваем количество попыток
         for source_name, search_func in search_functions:
             try:
                 photo = search_func(query)
-                if photo and is_photo_acceptable(photo):
+                if photo and is_asian_photo(photo) and is_age_appropriate(photo):
                     history.append(photo)
                     save_history(history)
-                    print(f"✅ Найдено фото после очистки: {photo[:60]}...")
+                    logger.info(f"Найдено фото после очистки: {photo[:60]}...")
                     return photo
             except:
                 continue
     
+    logger.error("Не удалось найти подходящее фото!")
     return None
 
 # ===== ОЧЕРЕДЬ ЗАДАЧ =====
@@ -1009,7 +1211,7 @@ class TaskQueue:
     
     async def connect(self):
         if not REDIS_AVAILABLE:
-            print("⚠️ Redis недоступен, использую локальную очередь")
+            logger.warning("Redis недоступен, использую локальную очередь")
             return False
         
         try:
@@ -1025,61 +1227,61 @@ class TaskQueue:
                 )
             await self.redis.ping()
             self.connected = True
-            print("✅ Redis подключен")
+            logger.info("Redis подключен")
             return True
         except Exception as e:
-            print(f"⚠️ Ошибка подключения к Redis: {e}")
+            logger.error(f"Ошибка подключения к Redis: {e}")
             self.connected = False
             return False
     
     async def push(self, queue_name: str, data: Dict[str, Any]):
         """Добавить задачу в очередь"""
-        if self.connected:
-            try:
+        try:
+            if self.connected:
                 task_id = f"{queue_name}:{int(time.time())}:{hashlib.md5(str(data).encode()).hexdigest()[:8]}"
                 await self.redis.rpush(queue_name, json.dumps({
                     "id": task_id,
                     "data": data,
                     "created_at": time.time()
                 }))
-                print(f"✅ Задача добавлена в очередь {queue_name}: {task_id}")
+                logger.info(f"Задача добавлена в очередь {queue_name}: {task_id}")
                 return True
-            except Exception as e:
-                print(f"❌ Ошибка добавления в Redis: {e}")
-                return False
-        else:
-            if queue_name not in self._local_queue:
-                self._local_queue[queue_name] = []
-            self._local_queue[queue_name].append(data)
-            print(f"✅ Задача добавлена в локальную очередь {queue_name}")
-            return True
+            else:
+                if queue_name not in self._local_queue:
+                    self._local_queue[queue_name] = []
+                self._local_queue[queue_name].append(data)
+                logger.info(f"Задача добавлена в локальную очередь {queue_name}")
+                return True
+        except Exception as e:
+            logger.error(f"Ошибка добавления в очередь: {e}")
+            return False
     
     async def pop(self, queue_name: str) -> Optional[Dict[str, Any]]:
         """Получить задачу из очереди"""
-        if self.connected:
-            try:
+        try:
+            if self.connected:
                 item = await self.redis.lpop(queue_name)
                 if item:
                     return json.loads(item)
                 return None
-            except Exception as e:
-                print(f"❌ Ошибка получения из Redis: {e}")
+            else:
+                if queue_name in self._local_queue and self._local_queue[queue_name]:
+                    return self._local_queue[queue_name].pop(0)
                 return None
-        else:
-            if queue_name in self._local_queue and self._local_queue[queue_name]:
-                return self._local_queue[queue_name].pop(0)
+        except Exception as e:
+            logger.error(f"Ошибка получения из очереди: {e}")
             return None
     
     async def get_queue_length(self, queue_name: str) -> int:
         """Получить длину очереди"""
-        if self.connected:
-            try:
-                return await self.redis.llen(queue_name)
-            except:
+        try:
+            if self.connected:
+                return await self.redis.llen(queue_name) or 0
+            else:
+                if queue_name in self._local_queue:
+                    return len(self._local_queue[queue_name])
                 return 0
-        else:
-            if queue_name in self._local_queue:
-                return len(self._local_queue[queue_name])
+        except:
             return 0
 
 task_queue = TaskQueue()
@@ -1123,117 +1325,149 @@ class ContentModerator:
     
     async def moderate_content(self, post: PostContent) -> Tuple[Optional[bool], str]:
         """Модерация контента. Возвращает: (одобрено, причина)"""
-        text_lower = post.caption.lower()
-        photo_lower = post.photo_url.lower()
-        
-        for word in self.banned_words:
-            if word in text_lower or word in photo_lower:
-                return False, f"Обнаружено запрещенное слово: {word}"
-        
-        for pattern in self.suspicious_patterns:
-            if re.search(pattern, post.caption, re.IGNORECASE):
-                return False, "Обнаружена подозрительная ссылка"
-        
-        if len(post.caption) < 100:
-            return False, "Слишком короткий текст"
-        
-        if len(post.caption) > 1024:
-            return False, "Превышен лимит символов"
-        
-        caption_hash = hashlib.md5(post.caption.encode()).hexdigest()
-        if caption_hash in [p.get('hash') for p in self.approved_history[-50:]]:
-            return False, "Похожий пост уже был опубликован"
-        
-        quality_score = self._check_text_quality(post.caption)
-        if quality_score >= self.auto_approve_threshold:
-            return True, "auto_approved"
-        
-        return None, "manual_review_required"
+        try:
+            text_lower = post.caption.lower()
+            photo_lower = post.photo_url.lower()
+            
+            for word in self.banned_words:
+                if word in text_lower or word in photo_lower:
+                    return False, f"Обнаружено запрещенное слово: {word}"
+            
+            for pattern in self.suspicious_patterns:
+                if re.search(pattern, post.caption, re.IGNORECASE):
+                    return False, "Обнаружена подозрительная ссылка"
+            
+            if len(post.caption) < 100:
+                return False, "Слишком короткий текст"
+            
+            if len(post.caption) > 1024:
+                return False, "Превышен лимит символов"
+            
+            caption_hash = hashlib.md5(post.caption.encode()).hexdigest()
+            if caption_hash in [p.get('hash') for p in self.approved_history[-50:]]:
+                return False, "Похожий пост уже был опубликован"
+            
+            quality_score = self._check_text_quality(post.caption)
+            if quality_score >= self.auto_approve_threshold:
+                return True, "auto_approved"
+            
+            return None, "manual_review_required"
+        except Exception as e:
+            logger.error(f"Ошибка модерации: {e}")
+            return False, f"Ошибка: {str(e)}"
     
     def _check_text_quality(self, text: str) -> float:
         """Проверка качества текста (0-1)"""
-        score = 0.0
-        
-        if 500 <= len(text) <= 900:
-            score += 0.3
-        elif 300 <= len(text) < 500:
-            score += 0.2
-        
-        sentences = re.split(r'[.!?]+', text)
-        if 5 <= len(sentences) <= 15:
-            score += 0.2
-        
-        if re.search(r'\b(бля|сука|пиздец|хуйня)\b', text.lower()):
-            score += 0.1
-        
-        if re.search(r'\b(вы|вам|вас|ваши)\b', text.lower()):
-            score += 0.1
-        
-        if re.search(r'\b(я|меня|мне|мой|моя|моего|моему)\b', text.lower()):
-            if re.search(r'\b(дурак|глупый|смешной|неловкий|странный)\b', text.lower()):
+        try:
+            score = 0.0
+            
+            if 500 <= len(text) <= 900:
+                score += 0.3
+            elif 300 <= len(text) < 500:
+                score += 0.2
+            
+            sentences = re.split(r'[.!?]+', text)
+            if 5 <= len(sentences) <= 15:
+                score += 0.2
+            
+            if re.search(r'\b(бля|сука|пиздец|хуйня)\b', text.lower()):
                 score += 0.1
-        
-        if self._check_structure(text):
-            score += 0.2
-        
-        return min(score, 1.0)
+            
+            if re.search(r'\b(вы|вам|вас|ваши)\b', text.lower()):
+                score += 0.1
+            
+            if re.search(r'\b(я|меня|мне|мой|моя|моего|моему)\b', text.lower()):
+                if re.search(r'\b(дурак|глупый|смешной|неловкий|странный)\b', text.lower()):
+                    score += 0.1
+            
+            if self._check_structure(text):
+                score += 0.2
+            
+            return min(score, 1.0)
+        except Exception as e:
+            logger.error(f"Ошибка проверки качества: {e}")
+            return 0.5
     
     def _check_structure(self, text: str) -> bool:
-        sentences = [s.strip() for s in re.split(r'[.!?]+', text) if s.strip()]
-        
-        if len(sentences) < 5:
+        try:
+            sentences = [s.strip() for s in re.split(r'[.!?]+', text) if s.strip()]
+            
+            if len(sentences) < 5:
+                return False
+            
+            first_sentence = sentences[0].lower()
+            hooks = ['сижу', 'стою', 'иду', 'вчера', 'сегодня', 'зашел', 'увидел', 'подумал']
+            has_hook = any(hook in first_sentence for hook in hooks)
+            
+            last_sentence = sentences[-1].lower()
+            conclusion_words = ['понял', 'вывод', 'итог', 'вот', 'значит', 'оказывается']
+            has_conclusion = any(word in last_sentence for word in conclusion_words)
+            
+            return has_hook and has_conclusion
+        except Exception as e:
+            logger.error(f"Ошибка проверки структуры: {e}")
             return False
-        
-        first_sentence = sentences[0].lower()
-        hooks = ['сижу', 'стою', 'иду', 'вчера', 'сегодня', 'зашел', 'увидел', 'подумал']
-        has_hook = any(hook in first_sentence for hook in hooks)
-        
-        last_sentence = sentences[-1].lower()
-        conclusion_words = ['понял', 'вывод', 'итог', 'вот', 'значит', 'оказывается']
-        has_conclusion = any(word in last_sentence for word in conclusion_words)
-        
-        return has_hook and has_conclusion
     
     async def manual_moderate(self, post_id: str, approved: bool, moderator_id: int, note: str = ""):
         """Ручная модерация"""
-        if post_id in self.pending_posts:
-            post = self.pending_posts[post_id]
-            post.status = ModerationStatus.APPROVED if approved else ModerationStatus.REJECTED
-            post.moderator_id = moderator_id
-            post.moderation_note = note
-            post.moderation_timestamp = time.time()
-            
-            if approved:
-                self.approved_history.append({
-                    'id': post_id,
-                    'hash': hashlib.md5(post.caption.encode()).hexdigest(),
-                    'timestamp': time.time()
-                })
-                if len(self.approved_history) > 100:
-                    self.approved_history = self.approved_history[-100:]
-            else:
-                self.rejected_history.append({
-                    'id': post_id,
-                    'note': note,
-                    'timestamp': time.time()
-                })
-            
-            return True
-        return False
+        try:
+            if post_id in self.pending_posts:
+                post = self.pending_posts[post_id]
+                post.status = ModerationStatus.APPROVED if approved else ModerationStatus.REJECTED
+                post.moderator_id = moderator_id
+                post.moderation_note = note
+                post.moderation_timestamp = time.time()
+                
+                if approved:
+                    self.approved_history.append({
+                        'id': post_id,
+                        'hash': hashlib.md5(post.caption.encode()).hexdigest(),
+                        'timestamp': time.time()
+                    })
+                    if len(self.approved_history) > 100:
+                        self.approved_history = self.approved_history[-100:]
+                else:
+                    self.rejected_history.append({
+                        'id': post_id,
+                        'note': note,
+                        'timestamp': time.time()
+                    })
+                
+                return True
+            return False
+        except Exception as e:
+            logger.error(f"Ошибка ручной модерации: {e}")
+            return False
 
 moderator = ContentModerator()
 
 # ===== ОБРАБОТЧИК ОЧЕРЕДИ =====
 
 async def send_post(chat_id, photo_url=None, caption=None):
-    """Отправка поста"""
+    """Отправка поста с двойной проверкой"""
     try:
+        # Если photo_url не передан - ищем
         if not photo_url:
             photo_url = get_random_photo()
         
         if not photo_url:
+            logger.error("Не удалось найти фото")
             return False
         
+        # Финальная проверка перед отправкой
+        if not is_asian_photo(photo_url):
+            logger.warning(f"Фото не азиатской внешности: {photo_url[:60]}...")
+            return False
+        
+        if not is_age_appropriate(photo_url):
+            logger.warning(f"Возраст не подходит: {photo_url[:60]}...")
+            return False
+        
+        if is_traditional_clothing(photo_url):
+            logger.warning(f"Традиционная одежда: {photo_url[:60]}...")
+            return False
+        
+        # Генерация подписи
         if not caption:
             caption = generate_caption()
             caption = clean_text(caption)
@@ -1248,9 +1482,10 @@ async def send_post(chat_id, photo_url=None, caption=None):
                 if validated:
                     caption = validated
         
+        # Отправка
         if not caption:
             await bot.send_photo(chat_id=chat_id, photo=photo_url)
-            print(f"✅ Фото (без подписи) отправлено в чат {chat_id}")
+            logger.info(f"Фото (без подписи) отправлено в чат {chat_id}")
             return True
         
         if len(caption) > 1024:
@@ -1261,29 +1496,32 @@ async def send_post(chat_id, photo_url=None, caption=None):
             photo=photo_url,
             caption=caption
         )
-        print(f"✅ Пост отправлен в чат {chat_id}")
+        logger.info(f"Пост отправлен в чат {chat_id}")
         return True
         
-    except Exception as e:
-        print(f"❌ Ошибка отправки в {chat_id}: {e}")
+    except TelegramAPIError as e:
+        logger.error(f"Ошибка Telegram при отправке в {chat_id}: {e}")
         if "forbidden" in str(e).lower() or "chat not found" in str(e).lower():
             users = load_users()
             if chat_id in users:
                 users.remove(chat_id)
                 save_users(users)
-                print(f"🗑️ Пользователь {chat_id} удалён из-за ошибки")
+                logger.info(f"Пользователь {chat_id} удалён из-за ошибки")
+        return False
+    except Exception as e:
+        logger.error(f"Ошибка отправки в {chat_id}: {e}")
         return False
 
 async def queue_processor():
     """Обработчик очереди задач"""
-    print("🔄 Запущен обработчик очереди...")
+    logger.info("Запущен обработчик очереди...")
     
     while True:
         try:
             task = await task_queue.pop(QUEUE_NAME)
             
             if task:
-                print(f"📨 Получена задача из очереди: {task.get('id', 'unknown')}")
+                logger.info(f"Получена задача из очереди: {task.get('id', 'unknown')}")
                 
                 # Извлекаем данные из задачи
                 if 'data' in task:
@@ -1293,14 +1531,14 @@ async def queue_processor():
                 
                 if data.get('needs_moderation', False):
                     await task_queue.push(MODERATION_QUEUE, data)
-                    print("📋 Задача отправлена на модерацию")
+                    logger.info("Задача отправлена на модерацию")
                     continue
                 
                 await process_post_task(data)
             
             mod_task = await task_queue.pop(MODERATION_QUEUE)
             if mod_task:
-                print(f"📋 Получена задача модерации: {mod_task.get('id', 'unknown')}")
+                logger.info(f"Получена задача модерации: {mod_task.get('id', 'unknown')}")
                 if 'data' in mod_task:
                     data = mod_task['data']
                 else:
@@ -1310,7 +1548,7 @@ async def queue_processor():
             await asyncio.sleep(1)
             
         except Exception as e:
-            print(f"❌ Ошибка в обработчике очереди: {e}")
+            logger.error(f"Ошибка в обработчике очереди: {e}")
             import traceback
             traceback.print_exc()
             await asyncio.sleep(5)
@@ -1323,14 +1561,14 @@ async def process_post_task(data: Dict[str, Any]):
         caption = data.get('caption')
         
         if not chat_id:
-            print("❌ Нет chat_id в задаче")
+            logger.error("Нет chat_id в задаче")
             return
         
         await send_post(chat_id, photo_url, caption)
-        print(f"✅ Пост отправлен в {chat_id}")
+        logger.info(f"Пост отправлен в {chat_id}")
         
     except Exception as e:
-        print(f"❌ Ошибка обработки задачи: {e}")
+        logger.error(f"Ошибка обработки задачи: {e}")
 
 async def process_moderation_task(data: Dict[str, Any]):
     """Обработка задачи модерации"""
@@ -1354,7 +1592,7 @@ async def process_moderation_task(data: Dict[str, Any]):
         
         if approved is True:
             post.status = ModerationStatus.AUTO_APPROVED
-            print(f"✅ Пост {post_id} автоматически одобрен: {reason}")
+            logger.info(f"Пост {post_id} автоматически одобрен: {reason}")
             
             await task_queue.push(QUEUE_NAME, {
                 'id': post_id,
@@ -1371,14 +1609,14 @@ async def process_moderation_task(data: Dict[str, Any]):
             moderator.pending_posts[post_id] = post
             
             await notify_owner_for_moderation(post_id, post)
-            print(f"📋 Пост {post_id} отправлен на ручную модерацию")
+            logger.info(f"Пост {post_id} отправлен на ручную модерацию")
             
         else:
             post.status = ModerationStatus.REJECTED
-            print(f"❌ Пост {post_id} отклонен: {reason}")
+            logger.info(f"Пост {post_id} отклонен: {reason}")
             
     except Exception as e:
-        print(f"❌ Ошибка модерации: {e}")
+        logger.error(f"Ошибка модерации: {e}")
         import traceback
         traceback.print_exc()
 
@@ -1407,19 +1645,19 @@ async def notify_owner_for_moderation(post_id: str, post: PostContent):
             reply_markup=keyboard
         )
     except Exception as e:
-        print(f"❌ Ошибка уведомления владельца: {e}")
+        logger.error(f"Ошибка уведомления владельца: {e}")
 
 async def generate_and_queue_post(chat_id: str, user_id: int = 0, skip_moderation: bool = False):
     """Генерирует пост и добавляет в очередь"""
     try:
         photo_url = get_random_photo()
         if not photo_url:
-            print("❌ Не удалось найти фото")
+            logger.error("Не удалось найти фото")
             return False
         
         caption = generate_caption()
         if not caption:
-            print("❌ Не удалось сгенерировать текст")
+            logger.error("Не удалось сгенерировать текст")
             return False
         
         post_id = f"post_{int(time.time())}_{hashlib.md5(caption.encode()).hexdigest()[:8]}"
@@ -1436,79 +1674,82 @@ async def generate_and_queue_post(chat_id: str, user_id: int = 0, skip_moderatio
         
         if skip_moderation:
             await task_queue.push(QUEUE_NAME, post_data)
-            print(f"✅ Пост {post_id} добавлен в очередь отправки")
+            logger.info(f"Пост {post_id} добавлен в очередь отправки")
             return True
         
         await task_queue.push(MODERATION_QUEUE, {
             'id': post_id,
             'post_data': post_data
         })
-        print(f"📋 Пост {post_id} добавлен в очередь модерации")
+        logger.info(f"Пост {post_id} добавлен в очередь модерации")
         return True
         
     except Exception as e:
-        print(f"❌ Ошибка генерации поста: {e}")
+        logger.error(f"Ошибка генерации поста: {e}")
         return False
 
 async def send_to_all_users():
     """Отправка поста всем пользователям через очередь"""
-    users = load_users()
-    
-    if not users:
-        print("⚠️ Нет пользователей для отправки")
-        return
-    
-    print(f"📤 Добавление постов в очередь для {len(users)} пользователей...")
-    
-    photo_url = get_random_photo()
-    if not photo_url:
-        print("❌ Не удалось найти фото")
-        return
-    
-    caption = generate_caption()
-    caption = clean_text(caption)
-    caption = truncate_by_sentences(caption)
-    validated, error = validate_caption(caption)
-    if validated:
-        caption = validated
-    else:
-        caption = clean_text(get_fallback_caption())
+    try:
+        users = load_users()
+        
+        if not users:
+            logger.warning("Нет пользователей для отправки")
+            return
+        
+        logger.info(f"Добавление постов в очередь для {len(users)} пользователей...")
+        
+        photo_url = get_random_photo()
+        if not photo_url:
+            logger.error("Не удалось найти фото")
+            return
+        
+        caption = generate_caption()
+        caption = clean_text(caption)
         caption = truncate_by_sentences(caption)
         validated, error = validate_caption(caption)
         if validated:
             caption = validated
-    
-    base_post_id = f"post_{int(time.time())}"
-    
-    for chat_id in users:
-        post_data = {
-            'id': f"{base_post_id}_{chat_id}",
-            'chat_id': chat_id,
-            'photo_url': photo_url,
-            'caption': caption,
-            'user_id': 0,
-            'timestamp': time.time(),
-            'needs_moderation': False
-        }
+        else:
+            caption = clean_text(get_fallback_caption())
+            caption = truncate_by_sentences(caption)
+            validated, error = validate_caption(caption)
+            if validated:
+                caption = validated
         
-        await task_queue.push(QUEUE_NAME, post_data)
-    
-    channel_id = CHANNEL_ID
-    if not channel_id or not channel_id.strip():
-        channel_id = await get_channel_id()
-    
-    if channel_id:
-        await task_queue.push(QUEUE_NAME, {
-            'id': f"{base_post_id}_channel",
-            'chat_id': channel_id,
-            'photo_url': photo_url,
-            'caption': caption,
-            'user_id': 0,
-            'timestamp': time.time(),
-            'needs_moderation': False
-        })
-    
-    print(f"✅ {len(users)} задач добавлены в очередь")
+        base_post_id = f"post_{int(time.time())}"
+        
+        for chat_id in users:
+            post_data = {
+                'id': f"{base_post_id}_{chat_id}",
+                'chat_id': chat_id,
+                'photo_url': photo_url,
+                'caption': caption,
+                'user_id': 0,
+                'timestamp': time.time(),
+                'needs_moderation': False
+            }
+            
+            await task_queue.push(QUEUE_NAME, post_data)
+        
+        channel_id = CHANNEL_ID
+        if not channel_id or not channel_id.strip():
+            channel_id = await get_channel_id()
+        
+        if channel_id:
+            await task_queue.push(QUEUE_NAME, {
+                'id': f"{base_post_id}_channel",
+                'chat_id': channel_id,
+                'photo_url': photo_url,
+                'caption': caption,
+                'user_id': 0,
+                'timestamp': time.time(),
+                'needs_moderation': False
+            })
+        
+        logger.info(f"{len(users)} задач добавлены в очередь")
+    except Exception as e:
+        logger.error(f"Ошибка в send_to_all_users: {e}")
 
 async def get_channel_id() -> Optional[str]:
     """Получение ID канала"""
@@ -1517,7 +1758,7 @@ async def get_channel_id() -> Optional[str]:
     
     try:
         me = await bot.get_me()
-        print(f"🤖 Бот: @{me.username}")
+        logger.info(f"Бот: @{me.username}")
         
         try:
             async with asyncio.timeout(10):
@@ -1528,17 +1769,17 @@ async def get_channel_id() -> Optional[str]:
                         try:
                             chat_member = await bot.get_chat_member(chat_id, bot.id)
                             if chat_member.status in ["administrator", "creator"]:
-                                print(f"✅ Найден канал: {chat_id}")
+                                logger.info(f"Найден канал: {chat_id}")
                                 return str(chat_id)
                         except:
                             pass
         except asyncio.TimeoutError:
-            print("⚠️ Таймаут получения обновлений")
+            logger.warning("Таймаут получения обновлений")
         except Exception as e:
-            print(f"⚠️ Ошибка получения обновлений: {e}")
+            logger.error(f"Ошибка получения обновлений: {e}")
             
     except Exception as e:
-        print(f"⚠️ Ошибка поиска канала: {e}")
+        logger.error(f"Ошибка поиска канала: {e}")
     
     return None
 
@@ -1546,282 +1787,319 @@ async def get_channel_id() -> Optional[str]:
 
 async def check_user_can_use_command(message: Message) -> bool:
     """Проверяет, может ли пользователь использовать команду"""
-    chat_type = message.chat.type
-    
-    if chat_type == "private":
-        return True
-    
-    if chat_type in ["group", "supergroup"]:
-        return await is_user_admin(message.chat.id, message.from_user.id)
-    
-    return False
+    try:
+        chat_type = message.chat.type
+        
+        if chat_type == "private":
+            return True
+        
+        if chat_type in ["group", "supergroup"]:
+            return await is_user_admin(message.chat.id, message.from_user.id)
+        
+        return False
+    except Exception as e:
+        logger.error(f"Ошибка проверки прав: {e}")
+        return False
 
 async def is_user_admin(chat_id: int, user_id: int) -> bool:
     try:
         chat_member = await bot.get_chat_member(chat_id, user_id)
         return chat_member.status in ["administrator", "creator"]
-    except:
+    except Exception as e:
+        logger.error(f"Ошибка проверки админа: {e}")
         return False
 
 @dp.callback_query(lambda c: c.data.startswith('mod_'))
 async def handle_moderation_callback(callback: CallbackQuery):
     """Обработка callback'ов модерации"""
-    if callback.from_user.id != OWNER_ID:
-        await callback.answer("⛔ Доступ запрещен", show_alert=True)
-        return
-    
-    parts = callback.data.split('_')
-    action = parts[1]
-    post_id = '_'.join(parts[2:])
-    approved = action == 'approve'
-    
-    if post_id not in moderator.pending_posts:
-        await callback.answer("❌ Пост не найден", show_alert=True)
-        return
-    
-    post = moderator.pending_posts[post_id]
-    
-    if approved:
-        await moderator.manual_moderate(post_id, True, callback.from_user.id, "Одобрено владельцем")
+    try:
+        if callback.from_user.id != OWNER_ID:
+            await callback.answer("⛔ Доступ запрещен", show_alert=True)
+            return
         
-        await task_queue.push(QUEUE_NAME, {
-            'id': post_id,
-            'chat_id': post.chat_id,
-            'photo_url': post.photo_url,
-            'caption': post.caption,
-            'user_id': 0,
-            'timestamp': time.time(),
-            'needs_moderation': False
-        })
+        parts = callback.data.split('_')
+        action = parts[1]
+        post_id = '_'.join(parts[2:])
+        approved = action == 'approve'
         
-        await callback.answer("✅ Пост одобрен и отправлен в очередь", show_alert=True)
-        await callback.message.edit_text(
-            callback.message.text + "\n\n✅ ОДОБРЕН",
-            reply_markup=None
-        )
-    else:
-        await moderator.manual_moderate(post_id, False, callback.from_user.id, "Отклонено владельцем")
-        await callback.answer("❌ Пост отклонен", show_alert=True)
-        await callback.message.edit_text(
-            callback.message.text + "\n\n❌ ОТКЛОНЕН",
-            reply_markup=None
-        )
+        if post_id not in moderator.pending_posts:
+            await callback.answer("❌ Пост не найден", show_alert=True)
+            return
+        
+        post = moderator.pending_posts[post_id]
+        
+        if approved:
+            await moderator.manual_moderate(post_id, True, callback.from_user.id, "Одобрено владельцем")
+            
+            await task_queue.push(QUEUE_NAME, {
+                'id': post_id,
+                'chat_id': post.chat_id,
+                'photo_url': post.photo_url,
+                'caption': post.caption,
+                'user_id': 0,
+                'timestamp': time.time(),
+                'needs_moderation': False
+            })
+            
+            await callback.answer("✅ Пост одобрен и отправлен в очередь", show_alert=True)
+            await callback.message.edit_text(
+                callback.message.text + "\n\n✅ ОДОБРЕН",
+                reply_markup=None
+            )
+        else:
+            await moderator.manual_moderate(post_id, False, callback.from_user.id, "Отклонено владельцем")
+            await callback.answer("❌ Пост отклонен", show_alert=True)
+            await callback.message.edit_text(
+                callback.message.text + "\n\n❌ ОТКЛОНЕН",
+                reply_markup=None
+            )
+    except Exception as e:
+        logger.error(f"Ошибка в callback модерации: {e}")
+        await callback.answer("❌ Ошибка", show_alert=True)
 
 @dp.message(Command("start"))
 async def start(msg: Message):
-    chat_id = msg.chat.id
-    user_id = msg.from_user.id
-    chat_type = msg.chat.type
-    
-    if chat_type == "channel":
-        await msg.answer("ℹ️ Я работаю в канале автоматически, команды не требуются.")
-        return
-    
-    if not await check_user_can_use_command(msg):
-        await msg.reply("⛔ Эта команда только для администраторов группы.")
-        return
-    
-    if chat_type in ["group", "supergroup"]:
-        try:
-            chat_member = await bot.get_chat_member(chat_id, bot.id)
-            is_admin = chat_member.status in ["administrator", "creator"]
-        except:
-            is_admin = False
+    try:
+        chat_id = msg.chat.id
+        user_id = msg.from_user.id
+        chat_type = msg.chat.type
         
-        if not is_admin:
-            await msg.answer("❌ Я должен быть администратором группы!")
+        if chat_type == "channel":
+            await msg.answer("ℹ️ Я работаю в канале автоматически, команды не требуются.")
             return
-    
-    if chat_id not in users:
-        users.append(chat_id)
-        save_users(users)
-        print(f"✅ Добавлен пользователь: {chat_id}")
-    
-    await generate_and_queue_post(str(chat_id), user_id, skip_moderation=True)
-    
-    channel_status = f"\n📢 Канал: {'✅ подключён' if CHANNEL_ID and CHANNEL_ID.strip() else '🔄 авто-поиск'}"
-    current_schedule = load_schedule()
-    times = ", ".join(current_schedule.get("times", ["12:00", "21:00"]))
-    
-    await msg.answer(
-        f"✅ Вы подписаны на рассылку!\n"
-        f"📸 Уникальные посты про молодых азиаток (18-30 лет)\n"
-        f"⏰ Расписание: {times}\n"
-        f"{channel_status}\n"
-        f"🔄 /photo - получить фото сейчас\n"
-        f"⏰ /schedule - изменить расписание\n"
-        f"🛑 /stop - отписаться"
-    )
+        
+        if not await check_user_can_use_command(msg):
+            await msg.reply("⛔ Эта команда только для администраторов группы.")
+            return
+        
+        if chat_type in ["group", "supergroup"]:
+            try:
+                chat_member = await bot.get_chat_member(chat_id, bot.id)
+                is_admin = chat_member.status in ["administrator", "creator"]
+            except:
+                is_admin = False
+            
+            if not is_admin:
+                await msg.answer("❌ Я должен быть администратором группы!")
+                return
+        
+        if chat_id not in users:
+            users.append(chat_id)
+            save_users(users)
+            logger.info(f"Добавлен пользователь: {chat_id}")
+        
+        await generate_and_queue_post(str(chat_id), user_id, skip_moderation=True)
+        
+        channel_status = f"\n📢 Канал: {'✅ подключён' if CHANNEL_ID and CHANNEL_ID.strip() else '🔄 авто-поиск'}"
+        current_schedule = load_schedule()
+        times = ", ".join(current_schedule.get("times", ["12:00", "21:00"]))
+        
+        await msg.answer(
+            f"✅ Вы подписаны на рассылку!\n"
+            f"📸 Уникальные посты про молодых азиаток (18-30 лет)\n"
+            f"⏰ Расписание: {times}\n"
+            f"{channel_status}\n"
+            f"🔄 /photo - получить фото сейчас\n"
+            f"⏰ /schedule - изменить расписание\n"
+            f"🛑 /stop - отписаться"
+        )
+    except Exception as e:
+        logger.error(f"Ошибка в команде start: {e}")
+        await msg.answer("❌ Произошла ошибка. Попробуйте позже.")
 
 @dp.message(Command("photo"))
 async def photo(msg: Message):
-    chat_id = msg.chat.id
-    user_id = msg.from_user.id
-    chat_type = msg.chat.type
-    
-    if chat_type == "channel":
-        await msg.answer("ℹ️ В канале отправка по команде не требуется.")
-        return
-    
-    if not await check_user_can_use_command(msg):
-        await msg.reply("⛔ Только администраторы могут запрашивать фото.")
-        return
-    
-    if chat_id not in users:
-        await msg.answer("⚠️ Бот не активирован. Напишите /start")
-        return
-    
-    is_owner = (user_id == OWNER_ID)
-    
-    if is_owner:
-        await generate_and_queue_post(str(chat_id), user_id, skip_moderation=True)
+    try:
+        chat_id = msg.chat.id
+        user_id = msg.from_user.id
+        chat_type = msg.chat.type
         
-        channel_id = CHANNEL_ID
-        if not channel_id or not channel_id.strip():
-            channel_id = await get_channel_id()
+        if chat_type == "channel":
+            await msg.answer("ℹ️ В канале отправка по команде не требуется.")
+            return
         
-        if channel_id:
-            await generate_and_queue_post(str(channel_id), user_id, skip_moderation=True)
-            await msg.answer("✅ Посты добавлены в очередь")
-    else:
-        await generate_and_queue_post(str(chat_id), user_id, skip_moderation=True)
-        await msg.answer("✅ Пост добавлен в очередь")
+        if not await check_user_can_use_command(msg):
+            await msg.reply("⛔ Только администраторы могут запрашивать фото.")
+            return
+        
+        if chat_id not in users:
+            await msg.answer("⚠️ Бот не активирован. Напишите /start")
+            return
+        
+        is_owner = (user_id == OWNER_ID)
+        
+        if is_owner:
+            await generate_and_queue_post(str(chat_id), user_id, skip_moderation=True)
+            
+            channel_id = CHANNEL_ID
+            if not channel_id or not channel_id.strip():
+                channel_id = await get_channel_id()
+            
+            if channel_id:
+                await generate_and_queue_post(str(channel_id), user_id, skip_moderation=True)
+                await msg.answer("✅ Посты добавлены в очередь")
+        else:
+            await generate_and_queue_post(str(chat_id), user_id, skip_moderation=True)
+            await msg.answer("✅ Пост добавлен в очередь")
+    except Exception as e:
+        logger.error(f"Ошибка в команде photo: {e}")
+        await msg.answer("❌ Произошла ошибка. Попробуйте позже.")
 
 @dp.message(Command("stop"))
 async def stop(msg: Message):
-    chat_id = msg.chat.id
-    chat_type = msg.chat.type
-    
-    if chat_type == "channel":
-        await msg.answer("ℹ️ В канале отписка не требуется.")
-        return
-    
-    if not await check_user_can_use_command(msg):
-        await msg.reply("⛔ Только администраторы могут отключить бота.")
-        return
-    
-    if chat_id in users:
-        users.remove(chat_id)
-        save_users(users)
-        await msg.answer("🛑 Вы отписаны от рассылки")
-        print(f"🛑 Удалён пользователь: {chat_id}")
-    else:
-        await msg.answer("ℹ️ Вы и так не подписаны")
+    try:
+        chat_id = msg.chat.id
+        chat_type = msg.chat.type
+        
+        if chat_type == "channel":
+            await msg.answer("ℹ️ В канале отписка не требуется.")
+            return
+        
+        if not await check_user_can_use_command(msg):
+            await msg.reply("⛔ Только администраторы могут отключить бота.")
+            return
+        
+        if chat_id in users:
+            users.remove(chat_id)
+            save_users(users)
+            await msg.answer("🛑 Вы отписаны от рассылки")
+            logger.info(f"Удалён пользователь: {chat_id}")
+        else:
+            await msg.answer("ℹ️ Вы и так не подписаны")
+    except Exception as e:
+        logger.error(f"Ошибка в команде stop: {e}")
+        await msg.answer("❌ Произошла ошибка. Попробуйте позже.")
 
 @dp.message(Command("status"))
 async def status(msg: Message):
-    chat_id = msg.chat.id
-    chat_type = msg.chat.type
-    
-    if chat_type == "channel":
-        channel_info = f"📊 Статус канала:\n"
-        channel_info += f"• ID: {chat_id}\n"
-        channel_info += f"• Бот: {'✅ админ' if await is_user_admin(chat_id, bot.id) else '❌ не админ'}"
-        await msg.answer(channel_info)
-        return
-    
-    if not await check_user_can_use_command(msg):
-        await msg.reply("⛔ Только администраторы могут смотреть статус.")
-        return
-    
-    is_subscribed = chat_id in users
-    channel_id = CHANNEL_ID or await get_channel_id()
-    current_schedule = load_schedule()
-    times = ", ".join(current_schedule.get("times", ["12:00", "21:00"]))
-    
-    status_text = (
-        f"📊 Статус бота:\n"
-        f"• Подписка: {'✅ Активна' if is_subscribed else '❌ Неактивна'}\n"
-        f"• Всего подписчиков: {len(users)}\n"
-        f"• Фото в истории: {len(history)}\n"
-        f"• Расписание: {times}\n"
-        f"• Канал: {'✅ ' + channel_id if channel_id else '❌ не найден'}"
-    )
-    
-    await msg.answer(status_text)
+    try:
+        chat_id = msg.chat.id
+        chat_type = msg.chat.type
+        
+        if chat_type == "channel":
+            channel_info = f"📊 Статус канала:\n"
+            channel_info += f"• ID: {chat_id}\n"
+            channel_info += f"• Бот: {'✅ админ' if await is_user_admin(chat_id, bot.id) else '❌ не админ'}"
+            await msg.answer(channel_info)
+            return
+        
+        if not await check_user_can_use_command(msg):
+            await msg.reply("⛔ Только администраторы могут смотреть статус.")
+            return
+        
+        is_subscribed = chat_id in users
+        channel_id = CHANNEL_ID or await get_channel_id()
+        current_schedule = load_schedule()
+        times = ", ".join(current_schedule.get("times", ["12:00", "21:00"]))
+        
+        status_text = (
+            f"📊 Статус бота:\n"
+            f"• Подписка: {'✅ Активна' if is_subscribed else '❌ Неактивна'}\n"
+            f"• Всего подписчиков: {len(users)}\n"
+            f"• Фото в истории: {len(history)}\n"
+            f"• Расписание: {times}\n"
+            f"• Канал: {'✅ ' + channel_id if channel_id else '❌ не найден'}"
+        )
+        
+        await msg.answer(status_text)
+    except Exception as e:
+        logger.error(f"Ошибка в команде status: {e}")
+        await msg.answer("❌ Произошла ошибка. Попробуйте позже.")
 
 @dp.message(Command("schedule"))
 async def schedule(msg: Message):
-    if not await check_user_can_use_command(msg):
-        await msg.reply("⛔ Только администраторы могут изменять расписание.")
-        return
-    
-    if msg.from_user.id != OWNER_ID:
-        await msg.answer("⛔ Доступ запрещён. Только для владельца.")
-        return
-    
-    args = msg.text.replace("/schedule", "").strip()
-    
-    if not args:
-        current_schedule = load_schedule()
-        times = ", ".join(current_schedule.get("times", ["12:00", "21:00"]))
-        await msg.answer(
-            f"📅 Текущее расписание: {times}\n\n"
-            f"Чтобы изменить, напишите:\n"
-            f"/schedule 10:00, 15:00, 22:00\n\n"
-            f"Укажите от 1 до 4 времен в формате ЧЧ:ММ через запятую."
-        )
-        return
-    
-    new_times = []
-    for time_str in args.split(','):
-        time_str = time_str.strip()
-        try:
-            hour, minute = map(int, time_str.split(':'))
-            if 0 <= hour <= 23 and 0 <= minute <= 59:
-                new_times.append(f"{hour:02d}:{minute:02d}")
-        except:
-            continue
-    
-    if not new_times:
-        await msg.answer("❌ Неверный формат. Используйте: /schedule 12:00, 21:00")
-        return
-    
-    if len(new_times) > 4:
-        await msg.answer("❌ Максимум 4 времени.")
-        return
-    
-    schedule_data["times"] = new_times
-    save_schedule(schedule_data)
-    
-    times = ", ".join(new_times)
-    await msg.answer(f"✅ Расписание обновлено: {times}")
+    try:
+        if not await check_user_can_use_command(msg):
+            await msg.reply("⛔ Только администраторы могут изменять расписание.")
+            return
+        
+        if msg.from_user.id != OWNER_ID:
+            await msg.answer("⛔ Доступ запрещён. Только для владельца.")
+            return
+        
+        args = msg.text.replace("/schedule", "").strip()
+        
+        if not args:
+            current_schedule = load_schedule()
+            times = ", ".join(current_schedule.get("times", ["12:00", "21:00"]))
+            await msg.answer(
+                f"📅 Текущее расписание: {times}\n\n"
+                f"Чтобы изменить, напишите:\n"
+                f"/schedule 10:00, 15:00, 22:00\n\n"
+                f"Укажите от 1 до 4 времен в формате ЧЧ:ММ через запятую."
+            )
+            return
+        
+        new_times = []
+        for time_str in args.split(','):
+            time_str = time_str.strip()
+            try:
+                hour, minute = map(int, time_str.split(':'))
+                if 0 <= hour <= 23 and 0 <= minute <= 59:
+                    new_times.append(f"{hour:02d}:{minute:02d}")
+            except:
+                continue
+        
+        if not new_times:
+            await msg.answer("❌ Неверный формат. Используйте: /schedule 12:00, 21:00")
+            return
+        
+        if len(new_times) > 4:
+            await msg.answer("❌ Максимум 4 времени.")
+            return
+        
+        schedule_data["times"] = new_times
+        save_schedule(schedule_data)
+        
+        times = ", ".join(new_times)
+        await msg.answer(f"✅ Расписание обновлено: {times}")
+    except Exception as e:
+        logger.error(f"Ошибка в команде schedule: {e}")
+        await msg.answer("❌ Произошла ошибка. Попробуйте позже.")
 
 @dp.message(Command("moderate"))
 async def moderate_pending(msg: Message):
     """Показать посты на модерации"""
-    if msg.from_user.id != OWNER_ID:
-        await msg.answer("⛔ Доступ запрещён")
-        return
-    
-    if not moderator.pending_posts:
-        await msg.answer("📭 Нет постов на модерации")
-        return
-    
-    count = len(moderator.pending_posts)
-    await msg.answer(f"📋 На модерации: {count} постов\n"
-                    f"Используйте кнопки в уведомлениях для модерации")
+    try:
+        if msg.from_user.id != OWNER_ID:
+            await msg.answer("⛔ Доступ запрещён")
+            return
+        
+        if not moderator.pending_posts:
+            await msg.answer("📭 Нет постов на модерации")
+            return
+        
+        count = len(moderator.pending_posts)
+        await msg.answer(f"📋 На модерации: {count} постов\n"
+                        f"Используйте кнопки в уведомлениях для модерации")
+    except Exception as e:
+        logger.error(f"Ошибка в команде moderate: {e}")
+        await msg.answer("❌ Произошла ошибка. Попробуйте позже.")
 
 @dp.message(Command("moderation_stats"))
 async def moderation_stats(msg: Message):
     """Статистика модерации"""
-    if msg.from_user.id != OWNER_ID:
-        await msg.answer("⛔ Доступ запрещён")
-        return
-    
-    stats = f"📊 Статистика модерации:\n"
-    stats += f"• На модерации: {len(moderator.pending_posts)}\n"
-    stats += f"• Одобрено: {len(moderator.approved_history)}\n"
-    stats += f"• Отклонено: {len(moderator.rejected_history)}\n"
-    
-    queue_len = await task_queue.get_queue_length(QUEUE_NAME)
-    mod_queue_len = await task_queue.get_queue_length(MODERATION_QUEUE)
-    
-    stats += f"\n📊 Очереди:\n"
-    stats += f"• Отправка: {queue_len}\n"
-    stats += f"• Модерация: {mod_queue_len}"
-    
-    await msg.answer(stats)
+    try:
+        if msg.from_user.id != OWNER_ID:
+            await msg.answer("⛔ Доступ запрещён")
+            return
+        
+        stats = f"📊 Статистика модерации:\n"
+        stats += f"• На модерации: {len(moderator.pending_posts)}\n"
+        stats += f"• Одобрено: {len(moderator.approved_history)}\n"
+        stats += f"• Отклонено: {len(moderator.rejected_history)}\n"
+        
+        queue_len = await task_queue.get_queue_length(QUEUE_NAME)
+        mod_queue_len = await task_queue.get_queue_length(MODERATION_QUEUE)
+        
+        stats += f"\n📊 Очереди:\n"
+        stats += f"• Отправка: {queue_len}\n"
+        stats += f"• Модерация: {mod_queue_len}"
+        
+        await msg.answer(stats)
+    except Exception as e:
+        logger.error(f"Ошибка в команде moderation_stats: {e}")
+        await msg.answer("❌ Произошла ошибка. Попробуйте позже.")
 
 # ===== РАСПИСАНИЕ =====
 
@@ -1831,100 +2109,134 @@ async def scheduler():
     global is_sending
     
     await asyncio.sleep(10)
-    print("✅ Планировщик запущен")
+    logger.info("Планировщик запущен")
     
     while True:
-        now = datetime.now()
-        current_schedule = load_schedule()
-        times = current_schedule.get("times", ["12:00", "21:00"])
-        
-        target_times = []
-        for time_str in times:
-            try:
-                hour, minute = map(int, time_str.split(':'))
-                target = datetime(now.year, now.month, now.day, hour, minute, 0)
-                if target <= now:
-                    target += timedelta(days=1)
-                target_times.append(target)
-            except:
-                continue
-        
-        if not target_times:
-            target_times = [
-                datetime(now.year, now.month, now.day, 12, 0, 0),
-                datetime(now.year, now.month, now.day, 21, 0, 0)
-            ]
-            if target_times[0] <= now:
-                target_times[0] += timedelta(days=1)
-            if target_times[1] <= now:
-                target_times[1] += timedelta(days=1)
-        
-        target_times.sort()
-        
-        for target_time in target_times:
-            wait_seconds = (target_time - now).total_seconds()
-            if wait_seconds > 0:
-                print(f"⏳ Следующая отправка в {target_time.strftime('%H:%M')} (через {wait_seconds/3600:.1f} часов)")
-                await asyncio.sleep(wait_seconds)
-            
-            if not is_sending:
-                is_sending = True
-                try:
-                    await send_to_all_users()
-                except Exception as e:
-                    print(f"❌ Ошибка отправки: {e}")
-                finally:
-                    is_sending = False
-            else:
-                print("⚠️ Отправка уже идёт, пропускаем")
-            
+        try:
             now = datetime.now()
+            current_schedule = load_schedule()
+            times = current_schedule.get("times", ["12:00", "21:00"])
+            
+            target_times = []
+            for time_str in times:
+                try:
+                    hour, minute = map(int, time_str.split(':'))
+                    target = datetime(now.year, now.month, now.day, hour, minute, 0)
+                    if target <= now:
+                        target += timedelta(days=1)
+                    target_times.append(target)
+                except:
+                    continue
+            
+            if not target_times:
+                target_times = [
+                    datetime(now.year, now.month, now.day, 12, 0, 0),
+                    datetime(now.year, now.month, now.day, 21, 0, 0)
+                ]
+                if target_times[0] <= now:
+                    target_times[0] += timedelta(days=1)
+                if target_times[1] <= now:
+                    target_times[1] += timedelta(days=1)
+            
+            target_times.sort()
+            
+            for target_time in target_times:
+                wait_seconds = (target_time - now).total_seconds()
+                if wait_seconds > 0:
+                    logger.info(f"Следующая отправка в {target_time.strftime('%H:%M')} (через {wait_seconds/3600:.1f} часов)")
+                    await asyncio.sleep(wait_seconds)
+                
+                if not is_sending:
+                    is_sending = True
+                    try:
+                        await send_to_all_users()
+                    except Exception as e:
+                        logger.error(f"Ошибка отправки: {e}")
+                    finally:
+                        is_sending = False
+                else:
+                    logger.warning("Отправка уже идёт, пропускаем")
+                
+                now = datetime.now()
+        except Exception as e:
+            logger.error(f"Ошибка в планировщике: {e}")
+            await asyncio.sleep(60)
 
 # ===== ЗАПУСК =====
 
 async def main():
-    print("=" * 60)
-    print("🤖 Бот запущен с очередью и модерацией")
-    print("🔍 Приоритет: Bing → Google → Yandex → Pexels")
-    print(f"📊 Подписчиков: {len(load_users())}")
-    
-    current_schedule = load_schedule()
-    times = ", ".join(current_schedule.get("times", ["12:00", "21:00"]))
-    print(f"⏰ Расписание: {times}")
-    
-    print(f"📢 Канал: {CHANNEL_ID if CHANNEL_ID else 'авто-поиск'}")
-    print(f"👤 Владелец: {OWNER_ID if OWNER_ID else '❌ не задан'}")
-    print("🇯🇵 Японки | 🇨🇳 Китаянки | 🇰🇷 Кореянки | 🇹🇭 Тайки")
-    print("📋 Модерация: включена")
-    
-    await task_queue.connect()
-    print("=" * 60)
-    
-    gc.collect()
-    
     try:
-        await bot.delete_webhook(drop_pending_updates=True)
-        print("✅ Webhook удалён")
+        logger.info("=" * 60)
+        logger.info("Бот запущен с очередью и модерацией")
+        logger.info("Приоритет: Bing → Google → Yandex → Pexels")
+        logger.info(f"Подписчиков: {len(load_users())}")
+        
+        current_schedule = load_schedule()
+        times = ", ".join(current_schedule.get("times", ["12:00", "21:00"]))
+        logger.info(f"Расписание: {times}")
+        
+        logger.info(f"Канал: {CHANNEL_ID if CHANNEL_ID else 'авто-поиск'}")
+        logger.info(f"Владелец: {OWNER_ID if OWNER_ID else '❌ не задан'}")
+        logger.info("Азиатские девушки | 18-30 лет | Модерация включена")
+        
+        await task_queue.connect()
+        logger.info("=" * 60)
+        
+        gc.collect()
+        
+        # Очищаем вебхук перед запуском
+        try:
+            await bot.delete_webhook(drop_pending_updates=True)
+            logger.info("Webhook удалён")
+        except Exception as e:
+            logger.warning(f"Ошибка webhook: {e}")
+        
+        # Запускаем фоновые задачи
+        asyncio.create_task(queue_processor())
+        asyncio.create_task(scheduler())
+        
+        # Запускаем polling с обработкой ошибок
+        retry_count = 0
+        max_retries = 5
+        
+        while retry_count < max_retries:
+            try:
+                await dp.start_polling(
+                    bot,
+                    allowed_updates=["message", "callback_query"],
+                    skip_updates=True,
+                    polling_timeout=30
+                )
+                break
+            except TelegramConflictError as e:
+                retry_count += 1
+                wait_time = retry_count * 10
+                logger.warning(f"Конфликт: {e}")
+                logger.info(f"Ожидание {wait_time} секунд... (попытка {retry_count}/{max_retries})")
+                
+                if retry_count >= max_retries:
+                    logger.error("Превышено количество попыток. Завершаю работу.")
+                    sys.exit(1)
+                
+                await asyncio.sleep(wait_time)
+            except Exception as e:
+                logger.error(f"Ошибка в polling: {e}")
+                await asyncio.sleep(5)
+                continue
+            finally:
+                await bot.session.close()
+                
     except Exception as e:
-        print(f"⚠️ Ошибка webhook: {e}")
-    
-    asyncio.create_task(queue_processor())
-    asyncio.create_task(scheduler())
-    
-    try:
-        await dp.start_polling(
-            bot,
-            allowed_updates=["message", "callback_query"],
-            skip_updates=True
-        )
-    except TelegramConflictError as e:
-        print(f"⚠️ Конфликт: {e}")
-        await asyncio.sleep(5)
-        await dp.start_polling(bot, skip_updates=True)
-    except Exception as e:
-        print(f"❌ Ошибка: {e}")
-    finally:
-        await bot.session.close()
+        logger.error(f"Критическая ошибка: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logger.info("Бот остановлен пользователем")
+    except Exception as e:
+        logger.error(f"Фатальная ошибка: {e}")
+        sys.exit(1)
