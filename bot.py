@@ -110,83 +110,73 @@ def ensure_ends_with_dot(text: str) -> str:
 
 def get_last_sentence(text: str) -> str:
     """Извлекает последнее предложение из текста"""
+    if not text:
+        return ''
     sentences = re.split(r'(?<=[.!?])\s+', text.strip())
     if sentences:
         return sentences[-1].strip()
     return ''
 
-def truncate_by_sentences(text: str, min_length: int = 700, max_length: int = 1023) -> str:
+def get_sentence_count(text: str) -> int:
+    """Считает количество предложений в тексте"""
+    if not text:
+        return 0
+    sentences = re.split(r'(?<=[.!?])\s+', text.strip())
+    return len([s for s in sentences if s.strip()])
+
+def validate_caption(text: str) -> tuple:
     """
-    Обрезает текст до целых предложений.
-    Минимум 700 символов, максимум 1023 символа.
-    Последнее предложение всегда завершено логически.
-    Обрезка слов запрещена.
-    Последнее предложение не может состоять из одного слова.
+    Проверяет текст на соответствие правилам.
+    Возвращает (исправленный_текст, ошибка)
     """
     if not text:
-        return ''
+        return '', 'Текст пустой'
     
-    text = text.strip()
+    # Очищаем
+    text = clean_text(text)
     
-    # Если текст короче минимума — дополняем резервом
-    if len(text) < min_length:
-        return ensure_ends_with_dot(text)
+    # Проверяем длину
+    if len(text) < 10:
+        return '', 'Слишком короткий'
     
-    # Разбиваем текст на предложения по . ! ?
-    sentences = re.split(r'(?<=[.!?])\s+', text)
+    # Проверяем завершение
+    if not text.endswith(('.', '!', '?')):
+        # Добавляем точку
+        text = ensure_ends_with_dot(text)
     
-    # Собираем предложения, пока не превысим максимум
-    result = []
-    current_length = 0
-    
-    for sentence in sentences:
-        sentence = sentence.strip()
-        if not sentence:
-            continue
-        
-        if current_length + len(sentence) + 1 <= max_length:
-            result.append(sentence)
-            current_length += len(sentence) + 1
-        else:
-            break
-    
-    if not result and sentences:
-        result = [sentences[0].strip()]
-    
-    final_text = ' '.join(result).strip()
-    
-    # Проверяем минимальную длину
-    if len(final_text) < min_length and sentences:
-        for sentence in sentences[len(result):]:
-            if len(final_text) + len(sentence) + 1 <= max_length + 200:
-                final_text += ' ' + sentence
-                break
-    
-    # Гарантируем завершение
-    final_text = ensure_ends_with_dot(final_text)
-    
-    # ===== НОВОЕ ПРАВИЛО: последнее предложение не может состоять из 1 слова =====
-    last_sentence = get_last_sentence(final_text)
+    # Проверяем последнее предложение
+    last_sentence = get_last_sentence(text)
     if last_sentence:
         word_count = len(last_sentence.split())
         if word_count <= 1:
             # Удаляем последнее предложение
-            sentences_final = re.split(r'(?<=[.!?])\s+', final_text)
-            if len(sentences_final) > 1:
-                final_text = ' '.join(sentences_final[:-1]).strip()
-                final_text = ensure_ends_with_dot(final_text)
+            sentences = re.split(r'(?<=[.!?])\s+', text)
+            if len(sentences) > 1:
+                text = ' '.join(sentences[:-1]).strip()
+                text = ensure_ends_with_dot(text)
             else:
-                # Если текст состоит из одного предложения с 1 словом — удаляем всё
-                final_text = ''
+                return '', 'Только одно предложение из 1 слова'
     
-    # Финальная проверка на обрыв
-    if final_text and not final_text.endswith(('.', '!', '?')):
-        sentences_final = re.split(r'(?<=[.!?])\s+', final_text)
-        if len(sentences_final) > 1:
-            final_text = ' '.join(sentences_final[:-1]).strip()
-            final_text = ensure_ends_with_dot(final_text)
+    # Проверяем, что текст не обрезан на полуслове
+    # Ищем последнее предложение в тексте
+    sentences = re.split(r'(?<=[.!?])\s+', text)
+    if sentences:
+        last = sentences[-1].strip()
+        # Проверяем, что последнее предложение заканчивается на . ! ?
+        if last and not last.endswith(('.', '!', '?')):
+            if len(sentences) > 1:
+                text = ' '.join(sentences[:-1]).strip()
+                text = ensure_ends_with_dot(text)
+            else:
+                return '', 'Последнее предложение не завершено'
     
-    return final_text
+    # Проверяем минимальную длину (700 символов)
+    if len(text) < 700 and len(text) > 50:
+        # Если текст короткий, но есть хотя бы 2 предложения — оставляем
+        if get_sentence_count(text) < 2:
+            return '', f'Слишком короткий ({len(text)} символов)'
+    
+    return text, None
 
 def clean_text(text: str) -> str:
     if not text:
@@ -338,7 +328,11 @@ def generate_caption() -> str:
     if not DEEPSEEK_API_KEY:
         print("⚠️ Нет ключа DeepSeek, использую резерв")
         caption = get_fallback_caption()
-        return clean_text(truncate_by_sentences(caption))
+        caption = clean_text(caption)
+        validated, error = validate_caption(caption)
+        if validated:
+            return validated
+        return clean_text(truncate_by_sentences(get_fallback_caption()))
     
     style = random.choice(['everyday', 'funny', 'romantic', 'envy'])
     
@@ -428,19 +422,16 @@ def generate_caption() -> str:
                 continue
             
             caption = clean_text(caption)
-            caption = truncate_by_sentences(caption)
             
-            if len(caption) < 30:
-                print("⚠️ Пост слишком короткий, пробуем ещё...")
+            # ===== ПРОВЕРКА ТЕКСТА =====
+            validated, error = validate_caption(caption)
+            if validated:
+                print(f"✅ Сгенерирован пост ({len(validated)} символов)")
+                add_to_last_posts(validated)
+                return validated
+            else:
+                print(f"⚠️ Текст не прошёл проверку: {error}, пробуем ещё...")
                 continue
-            
-            if re.search(r'\b(жена|жены|жене|моя жена|своя жена)\b', caption, re.IGNORECASE):
-                print("⚠️ Пост содержит упоминание жены, пробуем другой промпт...")
-                continue
-            
-            add_to_last_posts(caption)
-            print(f"✅ Сгенерирован пост ({len(caption)} символов)")
-            return caption
             
         except Exception as e:
             print(f"❌ Ошибка генерации (попытка {attempt+1}): {e}")
@@ -448,7 +439,11 @@ def generate_caption() -> str:
     
     print("⚠️ Не удалось сгенерировать уникальный пост, использую резерв")
     caption = get_fallback_caption()
-    return clean_text(truncate_by_sentences(caption))
+    caption = clean_text(caption)
+    validated, error = validate_caption(caption)
+    if validated:
+        return validated
+    return clean_text(get_fallback_caption())
 
 def get_fallback_caption() -> str:
     fallbacks = [
@@ -747,10 +742,15 @@ async def send_post(chat_id, photo_url=None, caption=None):
         if not caption:
             caption = generate_caption()
             caption = clean_text(caption)
-            caption = truncate_by_sentences(caption)
-            
-            if not caption or len(caption) < 10:
-                caption = truncate_by_sentences(get_fallback_caption())
+            # Дополнительная проверка
+            validated, error = validate_caption(caption)
+            if validated:
+                caption = validated
+            else:
+                caption = clean_text(get_fallback_caption())
+                validated, error = validate_caption(caption)
+                if validated:
+                    caption = validated
         
         if not caption:
             await bot.send_photo(chat_id=chat_id, photo=photo_url)
@@ -792,10 +792,14 @@ async def send_to_all_users():
     
     caption = generate_caption()
     caption = clean_text(caption)
-    caption = truncate_by_sentences(caption)
-    
-    if not caption or len(caption) < 10:
-        caption = truncate_by_sentences(get_fallback_caption())
+    validated, error = validate_caption(caption)
+    if validated:
+        caption = validated
+    else:
+        caption = clean_text(get_fallback_caption())
+        validated, error = validate_caption(caption)
+        if validated:
+            caption = validated
     
     for chat_id in users:
         try:
@@ -1059,7 +1063,9 @@ async def test(msg: Message):
     
     caption = generate_caption()
     caption = clean_text(caption)
-    caption = truncate_by_sentences(caption)
+    validated, error = validate_caption(caption)
+    if validated:
+        caption = validated
     await msg.answer(f"📝 Результат:\n\n{caption}\n\n📊 Длина: {len(caption)} символов")
 
 @dp.message(Command("clear_history"))
@@ -1132,7 +1138,7 @@ async def main():
     
     print(f"📢 Канал: {CHANNEL_ID if CHANNEL_ID else 'авто-поиск'}")
     print(f"👤 Владелец: {OWNER_ID if OWNER_ID else '❌ не задан'}")
-    print("📏 Длина текста: 700-1023 символа")
+    print("📏 Длина текста: проверка перед отправкой")
     print("📝 Логическое завершение: обязательно")
     print("🚫 Последнее предложение не может состоять из 1 слова")
     print("=" * 60)
