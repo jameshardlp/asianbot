@@ -35,6 +35,18 @@ SEARCH_QUERIES = [
 USERS_FILE = "users.json"
 HISTORY_FILE = "history.json"
 
+# ===== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ =====
+
+def truncate_caption(text: str, max_length: int = 1000) -> str:
+    """Обрезает текст до указанной длины, добавляя '...' в конце"""
+    if len(text) <= max_length:
+        return text
+    return text[:max_length - 3] + "..."
+
+def clean_text(text: str) -> str:
+    """Заменяет длинное тире на обычное"""
+    return text.replace('—', '-').replace('–', '-')
+
 # ===== РАБОТА С ПОЛЬЗОВАТЕЛЯМИ =====
 
 def load_users():
@@ -74,10 +86,6 @@ def save_history(history):
 history = load_history()
 
 # ===== ГЕНЕРАЦИЯ ПОСТОВ ЧЕРЕЗ DEEPSEEK API =====
-
-def clean_text(text: str) -> str:
-    """Заменяет длинное тире на обычное"""
-    return text.replace('—', '-').replace('–', '-')
 
 def generate_caption() -> str:
     """
@@ -289,10 +297,6 @@ def search_pexels(query):
         return None
 
 def get_random_photo():
-    """
-    Получает случайное фото, которого нет в истории.
-    Если история заполнена или фото повторяются - очищает историю.
-    """
     global history
     
     if len(history) > 80:
@@ -355,6 +359,8 @@ async def send_photo(chat_id):
         
         if photo_url:
             caption = generate_caption()
+            # ===== ОБРЕЗАЕМ ТЕКСТ ДО 1000 СИМВОЛОВ =====
+            caption = truncate_caption(caption, 1000)
             
             await bot.send_photo(
                 chat_id=chat_id, 
@@ -398,15 +404,12 @@ async def scheduler():
     while True:
         now = datetime.now()
         
-        # Случайное время для первого поста (12:00 - 15:00)
         hour1 = random.randint(12, 14)
         minute1 = random.randint(0, 59)
         
-        # Случайное время для второго поста (17:00 - 22:00)
         hour2 = random.randint(17, 21)
         minute2 = random.randint(0, 59)
         
-        # Сортируем времена
         times = [(hour1, minute1), (hour2, minute2)]
         times.sort()
         
@@ -417,13 +420,11 @@ async def scheduler():
                 target += timedelta(days=1)
             target_times.append(target)
         
-        # Ждём до первого поста
         wait_seconds = (target_times[0] - now).total_seconds()
         print(f"⏳ Первая отправка в {target_times[0].strftime('%H:%M')} (через {wait_seconds/3600:.1f} часов)")
         await asyncio.sleep(wait_seconds)
         await send_to_all_users()
         
-        # Ждём до второго поста
         wait_seconds = (target_times[1] - target_times[0]).total_seconds()
         print(f"⏳ Вторая отправка в {target_times[1].strftime('%H:%M')} (через {wait_seconds/3600:.1f} часов)")
         await asyncio.sleep(wait_seconds)
@@ -540,6 +541,7 @@ async def test(msg: Message):
     await msg.answer("🧠 Генерирую провокационный пост через DeepSeek...")
     
     caption = generate_caption()
+    caption = truncate_caption(caption, 1000)
     await msg.answer(f"📝 Результат:\n\n{caption}")
 
 @dp.message(Command("clear_history"))
@@ -599,6 +601,7 @@ async def main():
     print(f"📊 Подписчиков: {len(users)}")
     print(f"📸 Фото в истории: {len(history)}")
     print("⏰ Расписание: 12:00-15:00 и 17:00-22:00")
+    print("📝 Максимальная длина подписи: 1000 символов")
     print("=" * 60)
     
     gc.collect()
