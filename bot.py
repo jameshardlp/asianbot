@@ -35,33 +35,80 @@ USERS_FILE = "users.json"
 HISTORY_FILE = "history.json"
 SCHEDULE_FILE = "schedule.json"
 
-# ===== ПОИСКОВЫЕ ЗАПРОСЫ =====
+# ===== ПОИСКОВЫЕ ЗАПРОСЫ (ТОЛЬКО КОНКРЕТНЫЕ НАЦИОНАЛЬНОСТИ) =====
 SEARCH_QUERIES = [
-    "asian girl everyday life selfie",
-    "japanese woman casual selfie",
-    "korean girl instagram selfie",
-    "chinese woman daily life photo",
-    "asian girl natural portrait selfie",
-    "asian woman casual outfit photo",
-    "korean girl everyday style",
-    "japanese woman natural look",
-    "asian girl no makeup selfie",
-    "young asian woman self portrait",
-    "asian girl street style casual",
-    "korean girl cafe selfie",
-    "japanese woman city street",
-    "asian girl home selfie",
-    "chinese woman casual dress",
-    "asian woman modern outfit",
-    "korean girl urban style",
-    "asian girl bikini beach",
+    # Японки
+    "japanese girl casual selfie",
+    "japanese woman everyday life",
+    "japanese girl instagram photo",
+    "japanese woman casual style",
+    "japanese girl natural portrait",
+    "japanese woman street style",
+    "japanese girl city selfie",
+    "japanese woman cafe selfie",
+    
+    # Китаянки
+    "chinese girl casual selfie",
+    "chinese woman everyday life",
+    "chinese girl instagram photo",
+    "chinese woman casual style",
+    "chinese girl natural portrait",
+    "chinese woman street style",
+    "chinese girl city selfie",
+    "chinese woman cafe selfie",
+    
+    # Кореянки
+    "korean girl casual selfie",
+    "korean woman everyday life",
+    "korean girl instagram photo",
+    "korean woman casual style",
+    "korean girl natural portrait",
+    "korean woman street style",
+    "korean girl city selfie",
+    "korean woman cafe selfie",
+    
+    # Тайки
+    "thai girl casual selfie",
+    "thai woman everyday life",
+    "thai girl instagram photo",
+    "thai woman casual style",
+    "thai girl natural portrait",
+    "thai woman street style",
+    
+    # Малазийки
+    "malaysian girl casual selfie",
+    "malaysian woman everyday life",
+    "malaysian girl instagram photo",
+    "malaysian woman casual style",
+    "malaysian girl natural portrait",
+    
+    # Филиппинки
+    "filipina girl casual selfie",
+    "filipina woman everyday life",
+    "filipina girl instagram photo",
+    "filipina woman casual style",
+    "filipina girl natural portrait",
+    
+    # Бикини (всех национальностей)
+    "japanese girl bikini beach",
     "korean girl bikini photo",
-    "asian woman swimsuit",
+    "chinese girl swimsuit",
+    "thai girl bikini",
+    "japanese woman swimsuit",
+    "korean woman bikini beach",
+    
+    # Повседневные фото
+    "japanese girl summer outfit",
+    "korean girl summer dress",
+    "chinese girl casual outfit",
+    "thai girl casual dress",
 ]
 
 FITNESS_QUERIES = [
-    "asian fitness girl",
-    "asian gym girl",
+    "japanese fitness girl",
+    "korean gym girl",
+    "chinese fitness woman",
+    "thai sport girl",
 ]
 
 # ===== КЛЮЧЕВЫЕ СЛОВА ДЛЯ ВОЗРАСТА (18-30) =====
@@ -116,28 +163,27 @@ def get_last_sentence(text: str) -> str:
         return sentences[-1].strip()
     return ''
 
+def get_sentences(text: str) -> list:
+    if not text:
+        return []
+    return re.split(r'(?<=[.!?])\s+', text.strip())
+
 def is_sentence_complete(sentence: str) -> bool:
-    """
-    Жёсткая проверка логической завершённости предложения.
-    """
     if not sentence:
         return False
     
     clean = re.sub(r'[.!?]$', '', sentence).strip()
     words = clean.split()
     
-    # Минимум 5 слов
     if len(words) < 5:
         return False
     
-    # Проверяем, что предложение не обрывается на предлоге или союзе
     incomplete_words = ['и', 'а', 'но', 'да', 'или', 'либо', 'за', 'перед', 'под', 'над', 'без', 'для', 'про', 'через', 'между', 'среди', 'у', 'о', 'об', 'от', 'до', 'из', 'с', 'к', 'по', 'на', 'в', 'во']
     
     last_word = words[-1].lower()
     if last_word in incomplete_words:
         return False
     
-    # Проверяем, что предложение не заканчивается на вводные конструкции
     incomplete_endings = [
         'в её глазах', 'в моей голове', 'в моих мыслях', 'в моей душе',
         'в моём сердце', 'в моей жизни', 'в моём мире', 'в его глазах',
@@ -145,7 +191,10 @@ def is_sentence_complete(sentence: str) -> bool:
         'на его лице', 'на её лице', 'в моём воображении',
         'и вы знаете', 'и я понимаю', 'и мне кажется', 'и я думаю',
         'но вы понимаете', 'но я знаю', 'и вы понимаете',
-        'и я чувствую', 'и я понимаю, что'
+        'и я чувствую', 'и я понимаю, что', 'и я думаю, что',
+        'я начинаю', 'я продолжаю', 'я хочу сказать', 'я хочу отметить',
+        'я думаю о том', 'я говорю о том', 'я говорю про', 'я думаю про',
+        'в общем', 'короче говоря', 'так что', 'поэтому'
     ]
     
     clean_lower = clean.lower()
@@ -153,7 +202,6 @@ def is_sentence_complete(sentence: str) -> bool:
         if clean_lower.endswith(ending):
             return False
     
-    # Проверяем наличие глагола
     verbs = [
         'быть', 'стать', 'являться', 'иметь', 'делать', 'сказать', 'пойти',
         'знать', 'думать', 'смотреть', 'видеть', 'слышать', 'чувствовать',
@@ -163,19 +211,19 @@ def is_sentence_complete(sentence: str) -> bool:
         'плыть', 'лететь', 'ехать', 'работать', 'учиться', 'читать',
         'писать', 'рисовать', 'петь', 'танцевать', 'играть', 'смотреть',
         'слушать', 'дышать', 'жить', 'умирать', 'родиться', 'расти',
-        'помнить', 'забывать', 'любить', 'ненавидеть', 'мечтать'
+        'помнить', 'забывать', 'любить', 'ненавидеть', 'мечтать',
+        'получаться', 'получиться', 'случаться', 'случиться', 'происходить',
+        'произойти', 'существовать', 'обладать', 'пользоваться', 'управлять'
     ]
     
     has_verb = any(verb in clean_lower for verb in verbs)
     
-    # Проверяем наличие подлежащего
-    has_subject = bool(re.search(r'\b(я|ты|он|она|оно|мы|вы|они|это|тот|всё|все|кто|что|который|которые|которое|эта|этот|эти)\b', clean, re.IGNORECASE))
+    has_subject = bool(re.search(r'\b(я|ты|он|она|оно|мы|вы|они|это|тот|всё|все|кто|что|который|которые|которое|эта|этот|эти|сам|себя)\b', clean, re.IGNORECASE))
     
-    # Если предложение длинное — скорее всего завершено
     if len(clean) > 50:
         return True
     
-    return has_verb or has_subject
+    return has_verb and has_subject
 
 def truncate_by_sentences(text: str, max_length: int = 1023) -> str:
     if not text:
@@ -221,37 +269,39 @@ def validate_caption(text: str, min_length: int = 700, max_length: int = 1023) -
     if not text.endswith(('.', '!', '?')):
         text = ensure_ends_with_dot(text)
     
-    last_sentence = get_last_sentence(text)
+    all_sentences = get_sentences(text)
+    
+    if not all_sentences:
+        return '', 'Нет предложений'
+    
+    last_sentence = all_sentences[-1].strip() if all_sentences else ''
+    
     if last_sentence:
         if not last_sentence.endswith(('.', '!', '?')):
-            sentences = re.split(r'(?<=[.!?])\s+', text)
-            if len(sentences) > 1:
-                text = ' '.join(sentences[:-1]).strip()
+            if len(all_sentences) > 1:
+                text = ' '.join(all_sentences[:-1]).strip()
                 text = ensure_ends_with_dot(text)
             else:
                 return '', 'Последнее предложение не завершено'
         
         word_count = len(last_sentence.split())
-        if word_count <= 3:
-            sentences = re.split(r'(?<=[.!?])\s+', text)
-            if len(sentences) > 1:
-                text = ' '.join(sentences[:-1]).strip()
+        if word_count < 5:
+            if len(all_sentences) > 1:
+                text = ' '.join(all_sentences[:-1]).strip()
                 text = ensure_ends_with_dot(text)
             else:
-                return '', 'Последнее предложение слишком короткое'
+                return '', f'Последнее предложение слишком короткое ({word_count} слов)'
         
         if not is_sentence_complete(last_sentence):
             print(f"⚠️ Последнее предложение логически не завершено: '{last_sentence}'")
-            sentences = re.split(r'(?<=[.!?])\s+', text)
-            if len(sentences) > 1:
-                text = ' '.join(sentences[:-1]).strip()
+            if len(all_sentences) > 1:
+                text = ' '.join(all_sentences[:-1]).strip()
                 text = ensure_ends_with_dot(text)
             else:
                 return '', 'Последнее предложение не завершено логически'
     
     if len(text) < min_length:
-        sentences = re.split(r'(?<=[.!?])\s+', text)
-        if len([s for s in sentences if s.strip()]) < 2:
+        if len(all_sentences) < 2:
             return '', f'Слишком короткий ({len(text)} символов)'
     
     return text, None
@@ -301,12 +351,16 @@ def is_definitely_not_asian(url: str) -> bool:
 def is_photo_acceptable(url: str) -> bool:
     if not url:
         return False
+    
     if is_definitely_not_asian(url):
         return False
+    
     if not is_age_appropriate(url):
         return False
+    
     if is_traditional_clothing(url):
         return False
+    
     return True
 
 # ===== РАБОТА С РАСПИСАНИЕМ =====
@@ -410,32 +464,32 @@ def generate_caption() -> str:
     style_prompts = {
         'everyday': """Ты - Анатолий, холостой блогер. Твой стиль - самоирония, сарказм, провокация. Пиши ТОЛЬКО готовый пост. Используй МАТ 1-2 раза (бля, сука, пиздец, хуйня - но без оскорблений людей). ОБРАЩАЙСЯ К ЧИТАТЕЛЯМ ВО МНОЖЕСТВЕННОМ ЧИСЛЕ (вы, вам, вас). НЕ УПОМИНАЙ ЖЕНУ.
 
-Напиши пост про молодых азиатских женщин (18-30 лет). Будь саркастичным, самоироничным, провокационным. Смеяться над собой и над ситуацией. Придумай забавную жизненную ситуацию.
+Напиши пост про молодых азиатских женщин (18-30 лет). Будь саркастичным, самоироничным, провокационным. Придумай забавную жизненную ситуацию.
 
 Требования:
-- 700-900 символов
+- 700-800 символов
 - С матом 1-2 раза
 - Сарказм + самоирония
 - Провокация
-- ЗАВЕРШЁННАЯ МЫСЛЬ. Обязательно закончи пост выводом или итогом""",
+- ОБЯЗАТЕЛЬНО ЗАВЕРШИ МЫСЛЬ. Последнее предложение должно быть длинным и законченным.""",
 
         'funny': """Ты - Анатолий, холостой блогер. Твой стиль - самоирония, сарказм, провокация. Пиши ТОЛЬКО готовый пост. Используй МАТ 1-2 раза (бля, сука, пиздец, хуйня - но без оскорблений людей). ОБРАЩАЙСЯ К ЧИТАТЕЛЯМ ВО МНОЖЕСТВЕННОМ ЧИСЛЕ (вы, вам, вас). НЕ УПОМИНАЙ ЖЕНУ.
 
-Напиши смешной пост про молодых азиатских женщин (18-30 лет). Саркастичный, самоироничный. 700-900 символов. ЗАВЕРШЁННАЯ МЫСЛЬ. Обязательно закончи выводом.""",
+Напиши смешной пост про молодых азиатских женщин (18-30 лет). Саркастичный, самоироничный. 700-800 символов. ОБЯЗАТЕЛЬНО ЗАВЕРШИ МЫСЛЬ.""",
 
         'romantic': """Ты - Анатолий, холостой блогер. Твой стиль - самоирония, сарказм, провокация. Пиши ТОЛЬКО готовый пост. Используй МАТ 1 раз (бля, сука, пиздец - но без оскорблений). ОБРАЩАЙСЯ К ЧИТАТЕЛЯМ ВО МНОЖЕСТВЕННОМ ЧИСЛЕ (вы, вам, вас). НЕ УПОМИНАЙ ЖЕНУ.
 
-Напиши романтичный пост про молодых азиатских женщин (18-30 лет). С сарказмом и самоиронией. 700-900 символов. ЗАВЕРШЁННАЯ МЫСЛЬ.""",
+Напиши романтичный пост про молодых азиатских женщин (18-30 лет). С сарказмом и самоиронией. 700-800 символов. ОБЯЗАТЕЛЬНО ЗАВЕРШИ МЫСЛЬ.""",
 
         'envy': """Ты - Анатолий, холостой блогер. Твой стиль - самоирония, сарказм, провокация. Пиши ТОЛЬКО готовый пост. Используй МАТ 1-2 раза (бля, сука, пиздец - но без оскорблений). ОБРАЩАЙСЯ К ЧИТАТЕЛЯМ ВО МНОЖЕСТВЕННОМ ЧИСЛЕ (вы, вам, вас). НЕ УПОМИНАЙ ЖЕНУ.
 
-Напиши пост, вызывающий зависть, про молодых азиатских женщин (18-30 лет). С сарказмом, самоиронией, провокацией. 700-900 символов. ЗАВЕРШЁННАЯ МЫСЛЬ. Закончи выводом.""",
+Напиши пост, вызывающий зависть, про молодых азиатских женщин (18-30 лет). С сарказмом, самоиронией, провокацией. 700-800 символов. ОБЯЗАТЕЛЬНО ЗАВЕРШИ МЫСЛЬ.""",
     }
     
     alternative_prompts = [
-        "Напиши саркастичный пост о молодых азиатских женщинах. С матом 1-2 раза. Без упоминаний жены. 700-900 символов. ЗАВЕРШИ МЫСЛЬ.",
-        "Напиши самоироничный пост про молодых азиатских женщин. С матом 1-2 раза. 700-900 символов. ЗАВЕРШИ МЫСЛЬ.",
-        "Напиши провокационный пост про молодых азиатских женщин. С юмором и матом. 700-900 символов. ЗАВЕРШИ МЫСЛЬ.",
+        "Напиши саркастичный пост о молодых азиатских женщинах. С матом 1-2 раза. Без упоминаний жены. 700-800 символов. ЗАВЕРШИ МЫСЛЬ.",
+        "Напиши самоироничный пост про молодых азиатских женщин. С матом 1-2 раза. 700-800 символов. ЗАВЕРШИ МЫСЛЬ.",
+        "Напиши провокационный пост про молодых азиатских женщин. С юмором и матом. 700-800 символов. ЗАВЕРШИ МЫСЛЬ.",
     ]
     
     prompt = style_prompts.get(style, style_prompts['funny'])
@@ -457,7 +511,7 @@ def generate_caption() -> str:
             data = {
                 "model": "deepseek-v4-flash",
                 "messages": [
-                    {"role": "system", "content": "Ты стендап-комик Анатолий. Отвечай ТОЛЬКО готовым постом. НИКАКИХ РАССУЖДЕНИЙ. Только текст поста. Используй мат 1-2 раза (бля, сука, пиздец, хуйня). НЕ ОСКОРБЛЯЙ НАЦИОНАЛЬНОСТИ. НЕ УПОМИНАЙ ЖЕНУ. Пиши с сарказмом, самоиронией и провокацией. ОБЯЗАТЕЛЬНО ЗАВЕРШИ МЫСЛЬ — пост должен заканчиваться выводом или итогом."},
+                    {"role": "system", "content": "Ты стендап-комик Анатолий. Отвечай ТОЛЬКО готовым постом. НИКАКИХ РАССУЖДЕНИЙ. Только текст поста. Используй мат 1-2 раза (бля, сука, пиздец, хуйня). НЕ ОСКОРБЛЯЙ НАЦИОНАЛЬНОСТИ. НЕ УПОМИНАЙ ЖЕНУ. Пиши с сарказмом, самоиронией и провокацией. ОБЯЗАТЕЛЬНО ЗАВЕРШИ МЫСЛЬ — пост должен заканчиваться логическим выводом."},
                     {"role": "user", "content": current_prompt}
                 ],
                 "temperature": 1.3,
@@ -520,17 +574,17 @@ def generate_caption() -> str:
 
 def get_fallback_caption() -> str:
     fallbacks = [
-        "Вот вы сидите тут, паритесь, копите на квартиры, на тачки. А я смотрю на фото молодой азиатки в Instagram и думаю: блядь, как же они умеют жить. Обычный день, обычное фото, а выглядит как обложка журнала. И я понимаю, что всё дело не в деньгах, а в умении жить красиво.",
+        "Вот вы сидите тут, паритесь, копите на квартиры, на тачки. А я смотрю на фото молодой азиатки в Instagram и думаю: блядь, как же они умеют жить. Обычный день, обычное фото, а выглядит как обложка журнала. И я понимаю, что всё дело не в деньгах, а в умении жить красиво — они просто умеют радоваться каждому моменту, а мы, мужики, даже не замечаем этих мелочей.",
         
-        "Слушайте, я влюбился в молодую азиатку. Она выложила фото в Instagram, и у меня сердце замирает. Обычный день, обычная улица, а выглядит как фотосессия. И я понимаю, что красота — это не просто внешность, а умение видеть прекрасное в простых вещах.",
+        "Слушайте, я влюбился в молодую азиатку. Она выложила фото в Instagram, и у меня сердце замирает. Обычный день, обычная улица, а выглядит как фотосессия. И я понимаю, что красота — это не просто внешность, а умение видеть прекрасное в простых вещах, и именно этому они нас учат каждый день, сами того не замечая.",
         
-        "Сижу, ем доширак, смотрю на фото азиатки в соц-сетях. Она в обычной одежде, а я в трусах. И мне хорошо. Потому что я знаю: она всё равно улыбнётся мне. В этом и есть магия — они умеют радоваться жизни даже с такими, как я.",
+        "Сижу, ем доширак, смотрю на фото азиатки в соц-сетях. Она в обычной одежде, а я в трусах. И мне хорошо. Потому что я знаю: она всё равно улыбнётся мне. В этом и есть магия — они умеют радоваться жизни даже с такими, как я, и делают это так искренне, что хочется стать лучше ради их улыбки.",
         
-        "Пиздец, я только что понял, что жизнь удалась. Я в Instagram, рядом молодая азиатка в обычном образе. И я понимаю, что счастье не в деньгах, а в умении замечать красоту вокруг.",
+        "Пиздец, я только что понял, что жизнь удалась. Я в Instagram, рядом молодая азиатка в обычном образе. И я понимаю, что счастье не в деньгах, а в умении замечать красоту вокруг, и они, эти девушки, показывают нам, как это делать — просто жить и улыбаться, несмотря ни на что.",
         
-        "Знаете, что я понял? Молодые азиатки из соц-сетей - это лучшее, что случалось со мной. Они показывают, что жизнь может быть красивой даже в простых вещах.",
+        "Знаете, что я понял? Молодые азиатки из соц-сетей - это лучшее, что случалось со мной. Они показывают, что жизнь может быть красивой даже в простых вещах, и это вдохновляет меня на то, чтобы каждый день замечать что-то прекрасное, даже если это просто чашка кофе с утра.",
         
-        "Раньше я думал, что знаю, что такое красота. А потом увидел фото азиатки в обычной жизни. И понял, что красота — это не то, что мы видим, а то, что мы чувствуем.",
+        "Раньше я думал, что знаю, что такое красота. А потом увидел фото азиатки в обычной жизни. И понял, что красота — это не то, что мы видим, а то, что мы чувствуем, и они умеют передать это чувство даже через экран телефона, заставляя нас улыбаться и мечтать о чём-то большем.",
     ]
     return random.choice(fallbacks)
 
@@ -1204,7 +1258,7 @@ async def broadcast(msg: Message):
 
 async def main():
     print("=" * 60)
-    print("🤖 Бот запущен (логическое завершение)")
+    print("🤖 Бот запущен (только японки, китаянки, кореянки, тайки, малазийки, филиппинки)")
     print("🔍 Приоритет: Bing → Google → Yandex → Pexels")
     print(f"📊 Подписчиков: {len(users)}")
     print(f"📸 Фото в истории: {len(history)}")
@@ -1215,7 +1269,8 @@ async def main():
     
     print(f"📢 Канал: {CHANNEL_ID if CHANNEL_ID else 'авто-поиск'}")
     print(f"👤 Владелец: {OWNER_ID if OWNER_ID else '❌ не задан'}")
-    print("📝 Логическое завершение: обязательно")
+    print("🇯🇵 Японки | 🇨🇳 Китаянки | 🇰🇷 Кореянки")
+    print("🇹🇭 Тайки | 🇲🇾 Малазийки | 🇵🇭 Филиппинки")
     print("=" * 60)
     
     gc.collect()
