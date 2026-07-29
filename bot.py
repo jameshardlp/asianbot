@@ -35,38 +35,85 @@ USERS_FILE = "users.json"
 HISTORY_FILE = "history.json"
 SCHEDULE_FILE = "schedule.json"
 
-# ===== ПОИСКОВЫЕ ЗАПРОСЫ =====
+# ===== ОБНОВЛЁННЫЕ ПОИСКОВЫЕ ЗАПРОСЫ (18-30 ЛЕТ, ФИТНЕС) =====
 SEARCH_QUERIES = [
-    "asian girl casual portrait",
-    "japanese woman casual",
-    "korean girl everyday life",
-    "chinese woman casual photo",
-    "asian girl summer outfit",
-    "asian woman swimming pool",
-    "korean girl beach",
-    "japanese woman casual style",
-    "asian girl in bikini",
-    "asian woman summer dress",
+    "asian girl 20 years old portrait",
+    "young japanese woman 20s portrait",
+    "korean girl 18 30 portrait",
+    "chinese woman 20 years portrait",
+    "asian fitness model 20s",
+    "asian gym girl workout",
+    "asian sport girl fitness",
+    "asian fitness model portrait",
+    "korean fitness girl gym",
+    "japanese sport girl fitness",
+    "asian athletic woman 20s",
+    "asian fit girl workout",
+    "asian girl casual 20s",
+    "young asian woman everyday life",
+    "asian girl summer style 20",
+    "asian woman 20 years casual",
+]
+
+# ===== КЛЮЧЕВЫЕ СЛОВА ДЛЯ ФИЛЬТРАЦИИ =====
+ASIAN_KEYWORDS = [
+    'asian', 'japanese', 'korean', 'chinese', 'east asian',
+    'japan', 'korea', 'china', 'tokyo', 'seoul', 'beijing',
+    'sakura', 'kim', 'lee', 'park', 'chan'
+]
+
+FITNESS_KEYWORDS = [
+    'gym', 'fitness', 'workout', 'sport', 'athletic',
+    'fit', 'muscle', 'training', 'exercise', 'yoga',
+    'pilates', 'crossfit', 'running', 'jogging'
+]
+
+AGE_POSITIVE_KEYWORDS = [
+    '18', '19', '20', '21', '22', '23', '24', '25',
+    '26', '27', '28', '29', '30', '20s',
+    'young', 'teen', 'college', 'university'
+]
+
+EXCLUDE_KEYWORDS = [
+    'african', 'black', 'white', 'caucasian', 'european', 'american',
+    'latina', 'mexican', 'brazilian', 'indian', 'middle eastern',
+    'arab', 'persian', 'turkish',
+    'mature', 'old', 'age 40', 'age 50', 'age 60', 'senior',
+    'grandma', 'elderly', 'wrinkles'
+]
+
+TRADITIONAL_EXCLUDE = [
+    'kimono', 'hanbok', 'cheongsam', 'qi pao', 'sari', 'ao dai',
+    'traditional', 'folk costume', 'national dress'
 ]
 
 # ===== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ =====
 
 def clean_punctuation(text: str) -> str:
+    if not text:
+        return ''
     text = re.sub(r'[.!?]{2,}', '.', text)
     text = re.sub(r'\s+', ' ', text)
     text = text.replace('«', '"').replace('»', '"')
     text = text.replace('„', '"').replace('“', '"')
     text = text.replace('`', "'").replace('´', "'")
     text = re.sub(r'[()\[\]{}<>]', '', text)
+    text = re.sub(r',\s*\.', '.', text)
     return text.strip()
 
 def ensure_ends_with_dot(text: str) -> str:
+    if not text:
+        return ''
     text = text.strip()
-    if text and text[-1] not in ('.', '!', '?'):
+    if text[-1] not in ('.', '!', '?'):
         return text + '.'
     return text
 
 def truncate_by_sentences(text: str, max_length: int = 900) -> str:
+    if not text:
+        return ''
+    
+    text = text.strip()
     if len(text) <= max_length:
         return ensure_ends_with_dot(text)
     
@@ -78,19 +125,21 @@ def truncate_by_sentences(text: str, max_length: int = 900) -> str:
     
     if last_punct != -1:
         result = text[:last_punct + 1]
-        if len(result) <= max_length + 300:
-            return ensure_ends_with_dot(result)
+        result = re.sub(r'\s*,+\s*\.', '.', result)
+        result = re.sub(r',\s*\.', '.', result)
+        result = result.strip()
+        return ensure_ends_with_dot(result)
     
     last_space = text.rfind(' ', 0, max_length)
     if last_space != -1:
         result = text[:last_space] + '.'
-        if len(result) <= max_length + 300:
-            return ensure_ends_with_dot(result)
+        return ensure_ends_with_dot(result)
     
-    result = text[:max_length]
-    return ensure_ends_with_dot(result)
+    return ensure_ends_with_dot(text[:max_length])
 
 def clean_text(text: str) -> str:
+    if not text:
+        return ''
     text = text.replace('—', '-').replace('–', '-')
     text = text.replace('@maddysontg', '').replace('@Maddysontg', '').replace('@MADDYSONTG', '')
     text = text.replace('maddysontg', '').replace('Maddysontg', '').replace('MADDYSONTG', '')
@@ -98,24 +147,66 @@ def clean_text(text: str) -> str:
     text = clean_punctuation(text)
     return text
 
-def is_definitely_not_asian(url: str) -> bool:
+def is_age_appropriate(url: str) -> bool:
+    if not url:
+        return False
+    
     url_lower = url.lower()
-    exclude = ['african', 'black', 'white', 'caucasian', 'european', 'american',
-               'latina', 'mexican', 'brazilian', 'indian', 'middle eastern',
-               'arab', 'persian', 'turkish']
-    for word in exclude:
+    
+    for word in AGE_POSITIVE_KEYWORDS:
+        if word in url_lower:
+            return True
+    
+    if re.search(r'\b(age|years?|yo|y/o)\b', url_lower, re.IGNORECASE):
+        for word in AGE_POSITIVE_KEYWORDS:
+            if word in url_lower:
+                return True
+        return False
+    
+    return True
+
+def is_fitness_content(url: str) -> bool:
+    if not url:
+        return False
+    
+    url_lower = url.lower()
+    for word in FITNESS_KEYWORDS:
         if word in url_lower:
             return True
     return False
 
 def is_traditional_clothing(url: str) -> bool:
+    if not url:
+        return False
     url_lower = url.lower()
-    traditional = ['kimono', 'hanbok', 'cheongsam', 'qi pao', 'sari', 'ao dai',
-                   'traditional', 'folk costume', 'national dress']
-    for word in traditional:
+    for word in TRADITIONAL_EXCLUDE:
         if word in url_lower:
             return True
     return False
+
+def is_definitely_not_asian(url: str) -> bool:
+    if not url:
+        return False
+    url_lower = url.lower()
+    for word in EXCLUDE_KEYWORDS:
+        if word in url_lower:
+            return True
+    return False
+
+def is_photo_acceptable(url: str) -> bool:
+    if not url:
+        return False
+    
+    if is_definitely_not_asian(url):
+        return False
+    
+    if not is_age_appropriate(url):
+        return False
+    
+    if is_traditional_clothing(url):
+        return False
+    
+    return True
 
 # ===== РАБОТА С РАСПИСАНИЕМ =====
 
@@ -136,6 +227,8 @@ def save_schedule(schedule_data):
         return True
     except:
         return False
+
+schedule_data = load_schedule()
 
 # ===== РАБОТА С ПОЛЬЗОВАТЕЛЯМИ =====
 
@@ -178,6 +271,8 @@ last_posts = []
 
 def add_to_last_posts(text: str):
     global last_posts
+    if not text:
+        return
     key = text[:100]
     last_posts.append(key)
     if len(last_posts) > 20:
@@ -185,6 +280,8 @@ def add_to_last_posts(text: str):
 
 def is_similar(text: str) -> bool:
     global last_posts
+    if not text:
+        return False
     key = text[:150]
     for post in last_posts:
         same_chars = sum(1 for a, b in zip(key, post) if a == b)
@@ -206,7 +303,7 @@ def generate_caption() -> str:
     style_prompts = {
         'everyday': """Ты - Анатолий, холостой блогер с ироничным юмором. Пиши ТОЛЬКО готовый пост. Используй МАТ 1-2 раза (бля, сука, пиздец, хуйня - но без оскорблений людей). ОБРАЩАЙСЯ К ЧИТАТЕЛЯМ ВО МНОЖЕСТВЕННОМ ЧИСЛЕ (вы, вам, вас). НЕ УПОМИНАЙ ЖЕНУ.
 
-Напиши пост про азиатских женщин. Придумай забавную бытовую ситуацию. Стиль - ироничный, с юмором, простая житейская мудрость. Без оскорблений национальностей.
+Напиши пост про молодых азиатских женщин (18-30 лет), особенно фитнес-моделей. Придумай забавную бытовую ситуацию в спортзале или на пляже. Стиль - ироничный, с юмором, простая житейская мудрость. Без оскорблений национальностей.
 
 Требования:
 - 500-650 символов
@@ -216,21 +313,21 @@ def generate_caption() -> str:
 
         'funny': """Ты - Анатолий, холостой смешной блогер. Пиши ТОЛЬКО готовый пост. Используй МАТ 1-2 раза (бля, сука, пиздец, хуйня - но без оскорблений людей). ОБРАЩАЙСЯ К ЧИТАТЕЛЯМ ВО МНОЖЕСТВЕННОМ ЧИСЛЕ (вы, вам, вас). НЕ УПОМИНАЙ ЖЕНУ.
 
-Напиши смешной пост про азиатских женщин. С иронией, без оскорблений. 500-650 символов. Завершённая мысль.""",
+Напиши смешной пост про молодых азиатских женщин (18-30 лет), особенно фитнес-моделей. С иронией, без оскорблений. 500-650 символов. Завершённая мысль.""",
 
         'romantic': """Ты - Анатолий, холостой романтичный блогер. Пиши ТОЛЬКО готовый пост. Используй МАТ 1 раз (бля, сука, пиздец - но без оскорблений). ОБРАЩАЙСЯ К ЧИТАТЕЛЯМ ВО МНОЖЕСТВЕННОМ ЧИСЛЕ (вы, вам, вас). НЕ УПОМИНАЙ ЖЕНУ.
 
-Напиши романтичный пост про азиатских женщин. С юмором и лёгким матом. 500-650 символов. Завершённая мысль.""",
+Напиши романтичный пост про молодых азиатских женщин (18-30 лет), особенно фитнес-моделей. С юмором и лёгким матом. 500-650 символов. Завершённая мысль.""",
 
         'envy': """Ты - Анатолий, холостой успешный блогер. Пиши ТОЛЬКО готовый пост. Используй МАТ 1-2 раза (бля, сука, пиздец - но без оскорблений). ОБРАЩАЙСЯ К ЧИТАТЕЛЯМ ВО МНОЖЕСТВЕННОМ ЧИСЛЕ (вы, вам, вас). НЕ УПОМИНАЙ ЖЕНУ.
 
-Напиши пост, вызывающий лёгкую зависть. С юмором и матом. 500-650 символов. Завершённая мысль.""",
+Напиши пост, вызывающий лёгкую зависть, про молодых азиатских женщин (18-30 лет), особенно фитнес-моделей. С юмором и матом. 500-650 символов. Завершённая мысль.""",
     }
     
     alternative_prompts = [
-        "Напиши смешной пост о быте с азиатскими женщинами. С матом 1-2 раза. Без упоминаний жены. 500-650 символов.",
-        "Напиши ироничный пост про азиатских женщин. С матом 1-2 раза. Без оскорблений. Без упоминаний жены. 500-650 символов.",
-        "Напиши забавный пост про азиатских женщин. С юмором и матом. Без оскорблений. Без упоминаний жены. 500-650 символов.",
+        "Напиши смешной пост о молодых азиатских женщинах в спортзале. С матом 1-2 раза. Без упоминаний жены. 500-650 символов.",
+        "Напиши ироничный пост про молодых азиатских женщин в возрасте 18-30 лет. С матом 1-2 раза. Без оскорблений. Без упоминаний жены. 500-650 символов.",
+        "Напиши забавный пост про молодых азиатских женщин. С юмором и матом. Без оскорблений. Без упоминаний жены. 500-650 символов.",
     ]
     
     prompt = style_prompts.get(style, style_prompts['funny'])
@@ -312,17 +409,17 @@ def generate_caption() -> str:
 
 def get_fallback_caption() -> str:
     fallbacks = [
-        "Вот вы сидите тут, паритесь, копите на квартиры, на тачки. А я смотрю на азиатку и думаю: блядь, как же они умеют жить. Из пачки лапши и соевого соуса сделать ужин, который вы будете вспоминать неделю. И при этом без лишних слов.",
+        "Вот вы сидите тут, паритесь, копите на квартиры, на тачки. А я смотрю на молодую азиатку в спортзале и думаю: блядь, как же они умеют работать над собой. Из обычной девушки сделать фитнес-модель, которая будет вас мотивировать неделю. И при этом без лишних слов.",
         
-        "Слушайте, я влюбился в азиатку. Она смеётся, и у меня сердце замирает. Маленькая, смешная, говорит на языке, которого я не понимаю. Но мне и не нужно понимать. Я просто счастлив, блядь.",
+        "Слушайте, я влюбился в молодую азиатку. Она занимается фитнесом, и у меня сердце замирает. Маленькая, подтянутая, говорит на языке, которого я не понимаю. Но мне и не нужно понимать. Я просто счастлив, блядь.",
         
-        "Сижу, ем доширак, смотрю на азиатку. Она в купальнике, а я в трусах. И мне хорошо. Потому что я знаю: она всё равно улыбнётся мне. Потому что я Анатолий. А вы так не умеете, сука.",
+        "Сижу, ем доширак, смотрю на азиатку в спортзале. Она в купальнике, а я в трусах. И мне хорошо. Потому что я знаю: она всё равно улыбнётся мне. Потому что я Анатолий. А вы так не умеете, сука.",
         
-        "Пиздец, я только что понял, что жизнь удалась. Я на море, рядом азиатка в купальнике. Вы там работаете, а я тут отдыхаю. Мечтайте дальше, бля.",
+        "Пиздец, я только что понял, что жизнь удалась. Я в спортзале, рядом молодая азиатка в фитнес-образе. Вы там работаете, а я тут качаюсь. Мечтайте дальше, бля.",
         
-        "Знаете, что я понял? Азиатки - это лучшее, что случалось со мной. Они не такие, как все. Они особенные. И я готов за это бороться, сука.",
+        "Знаете, что я понял? Молодые азиатки - это лучшее, что случалось со мной. Они не такие, как все. Они особенные. И я готов за это бороться, сука.",
         
-        "Раньше я думал, что знаю, что такое красота. А потом увидел азиатку. И понял, что всё, что было до этого - хуйня. Они двигаются по-другому, говорят по-другому, даже молчат по-другому.",
+        "Раньше я думал, что знаю, что такое красота. А потом увидел азиатку в спортзале. И понял, что всё, что было до этого - хуйня. Они двигаются по-другому, говорят по-другому, даже тренируются по-другому.",
     ]
     return random.choice(fallbacks)
 
@@ -336,25 +433,28 @@ async def is_user_admin(chat_id: int, user_id: int) -> bool:
         return False
 
 async def get_channel_id() -> str:
-    if CHANNEL_ID:
-        return CHANNEL_ID
+    if CHANNEL_ID and CHANNEL_ID.strip():
+        return CHANNEL_ID.strip()
     
     try:
         me = await bot.get_me()
         print(f"🤖 Бот: @{me.username}")
         
         try:
-            updates = await bot.get_updates(offset=-1, limit=10)
-            for update in updates:
-                if update.channel_post:
-                    chat_id = update.channel_post.chat.id
-                    try:
-                        chat_member = await bot.get_chat_member(chat_id, bot.id)
-                        if chat_member.status in ["administrator", "creator"]:
-                            print(f"✅ Найден канал: {chat_id}")
-                            return str(chat_id)
-                    except:
-                        pass
+            async with asyncio.timeout(10):
+                updates = await bot.get_updates(offset=-1, limit=10)
+                for update in updates:
+                    if update.channel_post:
+                        chat_id = update.channel_post.chat.id
+                        try:
+                            chat_member = await bot.get_chat_member(chat_id, bot.id)
+                            if chat_member.status in ["administrator", "creator"]:
+                                print(f"✅ Найден канал: {chat_id}")
+                                return str(chat_id)
+                        except:
+                            pass
+        except asyncio.TimeoutError:
+            print("⚠️ Таймаут получения обновлений")
         except Exception as e:
             print(f"⚠️ Ошибка получения обновлений: {e}")
             
@@ -364,6 +464,9 @@ async def get_channel_id() -> str:
     return None
 
 def search_bing(query):
+    if not query:
+        return None
+    
     try:
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -389,9 +492,8 @@ def search_bing(query):
             
             if any(ext in img.lower() for ext in ['.jpg', '.jpeg', '.png', '.webp']):
                 if not any(x in img.lower() for x in ['gstatic', 'google', 'favicon', 'logo', 'bing', 'avatar']):
-                    if not is_definitely_not_asian(img):
-                        if not is_traditional_clothing(img):
-                            clean_images.append(img)
+                    if is_photo_acceptable(img):
+                        clean_images.append(img)
         
         clean_images = list(dict.fromkeys(clean_images))
         
@@ -405,6 +507,9 @@ def search_bing(query):
         return None
 
 def search_google_direct(query):
+    if not query:
+        return None
+    
     try:
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -431,9 +536,8 @@ def search_google_direct(query):
             if any(ext in img.lower() for ext in ['.jpg', '.jpeg', '.png', '.webp']):
                 if not any(x in img.lower() for x in ['gstatic', 'google', 'favicon', 'logo']):
                     if not img.startswith('data:'):
-                        if not is_definitely_not_asian(img):
-                            if not is_traditional_clothing(img):
-                                clean_images.append(img)
+                        if is_photo_acceptable(img):
+                            clean_images.append(img)
         
         clean_images = list(dict.fromkeys(clean_images))
         
@@ -447,6 +551,9 @@ def search_google_direct(query):
         return None
 
 def search_yandex(query):
+    if not query:
+        return None
+    
     try:
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -480,9 +587,8 @@ def search_yandex(query):
             if any(ext in img.lower() for ext in ['.jpg', '.jpeg', '.png', '.webp']):
                 if not any(x in img.lower() for x in ['gstatic', 'google', 'favicon', 'logo']):
                     if not img.startswith('data:'):
-                        if not is_definitely_not_asian(img):
-                            if not is_traditional_clothing(img):
-                                clean_images.append(img)
+                        if is_photo_acceptable(img):
+                            clean_images.append(img)
         
         clean_images = list(dict.fromkeys(clean_images))
         
@@ -496,6 +602,9 @@ def search_yandex(query):
         return None
 
 def search_pexels(query):
+    if not query:
+        return None
+    
     try:
         PEXELS_KEY = os.getenv("PEXELS_KEY")
         if not PEXELS_KEY:
@@ -518,7 +627,8 @@ def search_pexels(query):
                 photos = data["photos"]
                 photo = random.choice(photos)
                 url = photo["src"]["large"]
-                return url
+                if is_photo_acceptable(url):
+                    return url
         
         return None
         
@@ -549,7 +659,7 @@ def get_random_photo():
             try:
                 print(f"🔍 Поиск в {source_name}: {query}")
                 photo = search_func(query)
-                if photo and photo not in history:
+                if photo and photo not in history and is_photo_acceptable(photo):
                     history.append(photo)
                     save_history(history)
                     print(f"✅ Найдено фото в {source_name}: {photo[:60]}...")
@@ -568,7 +678,7 @@ def get_random_photo():
         for source_name, search_func in search_functions:
             try:
                 photo = search_func(query)
-                if photo:
+                if photo and is_photo_acceptable(photo):
                     history.append(photo)
                     save_history(history)
                     print(f"✅ Найдено фото после очистки: {photo[:60]}...")
@@ -594,6 +704,11 @@ async def send_post(chat_id, photo_url=None, caption=None):
             if not caption or len(caption) < 10:
                 caption = truncate_by_sentences(get_fallback_caption(), 900)
         
+        if not caption:
+            await bot.send_photo(chat_id=chat_id, photo=photo_url)
+            print(f"✅ Фото (без подписи) отправлено в чат {chat_id}")
+            return True
+        
         await bot.send_photo(
             chat_id=chat_id,
             photo=photo_url,
@@ -604,7 +719,6 @@ async def send_post(chat_id, photo_url=None, caption=None):
         
     except Exception as e:
         print(f"❌ Ошибка отправки в {chat_id}: {e}")
-        # Если бот заблокирован или чат недоступен — удаляем пользователя
         if "forbidden" in str(e).lower() or "chat not found" in str(e).lower():
             if chat_id in users:
                 users.remove(chat_id)
@@ -643,7 +757,7 @@ async def send_to_all_users():
             print(f"❌ Ошибка отправки в {chat_id}: {e}")
     
     channel_id = CHANNEL_ID
-    if not channel_id:
+    if not channel_id or not channel_id.strip():
         channel_id = await get_channel_id()
     
     if channel_id:
@@ -744,13 +858,13 @@ async def start(msg: Message):
         save_users(users)
         print(f"✅ Добавлен пользователь: {chat_id}")
     
-    channel_status = f"\n📢 Канал: {'✅ подключён' if CHANNEL_ID else '🔄 авто-поиск'}"
+    channel_status = f"\n📢 Канал: {'✅ подключён' if CHANNEL_ID and CHANNEL_ID.strip() else '🔄 авто-поиск'}"
     current_schedule = load_schedule()
     times = ", ".join(current_schedule.get("times", ["12:00", "21:00"]))
     
     await msg.answer(
         f"✅ Вы подписаны на рассылку!\n"
-        f"📸 Уникальные посты про азиаток с острым юмором\n"
+        f"📸 Уникальные посты про молодых азиаток (18-30 лет) с острым юмором\n"
         f"⏰ Расписание: {times}\n"
         f"📢 Авто-канал: {'найден' if await get_channel_id() else 'не найден'}\n"
         f"{channel_status}\n"
@@ -879,7 +993,6 @@ async def schedule(msg: Message):
         await msg.answer("❌ Максимум 4 времени.")
         return
     
-    # ОБНОВЛЯЕМ глобальную переменную
     schedule_data["times"] = new_times
     save_schedule(schedule_data)
     
@@ -960,7 +1073,7 @@ async def broadcast(msg: Message):
 
 async def main():
     print("=" * 60)
-    print("🤖 Бот запущен")
+    print("🤖 Бот запущен (только азиатки 18-30 лет)")
     print("🔍 Приоритет: Bing → Google → Yandex → Pexels")
     print(f"📊 Подписчиков: {len(users)}")
     print(f"📸 Фото в истории: {len(history)}")
