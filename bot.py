@@ -75,6 +75,10 @@ history = load_history()
 
 # ===== ГЕНЕРАЦИЯ ПОСТОВ ЧЕРЕЗ DEEPSEEK API =====
 
+def clean_text(text: str) -> str:
+    """Заменяет длинное тире на обычное"""
+    return text.replace('—', '-').replace('–', '-')
+
 def generate_caption() -> str:
     """
     Генерирует провокационный пост в стиле @maddysontg через DeepSeek API
@@ -83,7 +87,7 @@ def generate_caption() -> str:
     
     if not DEEPSEEK_API_KEY:
         print("⚠️ Нет ключа DeepSeek, использую резерв")
-        return get_fallback_caption()
+        return clean_text(get_fallback_caption())
     
     try:
         url = "https://api.deepseek.com/chat/completions"
@@ -92,7 +96,7 @@ def generate_caption() -> str:
             "Content-Type": "application/json"
         }
         
-        prompt = """Ты — известный блогер с канала @maddysontg. Твой стиль — провокационный, пошлый, с чёрным юмором, самоиронией и матом. Пиши ТОЛЬКО готовый пост, без рассуждений, без пояснений, без кавычек.
+        prompt = """Ты - известный блогер с канала @maddysontg. Твой стиль - провокационный, пошлый, с черным юмором, самоиронией и матом. Пиши ТОЛЬКО готовый пост, без рассуждений, без пояснений, без кавычек. ИСПОЛЬЗУЙ ТОЛЬКО ОБЫЧНОЕ ТИРЕ "-", НЕ ИСПОЛЬЗУЙ ДЛИННОЕ ТИРЕ "—" И "–".
 
 Напиши пост про азиатских женщин (японок, китаянок, кореянок). Пост должен быть:
 - 700-900 символов
@@ -110,7 +114,7 @@ def generate_caption() -> str:
         data = {
             "model": "deepseek-v4-flash",
             "messages": [
-                {"role": "system", "content": "Ты стендап-комик и блогер. Отвечай только готовым постом. Никаких рассуждений. Только текст поста."},
+                {"role": "system", "content": "Ты стендап-комик и блогер. Отвечай только готовым постом. Никаких рассуждений. Только текст поста. Используй только обычное тире '-'."},
                 {"role": "user", "content": prompt}
             ],
             "temperature": 1.2,
@@ -121,26 +125,22 @@ def generate_caption() -> str:
         
         if response.status_code != 200:
             print(f"❌ DeepSeek ошибка: {response.status_code}")
-            return get_fallback_caption()
+            return clean_text(get_fallback_caption())
         
         result = response.json()
         content = result["choices"][0].get("message", {}).get("content", "")
         
-        # Если content пустой, пробуем взять reasoning_content
         if not content:
             content = result["choices"][0].get("message", {}).get("reasoning_content", "")
         
         if not content or len(content.strip()) < 20:
             print("❌ Пустой или короткий ответ")
-            return get_fallback_caption()
+            return clean_text(get_fallback_caption())
         
-        # Очищаем от лишнего
         caption = content.strip().strip('"').strip("'")
         
-        # Если ответ начинается с "Мы должны" или "Напиши" — это рассуждение
         if caption.lower().startswith(("мы должны", "нужно", "я должен", "напиши")):
             print("⚠️ DeepSeek выдал рассуждение, пробую ещё раз...")
-            # Вторая попытка
             response = requests.post(url, headers=headers, json=data, timeout=30)
             if response.status_code == 200:
                 result = response.json()
@@ -148,14 +148,14 @@ def generate_caption() -> str:
                 if content and len(content.strip()) > 20 and not content.lower().startswith(("мы должны", "нужно", "я должен", "напиши")):
                     caption = content.strip().strip('"').strip("'")
                     print(f"✅ Сгенерирован пост: {caption[:50]}...")
-                    return caption
+                    return clean_text(caption)
         
         print(f"✅ Сгенерирован пост: {caption[:50]}...")
-        return caption
+        return clean_text(caption)
             
     except Exception as e:
         print(f"❌ Ошибка генерации: {e}")
-        return get_fallback_caption()
+        return clean_text(get_fallback_caption())
 
 def get_fallback_caption() -> str:
     """Резервные посты (если API не работает)"""
@@ -289,45 +289,62 @@ def search_pexels(query):
         return None
 
 def get_random_photo():
+    """
+    Получает случайное фото, которого нет в истории.
+    Если история заполнена или фото повторяются - очищает историю.
+    """
     global history
+    
+    if len(history) > 80:
+        print("📊 История переполнена, очищаю...")
+        history = []
+        save_history(history)
     
     queries = SEARCH_QUERIES.copy()
     random.shuffle(queries)
     
-    for _ in range(20):
+    for attempt in range(3):
         for query in queries:
             photo = search_bing(query)
             if photo and photo not in history:
                 history.append(photo)
                 save_history(history)
-                print(f"✅ Найдено новое фото: {photo[:50]}...")
+                print(f"✅ Найдено новое фото: {photo[:60]}...")
                 return photo
-            time.sleep(0.3)
-        
-        for query in queries:
+            
             photo = search_google_direct(query)
             if photo and photo not in history:
                 history.append(photo)
                 save_history(history)
-                print(f"✅ Найдено новое фото: {photo[:50]}...")
+                print(f"✅ Найдено новое фото: {photo[:60]}...")
                 return photo
-            time.sleep(0.3)
-        
-        for query in queries:
+            
             photo = search_pexels(query)
             if photo and photo not in history:
                 history.append(photo)
                 save_history(history)
-                print(f"✅ Найдено новое фото: {photo[:50]}...")
+                print(f"✅ Найдено новое фото: {photo[:60]}...")
                 return photo
-            time.sleep(0.3)
+            
+            time.sleep(0.2)
+    
+    print("⚠️ Не удалось найти новое фото, очищаю историю...")
+    history = []
+    save_history(history)
     
     for query in queries:
         photo = search_bing(query)
         if photo:
             history.append(photo)
             save_history(history)
-            print(f"⚠️ Использую повторное фото: {photo[:50]}...")
+            print(f"✅ Найдено фото после очистки: {photo[:60]}...")
+            return photo
+        
+        photo = search_google_direct(query)
+        if photo:
+            history.append(photo)
+            save_history(history)
+            print(f"✅ Найдено фото после очистки: {photo[:60]}...")
             return photo
     
     return None
@@ -370,32 +387,45 @@ async def send_to_all_users():
         await send_photo(chat_id)
         await asyncio.sleep(3)
 
+# ===== РАСПИСАНИЕ =====
+
 async def scheduler():
+    """
+    Отправляет посты в случайное время в интервалах:
+    - Первый: с 12:00 до 15:00
+    - Второй: с 17:00 до 22:00
+    """
     while True:
         now = datetime.now()
         
-        target_times = [9, 21]
-        next_hour = None
+        # Случайное время для первого поста (12:00 - 15:00)
+        hour1 = random.randint(12, 14)
+        minute1 = random.randint(0, 59)
         
-        for hour in target_times:
-            if now.hour < hour or (now.hour == hour and now.minute < 5):
-                next_hour = hour
-                break
+        # Случайное время для второго поста (17:00 - 22:00)
+        hour2 = random.randint(17, 21)
+        minute2 = random.randint(0, 59)
         
-        if next_hour is None:
-            next_hour = 9
-            tomorrow = now + timedelta(days=1)
-            target_time = datetime(tomorrow.year, tomorrow.month, tomorrow.day, next_hour, 0, 0)
-        else:
-            target_time = datetime(now.year, now.month, now.day, next_hour, 0, 0)
+        # Сортируем времена
+        times = [(hour1, minute1), (hour2, minute2)]
+        times.sort()
         
-        wait_seconds = (target_time - now).total_seconds()
+        target_times = []
+        for hour, minute in times:
+            target = datetime(now.year, now.month, now.day, hour, minute, 0)
+            if target <= now:
+                target += timedelta(days=1)
+            target_times.append(target)
         
-        if wait_seconds < 0:
-            wait_seconds += 24 * 3600
+        # Ждём до первого поста
+        wait_seconds = (target_times[0] - now).total_seconds()
+        print(f"⏳ Первая отправка в {target_times[0].strftime('%H:%M')} (через {wait_seconds/3600:.1f} часов)")
+        await asyncio.sleep(wait_seconds)
+        await send_to_all_users()
         
-        print(f"⏳ Следующая отправка в {target_time.strftime('%H:%M')} (через {wait_seconds/3600:.1f} часов)")
-        
+        # Ждём до второго поста
+        wait_seconds = (target_times[1] - target_times[0]).total_seconds()
+        print(f"⏳ Вторая отправка в {target_times[1].strftime('%H:%M')} (через {wait_seconds/3600:.1f} часов)")
         await asyncio.sleep(wait_seconds)
         await send_to_all_users()
 
@@ -432,7 +462,8 @@ async def start(msg: Message):
     await msg.answer(
         f"✅ Вы подписаны на рассылку!\n"
         f"📸 Я буду присылать фото азиаток с острым юмором 2 раза в день\n"
-        f"⏰ В 9:00 и в 21:00 по вашему времени\n"
+        f"⏰ Первый пост: 12:00-15:00\n"
+        f"⏰ Второй пост: 17:00-22:00\n"
         f"🔄 /photo - получить фото сейчас\n"
         f"🛑 /stop - отписаться"
     )
@@ -493,7 +524,7 @@ async def status(msg: Message):
         f"• Подписка: {'✅ Активна' if is_subscribed else '❌ Неактивна'}\n"
         f"• Всего подписчиков: {len(users)}\n"
         f"• Фото в истории: {len(history)}\n"
-        f"• Расписание: 9:00 и 21:00"
+        f"• Расписание: 12:00-15:00 и 17:00-22:00"
     )
     
     await msg.answer(status_text)
@@ -559,13 +590,15 @@ async def broadcast(msg: Message):
     
     await msg.answer(f"✅ Отправлено {sent} подписчикам")
 
+# ===== ЗАПУСК =====
+
 async def main():
     print("=" * 60)
     print("🤖 Бот запущен (генерация через DeepSeek)")
     print("🔍 Поиск в: Bing → Google → Pexels")
     print(f"📊 Подписчиков: {len(users)}")
     print(f"📸 Фото в истории: {len(history)}")
-    print("⏰ Расписание: 9:00 и 21:00")
+    print("⏰ Расписание: 12:00-15:00 и 17:00-22:00")
     print("=" * 60)
     
     gc.collect()
