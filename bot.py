@@ -33,30 +33,54 @@ SEARCH_QUERIES = [
     "chinese woman portrait",
     "east asian woman portrait",
     "asian model portrait",
-    "japanese korean chinese woman",
 ]
 
 # Ключевые слова для фильтрации (только азиатки)
 ASIAN_KEYWORDS = [
     'asian', 'japanese', 'korean', 'chinese', 'east asian',
     'japan', 'korea', 'china', 'tokyo', 'seoul', 'beijing',
-    'oriental', 'east', 'asia', 'kim', 'lee', 'park', 'chan', 'sakura'
+    'sakura', 'kim', 'lee', 'park', 'chan'
 ]
 
 # Слова-исключения (не азиатки)
 EXCLUDE_KEYWORDS = [
     'african', 'black', 'white', 'caucasian', 'european', 'american',
-    'latina', 'mexican', 'brazilian', 'indian', 'middle eastern'
+    'latina', 'mexican', 'brazilian', 'indian', 'middle eastern',
+    'arab', 'persian', 'turkish'
 ]
 
 # ===== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ =====
 
-def truncate_caption(text: str, max_length: int = 900) -> str:
-    """Обрезает текст до максимальной длины, заканчивая на . ! ?"""
+def clean_punctuation(text: str) -> str:
+    """Убирает лишние знаки препинания, заменяет «» на " """
+    text = re.sub(r'[.!?]{2,}', '.', text)
+    text = re.sub(r'\s+', ' ', text)
+    # Заменяем ёлочки на обычные кавычки
+    text = text.replace('«', '"').replace('»', '"')
+    text = text.replace('„', '"').replace('“', '"')
+    text = text.replace('`', "'").replace('´', "'")
+    # Убираем другие лишние символы, кроме кавычек
+    text = re.sub(r'[()\[\]{}<>]', '', text)
+    return text.strip()
+
+def ensure_ends_with_dot(text: str) -> str:
+    """Добавляет точку в конце текста, если её нет"""
+    text = text.strip()
+    if text and text[-1] not in ('.', '!', '?'):
+        return text + '.'
+    return text
+
+def truncate_by_sentences(text: str, max_length: int = 700) -> str:
+    """
+    Обрезает текст до целых предложений, не превышая max_length.
+    Если предложение не закончилось точкой - оно удаляется.
+    В конце всегда точка.
+    """
     if len(text) <= max_length:
-        return text
+        return ensure_ends_with_dot(text)
     
     truncated = text[:max_length]
+    
     last_punct = -1
     for p in ('.', '!', '?'):
         pos = truncated.rfind(p)
@@ -64,13 +88,17 @@ def truncate_caption(text: str, max_length: int = 900) -> str:
             last_punct = pos
     
     if last_punct != -1:
-        return text[:last_punct + 1]
+        result = text[:last_punct + 1]
+        result = clean_punctuation(result)
+        return ensure_ends_with_dot(result)
     
     last_space = truncated.rfind(' ')
     if last_space != -1:
-        return text[:last_space] + '.'
+        result = text[:last_space] + '.'
+        result = clean_punctuation(result)
+        return ensure_ends_with_dot(result)
     
-    return text[:max_length]
+    return ensure_ends_with_dot(truncated)
 
 def clean_text(text: str) -> str:
     """Очищает текст от упоминаний и заменяет длинное тире"""
@@ -78,17 +106,8 @@ def clean_text(text: str) -> str:
     text = text.replace('@maddysontg', '').replace('@Maddysontg', '').replace('@MADDYSONTG', '')
     text = text.replace('maddysontg', '').replace('Maddysontg', '').replace('MADDYSONTG', '')
     text = re.sub(r'\s+', ' ', text).strip()
+    text = clean_punctuation(text)
     return text
-
-def is_photo_appropriate(url: str) -> bool:
-    """Проверяет, что фото подходит по контенту и внешности"""
-    # Проверяем URL на наличие азиатских ключевых слов
-    url_lower = url.lower()
-    for word in ASIAN_KEYWORDS:
-        if word in url_lower:
-            return True
-    # Если в URL нет азиатских ключей — всё равно пропускаем (надеемся на поиск)
-    return True
 
 def is_definitely_not_asian(url: str) -> bool:
     """Проверяет, что фото точно НЕ азиатка"""
@@ -162,13 +181,13 @@ def generate_caption() -> str:
     
     if not DEEPSEEK_API_KEY:
         print("⚠️ Нет ключа DeepSeek, использую резерв")
-        return clean_text(get_fallback_caption())
+        return clean_text(truncate_by_sentences(get_fallback_caption(), 700))
     
     prompt_templates = [
-        """Ты - Анатолий, известный блогер. Твой стиль - провокационный, пошлый, с черным юмором. Пиши ТОЛЬКО готовый пост, без рассуждений. ИСПОЛЬЗУЙ ТОЛЬКО ОБЫЧНОЕ ТИРЕ "-". НЕ УПОМИНАЙ @maddysontg.
+        """Ты - Анатолий, известный блогер. Твой стиль - провокационный, пошлый, с черным юмором. Пиши ТОЛЬКО готовый пост, без рассуждений. ИСПОЛЬЗУЙ ТОЛЬКО ОБЫЧНОЕ ТИРЕ "-". НЕ УПОМИНАЙ @maddysontg. ИСПОЛЬЗУЙ ОБЫЧНЫЕ КАВЫЧКИ " ВМЕСТО «».
 
 Напиши пост про азиатских женщин. Будь оригинален. Пост должен быть:
-- 700-900 символов
+- 500-650 символов
 - Провокационным, с острым юмором
 - С матом
 - С неожиданной концовкой
@@ -176,10 +195,10 @@ def generate_caption() -> str:
 
 Твой ответ (ТОЛЬКО пост):""",
 
-        """Ты - Анатолий, блогер-провокатор. Твой стиль - эпатаж, пошлость и черный юмор. Пиши только готовый пост. Только обычное тире "-". НЕ УПОМИНАЙ @maddysontg.
+        """Ты - Анатолий, блогер-провокатор. Твой стиль - эпатаж, пошлость и черный юмор. Пиши только готовый пост. Только обычное тире "-". НЕ УПОМИНАЙ @maddysontg. ИСПОЛЬЗУЙ ОБЫЧНЫЕ КАВЫЧКИ " ВМЕСТО «».
 
 Напиши пост про азиатских женщин. Придумай что-то новое. Требования:
-- 700-900 символов
+- 500-650 символов
 - Острый юмор, провокация
 - Мат для эмоций
 - Завершённая мысль
@@ -187,10 +206,10 @@ def generate_caption() -> str:
 
 Твой ответ (ТОЛЬКО пост):""",
 
-        """Ты - Анатолий. Пиши в своём стиле - провокационно, с самоиронией и матом. Только готовый пост, без пояснений. Используй только обычное тире "-". НЕ УПОМИНАЙ @maddysontg.
+        """Ты - Анатолий. Пиши в своём стиле - провокационно, с самоиронией и матом. Только готовый пост, без пояснений. Используй только обычное тире "-". НЕ УПОМИНАЙ @maddysontg. ИСПОЛЬЗУЙ ОБЫЧНЫЕ КАВЫЧКИ " ВМЕСТО «».
 
 Сгенерируй пост про азиатских женщин. Сделай его уникальным. Пост:
-- 700-900 символов
+- 500-650 символов
 - С острым юмором и пошлостью
 - С матом
 - С неожиданной мыслью в конце
@@ -212,11 +231,11 @@ def generate_caption() -> str:
             data = {
                 "model": "deepseek-v4-flash",
                 "messages": [
-                    {"role": "system", "content": "Ты стендап-комик Анатолий. Отвечай только готовым постом. Никаких рассуждений. Только текст поста. Используй только обычное тире '-'. НЕ УПОМИНАЙ ДРУГИХ БЛОГЕРОВ."},
+                    {"role": "system", "content": "Ты стендап-комик Анатолий. Отвечай только готовым постом. Никаких рассуждений. Только текст поста. Используй только обычное тире '-'. НЕ УПОМИНАЙ ДРУГИХ БЛОГЕРОВ. Используй обычные кавычки \" вместо «»."},
                     {"role": "user", "content": prompt}
                 ],
                 "temperature": 1.3,
-                "max_tokens": 600,
+                "max_tokens": 450,
             }
             
             response = requests.post(url, headers=headers, json=data, timeout=30)
@@ -246,8 +265,14 @@ def generate_caption() -> str:
                 continue
             
             caption = clean_text(caption)
+            caption = truncate_by_sentences(caption, 700)
+            
+            if len(caption) < 30:
+                print("⚠️ Пост слишком короткий, пробуем ещё...")
+                continue
+            
             add_to_last_posts(caption)
-            print(f"✅ Сгенерирован уникальный пост: {caption[:50]}...")
+            print(f"✅ Сгенерирован уникальный пост ({len(caption)} символов): {caption[:50]}...")
             return caption
             
         except Exception as e:
@@ -255,23 +280,19 @@ def generate_caption() -> str:
             continue
     
     print("⚠️ Не удалось сгенерировать уникальный пост, использую резерв")
-    return clean_text(get_fallback_caption())
+    return clean_text(truncate_by_sentences(get_fallback_caption(), 700))
 
 def get_fallback_caption() -> str:
     fallbacks = [
-        "Бля, смотрю на азиатку и думаю: вот это поворот. Я-то думал, что люблю блондинок, а тут такая хуйня. Глаза, сука, такие, что забываешь, как дышать. И улыбка от которой у меня встал не только член, но и желание жить. Сижу и думаю: нахуя я тратил время на всех этих ебаных моделей? Теперь я хочу учить японский, есть палочками и смотреть аниме. Пиздец, куда качусь.",
+        "Бля, смотрю на азиатку и думаю: вот это поворот. Я-то думал, что люблю блондинок, а тут такая хуйня. Глаза, сука, такие, что забываешь, как дышать. Теперь я хочу учить японский, есть палочками и смотреть аниме. Пиздец, куда качусь.",
         
-        "Слушай, я тут подумал, азиатки реально меняют жизнь. Ты думал, что будешь просто смотреть аниме и есть доширак, а теперь ты ходишь на курсы каллиграфии. И это не шутка. Я уже умею писать иероглифы. Зачем? Не знаю, но она сказала, что это красиво. И я, как дурак, учу. Пиздец. Теперь я мечтаю о том, чтобы она надела кимоно и села сверху. А она говорит: 'Ты такой смешной, когда пытаешься'. И я таю, сука.",
+        "Слушай, я тут подумал, азиатки реально меняют жизнь. Ты думал, что будешь просто смотреть аниме и есть доширак, а теперь ты ходишь на курсы каллиграфии. Я уже умею писать иероглифы. Зачем? Не знаю, но она сказала, что это красиво.",
         
-        "Пиздец, я влюбился в азиатку. Раньше я смеялся над друзьями, которые ездили в Таиланд. Теперь я сам готов купить билет и уехать нахуй. Она маленькая, смешная, и говорит на языке, которого я не понимаю. Но когда она смеётся, у меня сердце замирает. Я готов для неё учить всё. И даже есть палочками. Хотя это пиздец как сложно.",
+        "Пиздец, я влюбился в азиатку. Раньше я смеялся над друзьями, которые ездили в Таиланд. Теперь я сам готов купить билет и уехать нахуй. Она маленькая, смешная, и говорит на языке, которого я не понимаю. Но когда она смеётся, у меня сердце замирает.",
         
-        "Бля, встретил азиатку в кафе. Она такая маленькая, что я думал, это школьница сбежала с уроков. А ей 28 лет. Вот это я попал. Она смеётся, а я думаю: 'Господи, как я докатился до такой жизни?' Но потом она говорит: 'Ты милый, когда пытаешься'. И я понимаю, что это комплимент. Но бля, я не хочу быть милым, я хочу быть крутым. А она щипает меня за щеку, и я таю. Что за нахуй?"
+        "Бля, встретил азиатку в кафе. Она такая маленькая, что я думал, это школьница. А ей 28 лет. Вот это я попал. Она смеётся, а я думаю: как я докатился до такой жизни. Но потом она говорит: ты милый, когда пытаешься."
     ]
-    fallback = random.choice(fallbacks)
-    endings = [" Вот так вот.", " И всё такое.", " Ну и хуй с ним.", " А вы как думаете?"]
-    if not fallback.endswith((".", "!", "?")):
-        fallback += random.choice(endings)
-    return fallback
+    return random.choice(fallbacks)
 
 # ===== ПОИСК ФОТО =====
 
@@ -308,7 +329,6 @@ def search_bing(query):
             
             if any(ext in img.lower() for ext in ['.jpg', '.jpeg', '.png', '.webp']):
                 if not any(x in img.lower() for x in ['gstatic', 'google', 'favicon', 'logo', 'bing', 'avatar']):
-                    # Проверяем, что фото не из "запрещённых" категорий
                     if not is_definitely_not_asian(img):
                         clean_images.append(img)
         
@@ -435,7 +455,6 @@ def search_pexels(query):
                 photos = data["photos"]
                 photo = random.choice(photos)
                 url = photo["src"]["large"]
-                # Pexels фото почти всегда качественные и подходящие
                 return url
         
         return None
@@ -445,7 +464,6 @@ def search_pexels(query):
         return None
 
 def get_random_photo():
-    """Получает случайное фото азиатки (исключая не-азиаток)"""
     global history
     
     if len(history) > 80:
@@ -479,7 +497,6 @@ def get_random_photo():
             
             time.sleep(0.3)
     
-    # Если ничего не найдено - очищаем историю и пробуем ещё раз
     print("⚠️ Не удалось найти новое фото, очищаю историю...")
     history = []
     save_history(history)
@@ -505,41 +522,16 @@ async def send_photo(chat_id):
         if photo_url:
             full_caption = generate_caption()
             full_caption = clean_text(full_caption)
+            full_caption = truncate_by_sentences(full_caption, 700)
             
-            # Если текст слишком длинный — разбиваем на несколько сообщений
-            if len(full_caption) <= 900:
-                await bot.send_photo(
-                    chat_id=chat_id, 
-                    photo=photo_url,
-                    caption=full_caption
-                )
-            else:
-                # Отправляем фото с первой частью текста (до 900 символов)
-                caption_part = truncate_caption(full_caption, 900)
-                await bot.send_photo(
-                    chat_id=chat_id, 
-                    photo=photo_url,
-                    caption=caption_part
-                )
-                
-                # Отправляем продолжение отдельными сообщениями
-                remaining = full_caption[len(caption_part):].strip()
-                if remaining:
-                    # Разбиваем остаток на части по 4096 символов
-                    parts = []
-                    while len(remaining) > 4000:
-                        parts.append(remaining[:4000])
-                        remaining = remaining[4000:]
-                    if remaining:
-                        parts.append(remaining)
-                    
-                    for part in parts:
-                        await bot.send_message(
-                            chat_id=chat_id,
-                            text=part
-                        )
-                        await asyncio.sleep(0.3)
+            if not full_caption or len(full_caption) < 10:
+                full_caption = truncate_by_sentences(get_fallback_caption(), 700)
             
+            await bot.send_photo(
+                chat_id=chat_id, 
+                photo=photo_url,
+                caption=full_caption
+            )
             print(f"✅ Фото отправлено в чат {chat_id}")
             return True
         else:
@@ -732,7 +724,8 @@ async def test(msg: Message):
     
     caption = generate_caption()
     caption = clean_text(caption)
-    await msg.answer(f"📝 Результат:\n\n{caption}")
+    caption = truncate_by_sentences(caption, 700)
+    await msg.answer(f"📝 Результат:\n\n{caption}\n\n📊 Длина: {len(caption)} символов")
 
 @dp.message(Command("clear_history"))
 async def clear_history(msg: Message):
@@ -786,12 +779,13 @@ async def broadcast(msg: Message):
 
 async def main():
     print("=" * 60)
-    print("🤖 Бот запущен (только азиатки, без обрывов)")
+    print("🤖 Бот запущен (только азиатки, макс 700 символов)")
     print("🔍 Приоритет: Bing → Google → Yandex → Pexels")
     print(f"📊 Подписчиков: {len(users)}")
     print(f"📸 Фото в истории: {len(history)}")
     print("⏰ Расписание: 12:00-15:00 и 17:00-22:00")
-    print("📝 Текст разбивается на части при необходимости")
+    print("📝 Максимальная длина текста: 700 символов")
+    print("📝 Кавычки: обычные \" вместо «»")
     print("=" * 60)
     
     gc.collect()
