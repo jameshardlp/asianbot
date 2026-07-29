@@ -39,9 +39,8 @@ HISTORY_FILE = "history.json"
 
 def truncate_caption(text: str, max_length: int = 1000) -> str:
     """
-    Обрезает текст до максимальной длины, заканчивая на последней точке,
-    вопросительном или восклицательном знаке. Если знаков нет — обрезает до
-    последнего пробела и ставит точку.
+    Обрезает текст до максимальной длины, оставляя только целые предложения.
+    Если последнее предложение не влезает — оно удаляется целиком.
     """
     if len(text) <= max_length:
         return text
@@ -55,17 +54,15 @@ def truncate_caption(text: str, max_length: int = 1000) -> str:
         if pos > last_punct:
             last_punct = pos
 
-    # Если нашли — обрезаем до него включительно
     if last_punct != -1:
         return truncated[:last_punct + 1]
 
-    # Если знаков нет — ищем последний пробел
+    # Если знаков нет — удаляем последнее незавершённое предложение
     last_space = truncated.rfind(' ')
     if last_space != -1:
         return truncated[:last_space] + '.'
 
-    # Если и пробела нет — просто обрезаем
-    return truncated
+    return ''
 
 def clean_text(text: str) -> str:
     """Заменяет длинное тире на обычное и убирает упоминания @maddysontg"""
@@ -433,11 +430,18 @@ async def send_photo(chat_id):
             caption = generate_caption()
             caption = truncate_caption(caption, 1000)
             
-            await bot.send_photo(
-                chat_id=chat_id, 
-                photo=photo_url,
-                caption=caption
-            )
+            # Если после обрезки текст пустой — не отправляем подпись
+            if caption:
+                await bot.send_photo(
+                    chat_id=chat_id, 
+                    photo=photo_url,
+                    caption=caption
+                )
+            else:
+                await bot.send_photo(
+                    chat_id=chat_id, 
+                    photo=photo_url
+                )
             print(f"✅ Фото отправлено в чат {chat_id}")
             return True
         else:
