@@ -56,30 +56,39 @@ def ensure_ends_with_dot(text: str) -> str:
         return text + '.'
     return text
 
-def truncate_by_sentences(text: str, max_length: int = 700) -> str:
+def truncate_by_sentences(text: str, max_length: int = 900) -> str:
+    """
+    Обрезает текст до целых предложений, не превышая max_length.
+    Если последнее предложение не влезает целиком - оно добавляется целиком,
+    даже если это превышает лимит (но не более чем на длину одного предложения).
+    """
     if len(text) <= max_length:
         return ensure_ends_with_dot(text)
     
-    truncated = text[:max_length]
-    
+    # Ищем последний знак завершения предложения в пределах max_length
     last_punct = -1
     for p in ('.', '!', '?'):
-        pos = truncated.rfind(p)
+        pos = text.rfind(p, 0, max_length)
         if pos > last_punct:
             last_punct = pos
     
     if last_punct != -1:
+        # Берем текст до знака включительно
         result = text[:last_punct + 1]
-        result = clean_punctuation(result)
-        return ensure_ends_with_dot(result)
+        # Проверяем, не слишком ли длинный результат
+        if len(result) <= max_length + 300:  # Допускаем превышение на длину предложения
+            return ensure_ends_with_dot(result)
     
-    last_space = truncated.rfind(' ')
+    # Если знака нет или результат слишком длинный - ищем последний пробел
+    last_space = text.rfind(' ', 0, max_length)
     if last_space != -1:
         result = text[:last_space] + '.'
-        result = clean_punctuation(result)
-        return ensure_ends_with_dot(result)
+        if len(result) <= max_length + 300:
+            return ensure_ends_with_dot(result)
     
-    return ensure_ends_with_dot(truncated)
+    # Если ничего не подходит - просто обрезаем до лимита и добавляем точку
+    result = text[:max_length]
+    return ensure_ends_with_dot(result)
 
 def clean_text(text: str) -> str:
     text = text.replace('—', '-').replace('–', '-')
@@ -166,27 +175,24 @@ def is_similar(text: str) -> bool:
             return True
     return False
 
-# ===== ГЕНЕРАЦИЯ ПОСТОВ (РАЗНЫЕ СТИЛИ) =====
+# ===== ГЕНЕРАЦИЯ ПОСТОВ =====
 
 def generate_caption() -> str:
     print("🧠 Генерирую уникальный пост...")
     
     if not DEEPSEEK_API_KEY:
         print("⚠️ Нет ключа DeepSeek, использую резерв")
-        return clean_text(truncate_by_sentences(get_fallback_caption(), 700))
+        return clean_text(get_fallback_caption())
     
-    # Рандомно выбираем стиль поста
     style = random.choice([
-        'aggressive',    # агрессивный с ненавистью
-        'romantic',      # романтичный
-        'vulgar',        # пошлый
-        'everyday',      # бытовой
-        'envy',          # вызывающий зависть
-        'funny',         # смешной
+        'aggressive', 'romantic', 'vulgar', 'everyday', 'envy', 'funny'
     ])
     
     style_prompts = {
-        'aggressive': """Ты - Анатолий, агрессивный и дерзкий блогер. Пиши ТОЛЬКО готовый пост. ИСПОЛЬЗУЙ МАТ. Твоя задача - выплеснуть ненависть и агрессию, но с юмором.
+        'aggressive': """Ты - Анатолий, агрессивный и дерзкий блогер в стиле @maddysontg. Пиши ТОЛЬКО готовый пост. ИСПОЛЬЗУЙ МАТ. Твоя задача - выплеснуть ненависть и агрессию, но с юмором.
+
+Пример стиля:
+"Бля, ну как же они бесят эти азиатки. Такие красивые, что просто пиздец. Сидишь, смотришь на неё и понимаешь, что жизнь прошла мимо. Сука, почему я не родился в Азии."
 
 Напиши агрессивный пост про азиатских женщин. Требования:
 - 500-650 символов
@@ -195,7 +201,10 @@ def generate_caption() -> str:
 - Юмор через злость
 - Завершённая мысль""",
 
-        'romantic': """Ты - Анатолий, романтичный и чувствительный блогер. Пиши ТОЛЬКО готовый пост. ИСПОЛЬЗУЙ МАТ 1 РАЗ.
+        'romantic': """Ты - Анатолий, романтичный и чувствительный блогер в стиле @maddysontg. Пиши ТОЛЬКО готовый пост. ИСПОЛЬЗУЙ МАТ 1 РАЗ.
+
+Пример стиля:
+"Слушай, я влюбился в азиатку. Она смеётся, и у меня сердце замирает. Маленькая, смешная, говорит на языке, которого я не понимаю. Но мне и не нужно понимать. Я просто счастлив."
 
 Напиши романтичный пост про азиатских женщин. Требования:
 - 500-650 символов
@@ -204,7 +213,10 @@ def generate_caption() -> str:
 - С юмором
 - Завершённая мысль""",
 
-        'vulgar': """Ты - Анатолий, пошлый и развязный блогер. Пиши ТОЛЬКО готовый пост. ИСПОЛЬЗУЙ МАТ 2-3 РАЗА.
+        'vulgar': """Ты - Анатолий, пошлый и развязный блогер в стиле @maddysontg. Пиши ТОЛЬКО готовый пост. ИСПОЛЬЗУЙ МАТ 2-3 РАЗА.
+
+Пример стиля:
+"Сижу, ем доширак, смотрю на азиатку. Она в купальнике, а я в трусах. И мне хорошо. Потому что я знаю: она всё равно улыбнётся мне. Потому что я Анатолий."
 
 Напиши пошлый пост про азиатских женщин. Требования:
 - 500-650 символов
@@ -213,7 +225,10 @@ def generate_caption() -> str:
 - С юмором
 - Завершённая мысль""",
 
-        'everyday': """Ты - Анатолий, обычный парень с бытовым юмором. Пиши ТОЛЬКО готовый пост. ИСПОЛЬЗУЙ МАТ 1-2 РАЗА.
+        'everyday': """Ты - Анатолий, обычный парень с бытовым юмором в стиле @maddysontg. Пиши ТОЛЬКО готовый пост. ИСПОЛЬЗУЙ МАТ 1-2 РАЗА.
+
+Пример стиля:
+"Сижу, думаю: а зачем мне всё это? Работа, деньги, проблемы. А есть она, азиатка, которая смеётся над моими шутками. И мне больше ничего не нужно."
 
 Напиши бытовой пост про азиатских женщин. Требования:
 - 500-650 символов
@@ -222,7 +237,10 @@ def generate_caption() -> str:
 - С юмором
 - Завершённая мысль""",
 
-        'envy': """Ты - Анатолий, успешный и уверенный блогер. Пиши ТОЛЬКО готовый пост. ИСПОЛЬЗУЙ МАТ 1-2 РАЗА.
+        'envy': """Ты - Анатолий, успешный и уверенный блогер в стиле @maddysontg. Пиши ТОЛЬКО готовый пост. ИСПОЛЬЗУЙ МАТ 1-2 РАЗА.
+
+Пример стиля:
+"Пиздец, я только что понял, что жизнь удалась. Я на море, рядом азиатка в купальнике. Вы там работаете, а я тут отдыхаю. Мечтайте дальше."
 
 Напиши пост, вызывающий зависть у читателей. Требования:
 - 500-650 символов
@@ -232,7 +250,10 @@ def generate_caption() -> str:
 - С юмором
 - Завершённая мысль""",
 
-        'funny': """Ты - Анатолий, смешной и ироничный блогер. Пиши ТОЛЬКО готовый пост. ИСПОЛЬЗУЙ МАТ 1-2 РАЗА.
+        'funny': """Ты - Анатолий, смешной и ироничный блогер в стиле @maddysontg. Пиши ТОЛЬКО готовый пост. ИСПОЛЬЗУЙ МАТ 1-2 РАЗА.
+
+Пример стиля:
+"Бля, она такая смешная. Говорит что-то на своём, жестикулирует, а я ничего не понимаю. Но мне нравится. Потому что я чувствую себя живым."
 
 Напиши смешной пост про азиатских женщин. Требования:
 - 500-650 символов
@@ -256,11 +277,11 @@ def generate_caption() -> str:
             data = {
                 "model": "deepseek-v4-flash",
                 "messages": [
-                    {"role": "system", "content": f"Ты стендап-комик Анатолий. Отвечай только готовым постом. Никаких рассуждений. Только текст поста. Используй только обычное тире '-'. НЕ УПОМИНАЙ ДРУГИХ БЛОГЕРОВ. Используй обычные кавычки \" вместо «». ОБЯЗАТЕЛЬНО используй мат. Стиль поста: {style}. Пост должен быть смешным."},
+                    {"role": "system", "content": f"Ты стендап-комик Анатолий в стиле @maddysontg. Отвечай только готовым постом. Никаких рассуждений. Только текст поста. Используй только обычное тире '-'. НЕ УПОМИНАЙ ДРУГИХ БЛОГЕРОВ. Используй обычные кавычки \" вместо «». ОБЯЗАТЕЛЬНО используй мат. Стиль поста: {style}. Пост должен быть смешным."},
                     {"role": "user", "content": prompt}
                 ],
                 "temperature": 1.3,
-                "max_tokens": 450,
+                "max_tokens": 500,
             }
             
             response = requests.post(url, headers=headers, json=data, timeout=30)
@@ -290,7 +311,7 @@ def generate_caption() -> str:
                 continue
             
             caption = clean_text(caption)
-            caption = truncate_by_sentences(caption, 700)
+            caption = truncate_by_sentences(caption, 900)
             
             if len(caption) < 30:
                 print("⚠️ Пост слишком короткий, пробуем ещё...")
@@ -305,7 +326,7 @@ def generate_caption() -> str:
             continue
     
     print("⚠️ Не удалось сгенерировать уникальный пост, использую резерв")
-    return clean_text(truncate_by_sentences(get_fallback_caption(), 700))
+    return clean_text(get_fallback_caption())
 
 def get_fallback_caption() -> str:
     fallbacks = [
@@ -558,10 +579,10 @@ async def send_photo(chat_id):
         if photo_url:
             full_caption = generate_caption()
             full_caption = clean_text(full_caption)
-            full_caption = truncate_by_sentences(full_caption, 700)
+            full_caption = truncate_by_sentences(full_caption, 900)
             
             if not full_caption or len(full_caption) < 10:
-                full_caption = truncate_by_sentences(get_fallback_caption(), 700)
+                full_caption = truncate_by_sentences(get_fallback_caption(), 900)
             
             await bot.send_photo(
                 chat_id=chat_id, 
@@ -760,7 +781,7 @@ async def test(msg: Message):
     
     caption = generate_caption()
     caption = clean_text(caption)
-    caption = truncate_by_sentences(caption, 700)
+    caption = truncate_by_sentences(caption, 900)
     await msg.answer(f"📝 Результат:\n\n{caption}\n\n📊 Длина: {len(caption)} символов")
 
 @dp.message(Command("clear_history"))
@@ -815,11 +836,13 @@ async def broadcast(msg: Message):
 
 async def main():
     print("=" * 60)
-    print("🤖 Бот запущен (разные стили постов)")
+    print("🤖 Бот запущен (стиль @maddysontg)")
     print("🔍 Приоритет: Bing → Google → Yandex → Pexels")
     print(f"📊 Подписчиков: {len(users)}")
     print(f"📸 Фото в истории: {len(history)}")
     print("⏰ Расписание: 12:00-15:00 и 17:00-22:00")
+    print("📝 Максимальная длина текста: 900 символов")
+    print("📝 Одно фото за запрос")
     print("📝 Стили: агрессивный, романтичный, пошлый, бытовой, зависть, смешной")
     print("=" * 60)
     
