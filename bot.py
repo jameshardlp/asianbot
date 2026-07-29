@@ -8,7 +8,7 @@ import json
 import time
 import gc
 from urllib.parse import quote
-from datetime import datetime
+from datetime import datetime, time as dt_time
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import Message, ChatMember
@@ -32,130 +32,77 @@ SEARCH_QUERIES = [
     "chinese woman portrait",
 ]
 
-ACTIVE_CHATS_FILE = "active_chats.json"
+USERS_FILE = "users.json"
 
-def load_chats():
+# ===== РАБОТА С ПОЛЬЗОВАТЕЛЯМИ =====
+
+def load_users():
+    """Загружает список пользователей из JSON"""
     try:
-        with open(ACTIVE_CHATS_FILE, "r") as f:
+        with open(USERS_FILE, "r") as f:
             return json.load(f)
     except:
-        return {}
+        return []
 
-def save_chats():
+def save_users(users):
+    """Сохраняет список пользователей в JSON"""
     try:
-        with open(ACTIVE_CHATS_FILE, "w") as f:
-            json.dump(active_chats, f)
+        with open(USERS_FILE, "w") as f:
+            json.dump(users, f)
     except:
         pass
 
-active_chats = load_chats()
+# Загружаем пользователей
+users = load_users()
 
-# ===== ГЕНЕРАЦИЯ ЮМОРИСТИЧЕСКИХ ОПИСАНИЙ =====
+# ===== КОЛЛЕКЦИЯ ПОСТОВ В СТИЛЕ @MADDYSONTG (ПРО АЗИАТОК) =====
 
-def generate_caption_with_deepseek() -> str:
-    """
-    Генерирует юмористическое описание через DeepSeek API
-    """
-    if not DEEPSEEK_API_KEY:
-        print("⚠️ Нет ключа DeepSeek")
-        return get_fallback_caption()
-    
-    try:
-        url = "https://api.deepseek.com/chat/completions"
-        headers = {
-            "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
-            "Content-Type": "application/json"
-        }
-        
-        prompt = """Ты должен написать ТОЛЬКО готовый юмористический текст. НЕ пиши "мы должны", "нужно", "я напишу" и т.д. БЕЗ РАССУЖДЕНИЙ И БЕЗ ТИРЕ В НАЧАЛЕ
-
-Написать короткий смешной текст (2-7 предложений) в стиле мужского разговора. 
-Текст должен быть законченным и готовым к публикации и БЕЗ РАССУЖДЕНИЙ. Если не удалось придумать текст - возьми за основу стиль постов из Telegram канала @Maddysontg
-
-Примеры правильных ответов:
-- "Бля, базаришь, Илья. Я что-то тоже поднабрал на японской лапше. Пиздец, похоже старость приходит."
-- "США уже не торт. Раньше это была самая пиздатая страна. Но потом они зачем-то отменили рабство..."
-- "Сижу вот, думаю сделать ларпинг на Ютубе. Куплю говняный микрофон и буду делать обзоры."
-
-Твой ответ (ТОЛЬКО текст, без пояснений):"""
-
-        data = {
-            "model": "deepseek-v4-flash",
-            "messages": [
-                {"role": "system", "content": "Ты стендап-комик. Отвечай только готовым текстом. Никаких рассуждений, никаких пояснений. Только юмористический текст."},
-                {"role": "user", "content": prompt}
-            ],
-            "temperature": 1.2,
-            "max_tokens": 200,
-        }
-        
-        print("🔄 Запрос к DeepSeek (юмор)...")
-        response = requests.post(url, headers=headers, json=data, timeout=30)
-        
-        print(f"📊 DeepSeek статус: {response.status_code}")
-        
-        if response.status_code != 200:
-            print(f"❌ Ошибка: {response.status_code}")
-            print(f"📄 Ответ: {response.text[:300]}")
-            return get_fallback_caption()
-        
-        result = response.json()
-        
-        content = result["choices"][0].get("message", {}).get("content", "")
-        reasoning = result["choices"][0].get("message", {}).get("reasoning_content", "")
-        
-        print(f"📝 content: '{content}'")
-        
-        # Если content пустой — пробуем извлечь из reasoning
-        if not content and reasoning:
-            print(f"📝 reasoning: '{reasoning[:80]}...'")
-            lines = reasoning.split('\n')
-            for line in lines:
-                line = line.strip()
-                if line and len(line) > 20 and not line.lower().startswith(("мы должны", "нужно", "я напишу", "для", "напиши")):
-                    content = line
-                    break
-            if not content:
-                content = lines[-1].strip() if lines else reasoning[:150]
-        
-        if not content or len(content.strip()) < 5:
-            print("❌ Пустой ответ")
-            return get_fallback_caption()
-        
-        caption = content.strip().strip('"').strip("'")
-        
-        # Если ответ начинается с мета-текста — это рассуждение
-        if caption.lower().startswith(("мы должны", "нужно", "для поста", "я напишу", "напиши", "тебе нужно")):
-            print("⚠️ DeepSeek выдал рассуждение, использую fallback")
-            return get_fallback_caption()
-        
-        print(f"✅ Юмор: {caption[:50]}...")
-        return caption  # ← ТОЛЬКО ТЕКСТ, БЕЗ ФЛАГОВ И ФОТОАППАРАТА
-            
-    except Exception as e:
-        print(f"❌ Ошибка: {e}")
-        return get_fallback_caption()
-
-def get_fallback_caption() -> str:
-    """Резервные юмористические описания (без флагов)"""
+def get_maddyson_style_caption() -> str:
+    """Посты в стиле @maddysontg про азиатских женщин"""
     captions = [
-        "Бля, базаришь, Илья. Я что-то тоже в последнее время поднабрал на японской лапше. Пиздец, похоже старость приходит.",
-        "США уже не торт. Раньше это была самая пиздатая страна. Но потом они зачем-то отменили рабство...",
-        "Сижу вот, думаю, может сделать ларпинг на Ютубе. Куплю говняный микрофон, создам канал Larpysson.",
-        "Ищу кучерявого напарника для канала Юрий Ларпинкий. Сыграем Пушкина в видосе Городок.",
-        "Хочу заларпить видос 'Слава Роду'. Родинку на груди уже нарисовал, а вот футболку найти не могу.",
-        "Пиздец, похоже старость приходит. Хорошо, что хотя бы лысина стороной обошла (тьфу-тьфу-тьфу).",
-        "Вроде у бати и у деда нет лысины, поэтому шансы кажется в мою пользу.",
-        "Скуфяры в чате - присоединяйтесь. Завтра все встаём с утра и начинаем считать калории.",
-        "Едим овощи, варим гречку, и побольше мяса - лучше куриную грудку. Держимся минимум 2 месяца.",
-        "Вольно, бойцы. Всё взвешиваем, скидываем в ChatGPT, чтобы подсчитал калории.",
-        "Бля, базаришь, Илья. Я что-то тоже поднабрал на японской лапше в наваристом свином бульоне.",
-        "Сижу вот, думаю сделать ларпинг на Ютубе. Куплю говняный микрофон, создам канал Larpysson, и буду делать обзор на Месть Боксёра...",
-        "Раньше это была самая пиздатая страна на планете. Но потом они зачем-то отменили рабство..."
+        # Про внешность
+        "Смотрю на азиатку и думаю: вот это поворот. Я-то думал, что люблю блондинок, а тут такая хуйня. Ладно, буду расширять горизонты.",
+        "Азиатки — это вообще отдельный вид. С виду нежные, а внутри как терминатор. Я бы такую в разведку отправил, а не на свидание.",
+        "Встретил азиатку в кафе. Она такая маленькая, что я думал, она школьница. А ей 28 лет. Вот это я попал.",
+        "Азиатки — это как суши: сначала не поймёшь, а потом втягиваешься. Теперь я хочу их каждый день. В смысле суши, а не девушек. Ну, девушек тоже.",
+        
+        # Про отношения
+        "Завел отношения с азиаткой. Думал, будет как в аниме — нежно и романтично. А она меня таскает на тренировки по карате. Пиздец, я просто хотел обниматься.",
+        "Азиатка сказала, что я слишком расслабленный. Теперь я хожу на йогу, медитирую и пью зеленый чай. Я даже не знаю, кто я теперь.",
+        "Спорить с азиаткой — это как играть в шахматы с компьютером. Ты думаешь, что выигрываешь, а она уже на 10 ходов вперед просчитала твой проигрыш.",
+        "Азиатки — это тест на прочность. Если ты выжил после первой недели, считай, ты прошел боевое крещение. Теперь ты готов к чему угодно.",
+        
+        # Про культуру
+        "Попробовал настоящую японскую кухню. Теперь я понимаю, почему они такие худые. Это просто есть невозможно, если ты не самурай.",
+        "Китаянки удивляют. Такие милые, пока ты не начинаешь спорить с ними про политику. Я лучше буду молчать и кивать.",
+        "Кореянки — это отдельный вид. Они выглядят как куклы, но говорят так, что хочется закрыть уши. Но красивые, бля, очень красивые.",
+        "Японки — это как фильмы Миядзаки. Вроде сказка, а внутри такая глубина, что мозг кипит. Я уже месяц хожу и думаю.",
+        
+        # Про жизнь с азиаткой
+        "Жизнь с азиаткой — это как сериал: никогда не знаешь, что будет в следующей серии. Но скучно точно не будет.",
+        "Азиатка научила меня правильно есть палочками. А теперь я не могу есть даже суп без них. Пиздец, куда я качусь.",
+        "В азиатской семье главное — уважение к старшим. Пришлось запомнить всех тетушек и дядюшек. Я теперь знаю больше, чем в школе учил.",
+        
+        # Бытовые с азиатками
+        "Азиатка переставила всю мебель в квартире. Теперь я не могу найти даже свою зубную щетку. Но зато выглядит красиво, как в журнале.",
+        "Азиатки обожают порядок. Я положил носки не в ту корзину — она меня так отчитала, что я до сих пор боюсь подходить к шкафу.",
+        "У них дома всегда идеально чисто. Я начал замечать пыль на столах. Я, который раньше мог неделю не убираться, теперь знаю, где какая тряпка лежит.",
+        
+        # Про внешность
+        "Азиатки — это не просто красивые, они как произведения искусства. Хочется смотреть и смотреть. Но смотреть долго нельзя — они начинают стесняться.",
+        "У них такие глаза, что можно утонуть. И не говори, что не замечал. Просто признай, ты тоже туда смотришь.",
+        "Азиатки — это сочетание нежности и стали. Когда она обнимает, кажется, что она тебя сломает. Но это приятно, на самом деле.",
     ]
     return random.choice(captions)
 
-# ===== ОСТАЛЬНОЙ КОД (БЕЗ ИЗМЕНЕНИЙ) =====
+# ===== ГЕНЕРАЦИЯ ОПИСАНИЙ =====
+
+def generate_caption() -> str:
+    """Возвращает пост в стиле @maddysontg про азиаток"""
+    print("📝 Генерирую пост в стиле Maddyson...")
+    return get_maddyson_style_caption()
+
+# ===== ПОИСК ФОТО =====
 
 async def is_user_admin(chat_id: int, user_id: int) -> bool:
     try:
@@ -302,7 +249,7 @@ async def send_photo(chat_id):
         photo_url = get_random_photo()
         
         if photo_url:
-            caption = generate_caption_with_deepseek()
+            caption = generate_caption()
             
             await bot.send_photo(
                 chat_id=chat_id, 
@@ -322,28 +269,67 @@ async def send_photo(chat_id):
         print(f"❌ Ошибка: {e}")
         return False
 
-async def send_to_all():
-    if not active_chats:
+async def send_to_all_users():
+    """Отправляет пост всем пользователям"""
+    global users
+    
+    if not users:
+        print("⚠️ Нет пользователей для отправки")
         return
     
-    for chat_id in list(active_chats.keys()):
+    print(f"📤 Отправка поста {len(users)} пользователям...")
+    
+    for chat_id in users:
         await send_photo(chat_id)
-        await asyncio.sleep(5)
+        await asyncio.sleep(3)  # Задержка между пользователями
 
 async def scheduler():
-    await asyncio.sleep(5)
-    await send_to_all()
-    
+    """
+    Отправляет посты 2 раза в сутки
+    В 9:00 и в 21:00
+    """
     while True:
-        await asyncio.sleep(3 * 3600)
-        await send_to_all()
+        now = datetime.now()
+        
+        # Вычисляем время до следующей отправки
+        target_times = [9, 21]  # 9:00 и 21:00
+        next_hour = None
+        
+        for hour in target_times:
+            if now.hour < hour or (now.hour == hour and now.minute < 5):
+                next_hour = hour
+                break
+        
+        if next_hour is None:
+            # Если все отправки на сегодня прошли — ждём завтра 9:00
+            next_hour = 9
+            tomorrow = now + timedelta(days=1)
+            target_time = datetime(tomorrow.year, tomorrow.month, tomorrow.day, next_hour, 0, 0)
+        else:
+            target_time = datetime(now.year, now.month, now.day, next_hour, 0, 0)
+        
+        wait_seconds = (target_time - now).total_seconds()
+        
+        if wait_seconds < 0:
+            wait_seconds += 24 * 3600
+        
+        print(f"⏳ Следующая отправка в {target_time.strftime('%H:%M')} (через {wait_seconds/3600:.1f} часов)")
+        
+        await asyncio.sleep(wait_seconds)
+        await send_to_all_users()
+
+# ===== КОМАНДЫ БОТА =====
 
 @dp.message(Command("start"))
 async def start(msg: Message):
+    """Добавляет пользователя в список"""
+    global users
+    
     chat_id = msg.chat.id
     user_id = msg.from_user.id
     chat_type = msg.chat.type
     
+    # Проверяем админа (для групп)
     if chat_type in ["group", "supergroup"]:
         if not await is_user_admin(chat_id, user_id):
             await msg.reply("⛔ Эта команда только для администраторов группы.")
@@ -359,21 +345,18 @@ async def start(msg: Message):
             await msg.answer("❌ Я должен быть администратором группы!")
             return
     
-    active_chats[chat_id] = {
-        "type": chat_type,
-        "added_by": user_id,
-        "added_at": datetime.now().isoformat(),
-        "name": msg.chat.title or msg.chat.first_name or str(chat_id)
-    }
-    save_chats()
+    # Добавляем пользователя в список, если его ещё нет
+    if chat_id not in users:
+        users.append(chat_id)
+        save_users(users)
+        print(f"✅ Добавлен пользователь: {chat_id}")
     
     await msg.answer(
-        f"✅ Бот активирован!\n"
-        f"📌 Тип: {chat_type}\n"
-        f"🧠 Нейросеть: {'✅ DeepSeek V4 (юмор)' if DEEPSEEK_API_KEY else '❌ Резервные описания'}\n"
-        f"📸 Фото азиаток с юмором каждые 3 часа\n"
+        f"✅ Вы подписаны на рассылку!\n"
+        f"📸 Я буду присылать фото азиаток с юмором 2 раза в день\n"
+        f"⏰ В 9:00 и в 21:00 по вашему времени\n"
         f"🔄 /photo - получить фото сейчас\n"
-        f"🛑 /stop - отключить бота"
+        f"🛑 /stop - отписаться"
     )
     
     await asyncio.sleep(1)
@@ -381,6 +364,7 @@ async def start(msg: Message):
 
 @dp.message(Command("photo"))
 async def photo(msg: Message):
+    """Отправляет фото сейчас"""
     chat_id = msg.chat.id
     user_id = msg.from_user.id
     chat_type = msg.chat.type
@@ -390,15 +374,14 @@ async def photo(msg: Message):
             await msg.reply("⛔ Только администраторы могут запрашивать фото.")
             return
     
-    if chat_id not in active_chats:
-        await msg.answer("⚠️ Бот не активирован. Напишите /start")
-        return
-    
-    await msg.answer("🔍 Ищу фото и придумываю шутку...")
+    await msg.answer("🔍 Ищу фото и шутку в стиле Maddyson...")
     await send_photo(chat_id)
 
 @dp.message(Command("stop"))
 async def stop(msg: Message):
+    """Удаляет пользователя из списка"""
+    global users
+    
     chat_id = msg.chat.id
     user_id = msg.from_user.id
     chat_type = msg.chat.type
@@ -408,13 +391,17 @@ async def stop(msg: Message):
             await msg.reply("⛔ Только администраторы могут отключить бота.")
             return
     
-    if chat_id in active_chats:
-        del active_chats[chat_id]
-        save_chats()
-        await msg.answer("🛑 Бот отключён в этом чате")
+    if chat_id in users:
+        users.remove(chat_id)
+        save_users(users)
+        await msg.answer("🛑 Вы отписаны от рассылки")
+        print(f"🛑 Удалён пользователь: {chat_id}")
+    else:
+        await msg.answer("ℹ️ Вы и так не подписаны")
 
 @dp.message(Command("status"))
 async def status(msg: Message):
+    """Показывает статус бота"""
     chat_id = msg.chat.id
     user_id = msg.from_user.id
     chat_type = msg.chat.type
@@ -424,43 +411,76 @@ async def status(msg: Message):
             await msg.reply("⛔ Только администраторы могут смотреть статус.")
             return
     
-    is_active = chat_id in active_chats
+    is_subscribed = chat_id in users
     
     status_text = (
         f"📊 Статус бота:\n"
-        f"• В этом чате: {'✅ Активен' if is_active else '❌ Неактивен'}\n"
-        f"• Всего чатов: {len(active_chats)}\n"
-        f"• Нейросеть: {'✅ DeepSeek V4 (юмор)' if DEEPSEEK_API_KEY else '❌ Резервные описания'}\n"
+        f"• Подписка: {'✅ Активна' if is_subscribed else '❌ Неактивна'}\n"
+        f"• Всего подписчиков: {len(users)}\n"
+        f"• Расписание: 9:00 и 21:00\n"
         f"• Поиск: Bing + Google + Pexels"
     )
     
     await msg.answer(status_text)
 
-@dp.message(Command("test_ai"))
-async def test_ai(msg: Message):
+@dp.message(Command("test"))
+async def test(msg: Message):
+    """Тестовая команда для проверки стиля"""
     OWNER_ID = int(os.getenv("CHAT_ID", 0))
     
     if msg.from_user.id != OWNER_ID:
         await msg.answer("⛔ Доступ запрещён.")
         return
     
-    await msg.answer("🧠 Генерирую юмористическое описание через DeepSeek V4...")
+    await msg.answer("🧠 Генерирую пост в стиле Maddyson про азиаток...")
     
-    caption = generate_caption_with_deepseek()
+    caption = generate_caption()
     await msg.answer(f"📝 Результат:\n\n{caption}")
+
+@dp.message(Command("broadcast"))
+async def broadcast(msg: Message):
+    """Отправляет сообщение всем подписчикам (только для владельца)"""
+    OWNER_ID = int(os.getenv("CHAT_ID", 0))
+    
+    if msg.from_user.id != OWNER_ID:
+        await msg.answer("⛔ Доступ запрещён.")
+        return
+    
+    # Получаем текст после команды
+    text = msg.text.replace("/broadcast", "").strip()
+    
+    if not text:
+        await msg.answer("ℹ️ Укажите текст для рассылки.\nПример: /broadcast Привет всем!")
+        return
+    
+    if not users:
+        await msg.answer("📭 Нет подписчиков")
+        return
+    
+    await msg.answer(f"📤 Отправка '{text[:30]}...' {len(users)} подписчикам")
+    
+    sent = 0
+    for chat_id in users:
+        try:
+            await bot.send_message(chat_id=chat_id, text=text)
+            sent += 1
+            await asyncio.sleep(0.5)
+        except Exception as e:
+            print(f"Ошибка отправки в {chat_id}: {e}")
+            # Если бот заблокирован — удаляем пользователя
+            if "forbidden" in str(e).lower():
+                users.remove(chat_id)
+                save_users(users)
+    
+    await msg.answer(f"✅ Отправлено {sent} подписчикам")
 
 async def main():
     print("=" * 60)
-    print("🤖 Бот запущен (юмористический режим)")
+    print("🤖 Бот запущен (стиль @maddysontg + азиатки)")
     print("🔍 Поиск в: Bing → Google → Pexels")
     print("🌏 Только азиатки: японки, китаянки, кореянки")
-    
-    if DEEPSEEK_API_KEY:
-        print("🧠 Нейросеть: DeepSeek V4 ✅")
-        print("📝 Режим: юмористические описания (без флагов)")
-    else:
-        print("📝 Резервные описания (AI не настроен)")
-    
+    print(f"📊 Подписчиков: {len(users)}")
+    print("⏰ Расписание: 9:00 и 21:00")
     print("=" * 60)
     
     gc.collect()
@@ -471,6 +491,7 @@ async def main():
     except Exception as e:
         print(f"⚠️ Ошибка webhook: {e}")
     
+    # Запускаем планировщик
     asyncio.create_task(scheduler())
     
     try:
