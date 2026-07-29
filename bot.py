@@ -25,57 +25,38 @@ if not BOT_TOKEN:
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-# ===== ЖЁСТКИЕ ПОИСКОВЫЕ ЗАПРОСЫ (ТОЛЬКО АЗИАТКИ) =====
+# ===== ПОИСКОВЫЕ ЗАПРОСЫ =====
 SEARCH_QUERIES = [
-    "asian beautiful girl portrait",
-    "japanese woman portrait",
-    "korean girl portrait",
-    "chinese woman portrait",
-    "east asian woman portrait",
-    "asian model portrait",
-]
-
-# Ключевые слова для фильтрации (только азиатки)
-ASIAN_KEYWORDS = [
-    'asian', 'japanese', 'korean', 'chinese', 'east asian',
-    'japan', 'korea', 'china', 'tokyo', 'seoul', 'beijing',
-    'sakura', 'kim', 'lee', 'park', 'chan'
-]
-
-# Слова-исключения (не азиатки)
-EXCLUDE_KEYWORDS = [
-    'african', 'black', 'white', 'caucasian', 'european', 'american',
-    'latina', 'mexican', 'brazilian', 'indian', 'middle eastern',
-    'arab', 'persian', 'turkish'
+    "asian girl casual portrait",
+    "japanese woman casual",
+    "korean girl everyday life",
+    "chinese woman casual photo",
+    "asian girl summer outfit",
+    "asian woman swimming pool",
+    "korean girl beach",
+    "japanese woman casual style",
+    "asian girl in bikini",
+    "asian woman summer dress",
 ]
 
 # ===== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ =====
 
 def clean_punctuation(text: str) -> str:
-    """Убирает лишние знаки препинания, заменяет «» на " """
     text = re.sub(r'[.!?]{2,}', '.', text)
     text = re.sub(r'\s+', ' ', text)
-    # Заменяем ёлочки на обычные кавычки
     text = text.replace('«', '"').replace('»', '"')
     text = text.replace('„', '"').replace('“', '"')
     text = text.replace('`', "'").replace('´', "'")
-    # Убираем другие лишние символы, кроме кавычек
     text = re.sub(r'[()\[\]{}<>]', '', text)
     return text.strip()
 
 def ensure_ends_with_dot(text: str) -> str:
-    """Добавляет точку в конце текста, если её нет"""
     text = text.strip()
     if text and text[-1] not in ('.', '!', '?'):
         return text + '.'
     return text
 
 def truncate_by_sentences(text: str, max_length: int = 700) -> str:
-    """
-    Обрезает текст до целых предложений, не превышая max_length.
-    Если предложение не закончилось точкой - оно удаляется.
-    В конце всегда точка.
-    """
     if len(text) <= max_length:
         return ensure_ends_with_dot(text)
     
@@ -101,7 +82,6 @@ def truncate_by_sentences(text: str, max_length: int = 700) -> str:
     return ensure_ends_with_dot(truncated)
 
 def clean_text(text: str) -> str:
-    """Очищает текст от упоминаний и заменяет длинное тире"""
     text = text.replace('—', '-').replace('–', '-')
     text = text.replace('@maddysontg', '').replace('@Maddysontg', '').replace('@MADDYSONTG', '')
     text = text.replace('maddysontg', '').replace('Maddysontg', '').replace('MADDYSONTG', '')
@@ -110,14 +90,28 @@ def clean_text(text: str) -> str:
     return text
 
 def is_definitely_not_asian(url: str) -> bool:
-    """Проверяет, что фото точно НЕ азиатка"""
     url_lower = url.lower()
-    for word in EXCLUDE_KEYWORDS:
+    exclude = ['african', 'black', 'white', 'caucasian', 'european', 'american',
+               'latina', 'mexican', 'brazilian', 'indian', 'middle eastern',
+               'arab', 'persian', 'turkish']
+    for word in exclude:
+        if word in url_lower:
+            return True
+    return False
+
+def is_traditional_clothing(url: str) -> bool:
+    url_lower = url.lower()
+    traditional = ['kimono', 'hanbok', 'cheongsam', 'qi pao', 'sari', 'ao dai',
+                   'traditional', 'folk costume', 'national dress']
+    for word in traditional:
         if word in url_lower:
             return True
     return False
 
 # ===== РАБОТА С ПОЛЬЗОВАТЕЛЯМИ =====
+
+USERS_FILE = "users.json"
+HISTORY_FILE = "history.json"
 
 def load_users():
     try:
@@ -134,8 +128,6 @@ def save_users(users):
         pass
 
 users = load_users()
-
-# ===== РАБОТА С ИСТОРИЕЙ ФОТО =====
 
 def load_history():
     try:
@@ -155,7 +147,7 @@ def save_history(history):
 
 history = load_history()
 
-# ===== КЭШ ДЛЯ ПОСЛЕДНИХ ПОСТОВ =====
+# ===== КЭШ =====
 last_posts = []
 
 def add_to_last_posts(text: str):
@@ -174,7 +166,7 @@ def is_similar(text: str) -> bool:
             return True
     return False
 
-# ===== ГЕНЕРАЦИЯ ПОСТОВ =====
+# ===== ГЕНЕРАЦИЯ ПОСТОВ (РАЗНЫЕ СТИЛИ) =====
 
 def generate_caption() -> str:
     print("🧠 Генерирую уникальный пост...")
@@ -183,40 +175,75 @@ def generate_caption() -> str:
         print("⚠️ Нет ключа DeepSeek, использую резерв")
         return clean_text(truncate_by_sentences(get_fallback_caption(), 700))
     
-    prompt_templates = [
-        """Ты - Анатолий, известный блогер. Твой стиль - провокационный, пошлый, с черным юмором. Пиши ТОЛЬКО готовый пост, без рассуждений. ИСПОЛЬЗУЙ ТОЛЬКО ОБЫЧНОЕ ТИРЕ "-". НЕ УПОМИНАЙ @maddysontg. ИСПОЛЬЗУЙ ОБЫЧНЫЕ КАВЫЧКИ " ВМЕСТО «».
+    # Рандомно выбираем стиль поста
+    style = random.choice([
+        'aggressive',    # агрессивный с ненавистью
+        'romantic',      # романтичный
+        'vulgar',        # пошлый
+        'everyday',      # бытовой
+        'envy',          # вызывающий зависть
+        'funny',         # смешной
+    ])
+    
+    style_prompts = {
+        'aggressive': """Ты - Анатолий, агрессивный и дерзкий блогер. Пиши ТОЛЬКО готовый пост. ИСПОЛЬЗУЙ МАТ. Твоя задача - выплеснуть ненависть и агрессию, но с юмором.
 
-Напиши пост про азиатских женщин. Будь оригинален. Пост должен быть:
+Напиши агрессивный пост про азиатских женщин. Требования:
 - 500-650 символов
-- Провокационным, с острым юмором
-- С матом
-- С неожиданной концовкой
-- Без упоминаний других блогеров
+- Агрессивный, дерзкий, с ненавистью
+- Мат 2-3 раза
+- Юмор через злость
+- Завершённая мысль""",
 
-Твой ответ (ТОЛЬКО пост):""",
+        'romantic': """Ты - Анатолий, романтичный и чувствительный блогер. Пиши ТОЛЬКО готовый пост. ИСПОЛЬЗУЙ МАТ 1 РАЗ.
 
-        """Ты - Анатолий, блогер-провокатор. Твой стиль - эпатаж, пошлость и черный юмор. Пиши только готовый пост. Только обычное тире "-". НЕ УПОМИНАЙ @maddysontg. ИСПОЛЬЗУЙ ОБЫЧНЫЕ КАВЫЧКИ " ВМЕСТО «».
-
-Напиши пост про азиатских женщин. Придумай что-то новое. Требования:
+Напиши романтичный пост про азиатских женщин. Требования:
 - 500-650 символов
-- Острый юмор, провокация
-- Мат для эмоций
-- Завершённая мысль
-- Без упоминаний других блогеров
+- Романтичный, нежный, чувственный
+- Мат 1 раз для остроты
+- С юмором
+- Завершённая мысль""",
 
-Твой ответ (ТОЛЬКО пост):""",
+        'vulgar': """Ты - Анатолий, пошлый и развязный блогер. Пиши ТОЛЬКО готовый пост. ИСПОЛЬЗУЙ МАТ 2-3 РАЗА.
 
-        """Ты - Анатолий. Пиши в своём стиле - провокационно, с самоиронией и матом. Только готовый пост, без пояснений. Используй только обычное тире "-". НЕ УПОМИНАЙ @maddysontg. ИСПОЛЬЗУЙ ОБЫЧНЫЕ КАВЫЧКИ " ВМЕСТО «».
-
-Сгенерируй пост про азиатских женщин. Сделай его уникальным. Пост:
+Напиши пошлый пост про азиатских женщин. Требования:
 - 500-650 символов
-- С острым юмором и пошлостью
-- С матом
-- С неожиданной мыслью в конце
-- Без упоминаний других блогеров
+- Пошлый, грязный, с двойным смыслом
+- Мат 2-3 раза
+- С юмором
+- Завершённая мысль""",
 
-Твой ответ (ТОЛЬКО пост):"""
-    ]
+        'everyday': """Ты - Анатолий, обычный парень с бытовым юмором. Пиши ТОЛЬКО готовый пост. ИСПОЛЬЗУЙ МАТ 1-2 РАЗА.
+
+Напиши бытовой пост про азиатских женщин. Требования:
+- 500-650 символов
+- Жизненный, бытовой, простой
+- Мат 1-2 раза
+- С юмором
+- Завершённая мысль""",
+
+        'envy': """Ты - Анатолий, успешный и уверенный блогер. Пиши ТОЛЬКО готовый пост. ИСПОЛЬЗУЙ МАТ 1-2 РАЗА.
+
+Напиши пост, вызывающий зависть у читателей. Требования:
+- 500-650 символов
+- Гордый, самоуверенный
+- Мат 1-2 раза
+- Вызывающий зависть
+- С юмором
+- Завершённая мысль""",
+
+        'funny': """Ты - Анатолий, смешной и ироничный блогер. Пиши ТОЛЬКО готовый пост. ИСПОЛЬЗУЙ МАТ 1-2 РАЗА.
+
+Напиши смешной пост про азиатских женщин. Требования:
+- 500-650 символов
+- Максимально смешной, ироничный
+- Мат 1-2 раза
+- Шутки, сарказм
+- Завершённая мысль""",
+    }
+    
+    prompt = style_prompts.get(style, style_prompts['funny'])
+    prompt += "\n\nТвой ответ (ТОЛЬКО пост):"
     
     for attempt in range(3):
         try:
@@ -226,12 +253,10 @@ def generate_caption() -> str:
                 "Content-Type": "application/json"
             }
             
-            prompt = random.choice(prompt_templates)
-            
             data = {
                 "model": "deepseek-v4-flash",
                 "messages": [
-                    {"role": "system", "content": "Ты стендап-комик Анатолий. Отвечай только готовым постом. Никаких рассуждений. Только текст поста. Используй только обычное тире '-'. НЕ УПОМИНАЙ ДРУГИХ БЛОГЕРОВ. Используй обычные кавычки \" вместо «»."},
+                    {"role": "system", "content": f"Ты стендап-комик Анатолий. Отвечай только готовым постом. Никаких рассуждений. Только текст поста. Используй только обычное тире '-'. НЕ УПОМИНАЙ ДРУГИХ БЛОГЕРОВ. Используй обычные кавычки \" вместо «». ОБЯЗАТЕЛЬНО используй мат. Стиль поста: {style}. Пост должен быть смешным."},
                     {"role": "user", "content": prompt}
                 ],
                 "temperature": 1.3,
@@ -272,7 +297,7 @@ def generate_caption() -> str:
                 continue
             
             add_to_last_posts(caption)
-            print(f"✅ Сгенерирован уникальный пост ({len(caption)} символов): {caption[:50]}...")
+            print(f"✅ Сгенерирован пост (стиль: {style}, {len(caption)} символов)")
             return caption
             
         except Exception as e:
@@ -284,13 +309,21 @@ def generate_caption() -> str:
 
 def get_fallback_caption() -> str:
     fallbacks = [
-        "Бля, смотрю на азиатку и думаю: вот это поворот. Я-то думал, что люблю блондинок, а тут такая хуйня. Глаза, сука, такие, что забываешь, как дышать. Теперь я хочу учить японский, есть палочками и смотреть аниме. Пиздец, куда качусь.",
+        "Бля, сижу на пляже, смотрю на азиатку в купальнике и думаю: жизнь удалась. Глаза, сука, такие, что забываешь, как дышать. А вы там в офисе сидите. Пиздец, как же это круто.",
         
-        "Слушай, я тут подумал, азиатки реально меняют жизнь. Ты думал, что будешь просто смотреть аниме и есть доширак, а теперь ты ходишь на курсы каллиграфии. Я уже умею писать иероглифы. Зачем? Не знаю, но она сказала, что это красиво.",
+        "Слушай, я влюбился в азиатку. Она смеётся, и у меня сердце замирает. Маленькая, смешная, говорит на языке, которого я не понимаю. Но мне и не нужно понимать. Я просто счастлив.",
         
-        "Пиздец, я влюбился в азиатку. Раньше я смеялся над друзьями, которые ездили в Таиланд. Теперь я сам готов купить билет и уехать нахуй. Она маленькая, смешная, и говорит на языке, которого я не понимаю. Но когда она смеётся, у меня сердце замирает.",
+        "Бля, ну как же они бесят эти азиатки. Такие красивые, что просто пиздец. Сидишь, смотришь на неё и понимаешь, что жизнь прошла мимо. Сука, почему я не родился в Азии.",
         
-        "Бля, встретил азиатку в кафе. Она такая маленькая, что я думал, это школьница. А ей 28 лет. Вот это я попал. Она смеётся, а я думаю: как я докатился до такой жизни. Но потом она говорит: ты милый, когда пытаешься."
+        "Сижу, ем доширак, смотрю на азиатку. Она в купальнике, а я в трусах. И мне хорошо. Потому что я знаю: она всё равно улыбнётся мне. Потому что я Анатолий.",
+        
+        "Пиздец, я только что понял, что жизнь удалась. Я на море, рядом азиатка в купальнике. Вы там работаете, а я тут отдыхаю. Мечтайте дальше.",
+        
+        "Бля, она такая смешная. Говорит что-то на своём, жестикулирует, а я ничего не понимаю. Но мне нравится. Потому что я чувствую себя живым.",
+        
+        "Знаете, что я понял? Азиатки - это лучшее, что случилось со мной. Они не такие, как все. Они особенные. И я готов за это бороться.",
+        
+        "Сижу, думаю: а зачем мне всё это? Работа, деньги, проблемы. А есть она, азиатка, которая смеётся над моими шутками. И мне больше ничего не нужно."
     ]
     return random.choice(fallbacks)
 
@@ -330,7 +363,8 @@ def search_bing(query):
             if any(ext in img.lower() for ext in ['.jpg', '.jpeg', '.png', '.webp']):
                 if not any(x in img.lower() for x in ['gstatic', 'google', 'favicon', 'logo', 'bing', 'avatar']):
                     if not is_definitely_not_asian(img):
-                        clean_images.append(img)
+                        if not is_traditional_clothing(img):
+                            clean_images.append(img)
         
         clean_images = list(dict.fromkeys(clean_images))
         
@@ -371,7 +405,8 @@ def search_google_direct(query):
                 if not any(x in img.lower() for x in ['gstatic', 'google', 'favicon', 'logo']):
                     if not img.startswith('data:'):
                         if not is_definitely_not_asian(img):
-                            clean_images.append(img)
+                            if not is_traditional_clothing(img):
+                                clean_images.append(img)
         
         clean_images = list(dict.fromkeys(clean_images))
         
@@ -419,7 +454,8 @@ def search_yandex(query):
                 if not any(x in img.lower() for x in ['gstatic', 'google', 'favicon', 'logo']):
                     if not img.startswith('data:'):
                         if not is_definitely_not_asian(img):
-                            clean_images.append(img)
+                            if not is_traditional_clothing(img):
+                                clean_images.append(img)
         
         clean_images = list(dict.fromkeys(clean_images))
         
@@ -779,13 +815,12 @@ async def broadcast(msg: Message):
 
 async def main():
     print("=" * 60)
-    print("🤖 Бот запущен (только азиатки, макс 700 символов)")
+    print("🤖 Бот запущен (разные стили постов)")
     print("🔍 Приоритет: Bing → Google → Yandex → Pexels")
     print(f"📊 Подписчиков: {len(users)}")
     print(f"📸 Фото в истории: {len(history)}")
     print("⏰ Расписание: 12:00-15:00 и 17:00-22:00")
-    print("📝 Максимальная длина текста: 700 символов")
-    print("📝 Кавычки: обычные \" вместо «»")
+    print("📝 Стили: агрессивный, романтичный, пошлый, бытовой, зависть, смешной")
     print("=" * 60)
     
     gc.collect()
