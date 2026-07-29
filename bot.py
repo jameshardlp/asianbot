@@ -37,7 +37,6 @@ SCHEDULE_FILE = "schedule.json"
 
 # ===== ПОИСКОВЫЕ ЗАПРОСЫ (ТОЛЬКО ЯПОНКИ, КИТАЯНКИ, КОРЕЯНКИ, ТАЙКИ) =====
 SEARCH_QUERIES = [
-    # Японки
     "japanese girl casual selfie",
     "japanese woman everyday life",
     "japanese girl instagram photo",
@@ -48,8 +47,6 @@ SEARCH_QUERIES = [
     "japanese woman cafe selfie",
     "japanese girl summer outfit",
     "japanese woman modern style",
-    
-    # Китаянки
     "chinese girl casual selfie",
     "chinese woman everyday life",
     "chinese girl instagram photo",
@@ -60,8 +57,6 @@ SEARCH_QUERIES = [
     "chinese woman cafe selfie",
     "chinese girl summer dress",
     "chinese woman modern outfit",
-    
-    # Кореянки
     "korean girl casual selfie",
     "korean woman everyday life",
     "korean girl instagram photo",
@@ -72,8 +67,6 @@ SEARCH_QUERIES = [
     "korean woman cafe selfie",
     "korean girl summer dress",
     "korean woman modern style",
-    
-    # Тайки
     "thai girl casual selfie",
     "thai woman everyday life",
     "thai girl instagram photo",
@@ -84,8 +77,6 @@ SEARCH_QUERIES = [
     "thai woman cafe selfie",
     "thai girl summer outfit",
     "thai woman modern dress",
-    
-    # Бикини (всех национальностей)
     "japanese girl bikini beach",
     "korean girl bikini photo",
     "chinese girl swimsuit",
@@ -110,21 +101,14 @@ AGE_POSITIVE_KEYWORDS = [
 
 # ===== КЛЮЧЕВЫЕ СЛОВА-ИСКЛЮЧЕНИЯ =====
 EXCLUDE_KEYWORDS = [
-    # Другие национальности
     'african', 'black', 'white', 'caucasian', 'european', 'american',
     'latina', 'mexican', 'brazilian', 'indian', 'middle eastern',
     'arab', 'persian', 'turkish',
     'malaysian', 'filipina', 'vietnamese', 'indonesian',
-    
-    # Возраст
     'mature', 'old', 'age 40', 'age 50', 'age 60', 'senior',
     'grandma', 'elderly', 'wrinkles',
-    
-    # Дети
     'kid', 'child', 'baby', 'toddler', 'infant', 'girl 12', 'girl 13',
     'girl 14', 'girl 15', 'girl 16', 'girl 17', 'teenager', 'teen',
-    
-    # ===== МУЖЧИНЫ (ИСКЛЮЧАЕМ) =====
     'man', 'male', 'guy', 'boy', 'men', 'dude', 'bro', 'brother',
     'father', 'dad', 'son', 'husband', 'boyfriend', 'gentleman',
     'мужчина', 'парень', 'мужик', 'пацан', 'мальчик', 'юноша',
@@ -157,8 +141,13 @@ def ensure_ends_with_dot(text: str) -> str:
     if not text:
         return ''
     text = text.strip()
-    if text[-1] not in ('.', '!', '?'):
-        return text + '.'
+    if text[-1] in ('.', '!', '?'):
+        return text
+    # Не добавляем точку к незавершённому предложению — обрезаем до последнего завершённого
+    last_end = max(text.rfind('.'), text.rfind('!'), text.rfind('?'))
+    if last_end != -1:
+        return text[:last_end + 1].strip()
+    # Нет ни одного знака конца предложения — возвращаем как есть, без фальшивой точки
     return text
 
 def get_last_sentence(text: str) -> str:
@@ -203,7 +192,8 @@ def is_sentence_complete(sentence: str) -> bool:
         'в общем', 'короче говоря', 'так что', 'поэтому',
         'в темноте', 'в тем', 'на тем', 'в том', 'о том',
         'и я', 'но я', 'а я', 'что я', 'когда я', 'пока я',
-        'она берет', 'он берет', 'они берут', 'я беру', 'ты берешь'
+        'она берет', 'он берет', 'они берут', 'я беру', 'ты берешь',
+        'упа', 'будто', 'как', 'словно', 'точно', 'прямо', 'почти'
     ]
     
     clean_lower = clean.lower()
@@ -240,11 +230,26 @@ def is_sentence_complete(sentence: str) -> bool:
     
     return has_verb and has_subject
 
+def drop_incomplete_tail(text: str) -> str:
+    """Обрезает незавершённый хвост текста до последнего знака конца предложения."""
+    text = text.strip()
+    if not text:
+        return ''
+    if text[-1] in '.!?':
+        return text
+    last_end = max(text.rfind('.'), text.rfind('!'), text.rfind('?'))
+    if last_end != -1:
+        return text[:last_end + 1].strip()
+    return text
+
 def truncate_by_sentences(text: str, max_length: int = 1023) -> str:
     if not text:
         return ''
     
     text = text.strip()
+    # Сначала отбрасываем незавершённый хвост (обрезано на полуслове)
+    text = drop_incomplete_tail(text)
+    
     if len(text) <= max_length:
         return ensure_ends_with_dot(text)
     
@@ -459,6 +464,54 @@ def is_similar(text: str) -> bool:
             return True
     return False
 
+# ===== ПРОДОЛЖЕНИЕ ОБРЕЗАННОГО ТЕКСТА =====
+
+def request_continuation(previous_text: str) -> str:
+    """Дописывает концовку, если DeepSeek обрезал текст по лимиту токенов."""
+    try:
+        url = "https://api.deepseek.com/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+            "Content-Type": "application/json"
+        }
+        tail = previous_text[-500:]
+        data = {
+            "model": "deepseek-v4-flash",
+            "messages": [
+                {"role": "system", "content": "Ты стендап-комик Анатолий. Текст поста был обрезан. Допиши ТОЛЬКО концовку — 1-3 завершающих предложения с логическим выводом. Не повторяй уже написанное. Только текст продолжения."},
+                {"role": "user", "content": f"Вот текст, который оборвался:\n\n...{tail}\n\nДопиши концовку (1-3 предложения, завершающих мысль). Не повторяй текст выше."}
+            ],
+            "temperature": 0.9,
+            "max_tokens": 400,
+        }
+        response = requests.post(url, headers=headers, json=data, timeout=30)
+        if response.status_code == 200:
+            result = response.json()
+            return result["choices"][0].get("message", {}).get("content", "").strip()
+    except Exception as e:
+        print(f"⚠️ Ошибка запроса продолжения: {e}")
+    return ""
+
+def complete_truncated_text(content: str, finish_reason: str) -> str:
+    """Если текст обрезан по лимиту токенов — пытается дописать концовку."""
+    if finish_reason == "length" and content:
+        print(f"⚠️ Текст обрезан (finish_reason=length, {len(content)} символов). Запрашиваю продолжение...")
+        continuation = request_continuation(content)
+        if continuation:
+            # Очищаем продолжение и проверяем на дубликат
+            continuation = clean_text(continuation)
+            tail_100 = content[-100:].lower()
+            cont_start = continuation[:100].lower()
+            # Если продолжение начинается с текста, который уже есть в хвосте — не склеиваем
+            if tail_100 and cont_start and (tail_100 in cont_start or cont_start in tail_100):
+                print("⚠️ Продолжение дублирует хвост, не склеиваю")
+            elif continuation:
+                content = content.rstrip() + " " + continuation.strip()
+                print(f"✅ Продолжение получено (+{len(continuation)} символов)")
+        else:
+            print("⚠️ Продолжение не получено, работаю с тем что есть")
+    return content
+
 # ===== ГЕНЕРАЦИЯ ПОСТОВ =====
 
 def generate_caption() -> str:
@@ -486,7 +539,7 @@ def generate_caption() -> str:
 - С матом 1-2 раза
 - Сарказм + самоирония
 - Провокация
-- ОБЯЗАТЕЛЬНО ЗАВЕРШИ МЫСЛЬ. Последнее предложение должно быть выводом или итогом.""",
+- ОБЯЗАТЕЛЬНО ЗАВЕРШИ МЫСЛЬ. Последнее предложение должно быть выводом или итогом. НЕ ЗАКАНЧИВАЙ НА 'упа', 'будто', 'как', 'словно'.""",
 
         'funny': """Ты - Анатолий, холостой блогер. Твой стиль - самоирония, сарказм, провокация. Пиши ТОЛЬКО готовый пост. Используй МАТ 1-2 раза (бля, сука, пиздец, хуйня - но без оскорблений людей). ОБРАЩАЙСЯ К ЧИТАТЕЛЯМ ВО МНОЖЕСТВЕННОМ ЧИСЛЕ (вы, вам, вас). НЕ УПОМИНАЙ ЖЕНУ.
 
@@ -526,11 +579,11 @@ def generate_caption() -> str:
             data = {
                 "model": "deepseek-v4-flash",
                 "messages": [
-                    {"role": "system", "content": "Ты стендап-комик Анатолий. Отвечай ТОЛЬКО готовым постом. НИКАКИХ РASSУЖДЕНИЙ. Только текст поста. Используй мат 1-2 раза (бля, сука, пиздец, хуйня). НЕ ОСКОРБЛЯЙ НАЦИОНАЛЬНОСТИ. НЕ УПОМИНАЙ ЖЕНУ. Пиши с сарказмом, самоиронией и провокацией. ОБЯЗАТЕЛЬНО ЗАВЕРШИ МЫСЛЬ — пост должен заканчиваться логическим выводом или итогом."},
+                    {"role": "system", "content": "Ты стендап-комик Анатолий. Отвечай ТОЛЬКО готовым постом. НИКАКИХ РАССУЖДЕНИЙ. Только текст поста. Используй мат 1-2 раза (бля, сука, пиздец, хуйня). НЕ ОСКОРБЛЯЙ НАЦИОНАЛЬНОСТИ. НЕ УПОМИНАЙ ЖЕНУ. Пиши с сарказмом, самоиронией и провокацией. ОБЯЗАТЕЛЬНО ЗАВЕРШИ МЫСЛЬ — пост должен заканчиваться логическим выводом или итогом. НЕ ЗАКАНЧИВАЙ НА СЛОВА 'упа', 'будто', 'как', 'словно'."},
                     {"role": "user", "content": current_prompt}
                 ],
-                "temperature": 1.3,
-                "max_tokens": 600,
+                "temperature": 1.1,
+                "max_tokens": 1500,
             }
             
             response = requests.post(url, headers=headers, json=data, timeout=30)
@@ -546,7 +599,15 @@ def generate_caption() -> str:
                 continue
             
             result = response.json()
-            content = result["choices"][0].get("message", {}).get("content", "")
+            choice = result["choices"][0]
+            content = choice.get("message", {}).get("content", "")
+            finish_reason = choice.get("finish_reason", "")
+            usage = result.get("usage", {})
+            print(f"📊 finish_reason={finish_reason} | tokens={usage.get('completion_tokens', '?')} | chars={len(content)}")
+            
+            # Если текст обрезан по лимиту токенов — дописываем концовку
+            if finish_reason == "length":
+                content = complete_truncated_text(content, finish_reason)
             
             if not content or len(content.strip()) < 20:
                 print("❌ Пустой или короткий ответ")
@@ -899,6 +960,11 @@ async def send_post(chat_id, photo_url=None, caption=None):
             await bot.send_photo(chat_id=chat_id, photo=photo_url)
             print(f"✅ Фото (без подписи) отправлено в чат {chat_id}")
             return True
+        
+        # Жёсткая проверка лимита Telegram (1024 символа для caption с фото)
+        if len(caption) > 1024:
+            print(f"⚠️ Caption превышает лимит Telegram ({len(caption)} > 1024), обрезаю...")
+            caption = truncate_by_sentences(caption, max_length=1023)
         
         await bot.send_photo(
             chat_id=chat_id,
@@ -1287,6 +1353,7 @@ async def main():
     print("🇯🇵 Японки | 🇨🇳 Китаянки | 🇰🇷 Кореянки | 🇹🇭 Тайки")
     print("🚫 Мужчины, дети, другие национальности: исключены")
     print("📝 Логическое завершение: обязательно")
+    print("🚫 Запрещены: 'упа', 'будто', 'как', 'словно' в конце")
     print("=" * 60)
     
     gc.collect()
