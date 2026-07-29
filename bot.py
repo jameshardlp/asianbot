@@ -35,9 +35,9 @@ USERS_FILE = "users.json"
 HISTORY_FILE = "history.json"
 SCHEDULE_FILE = "schedule.json"
 
-# ===== ПОИСКОВЫЕ ЗАПРОСЫ (ПОВСЕДНЕВНЫЕ + БИКИНИ) =====
+# ===== ПОИСКОВЫЕ ЗАПРОСЫ =====
 SEARCH_QUERIES = [
-    # Повседневные фото из соц-сетей
+    # Повседневные фото (город, кафе, дом, улица)
     "asian girl everyday life selfie",
     "japanese woman casual selfie",
     "korean girl instagram selfie",
@@ -48,50 +48,24 @@ SEARCH_QUERIES = [
     "japanese woman natural look",
     "asian girl no makeup selfie",
     "young asian woman self portrait",
+    "asian girl street style casual",
+    "korean girl cafe selfie",
+    "japanese woman city street",
+    "asian girl home selfie",
+    "chinese woman casual dress",
+    "asian woman modern outfit",
+    "korean girl urban style",
     
-    # Instagram/соц-сети стиль
-    "asian girl instagram photo",
-    "korean girl instagram selfie",
-    "japanese girl twitter photo",
-    "asian girl facebook profile",
-    "chinese woman social media photo",
-    "asian girl reddit selfie",
-    
-    # ===== БИКИНИ (добавлено много запросов) =====
+    # Бикини (редко)
     "asian girl bikini beach",
     "korean girl bikini photo",
-    "japanese woman bikini",
-    "asian model bikini portrait",
-    "asian girl swimsuit photo",
-    "korean girl bikini selfie",
-    "asian woman bikini beach",
-    "japanese girl swimsuit",
-    "asian girl pool bikini",
-    "asian model swimsuit",
-    "korean woman bikini photo",
-    "asian girl summer bikini",
-    
-    # Летние/повседневные фото
-    "asian girl beach casual",
-    "asian woman summer outfit",
-    
-    # Фитнес (редко)
-    "asian fitness model portrait",
-    "asian gym girl workout",
+    "asian woman swimsuit",
 ]
 
-# Перемешиваем запросы, но гарантируем, что фитнес-запросы будут реже
+# Фитнес-запросы (редко)
 FITNESS_QUERIES = [
-    "asian fitness model portrait",
-    "asian gym girl workout",
-    "asian sport girl fitness",
-]
-
-# ===== КЛЮЧЕВЫЕ СЛОВА ДЛЯ ФИЛЬТРАЦИИ =====
-ASIAN_KEYWORDS = [
-    'asian', 'japanese', 'korean', 'chinese', 'east asian',
-    'japan', 'korea', 'china', 'tokyo', 'seoul', 'beijing',
-    'sakura', 'kim', 'lee', 'park', 'chan'
+    "asian fitness girl",
+    "asian gym girl",
 ]
 
 # ===== КЛЮЧЕВЫЕ СЛОВА ДЛЯ ВОЗРАСТА (18-30) =====
@@ -138,33 +112,71 @@ def ensure_ends_with_dot(text: str) -> str:
         return text + '.'
     return text
 
-def truncate_by_sentences(text: str, max_length: int = 900) -> str:
+def truncate_by_sentences(text: str, min_length: int = 700, max_length: int = 1023) -> str:
+    """
+    Обрезает текст до целых предложений.
+    Минимум 700 символов, максимум 1023 символа.
+    Последнее предложение всегда завершено логически.
+    Обрезка слов запрещена.
+    """
     if not text:
         return ''
     
     text = text.strip()
-    if len(text) <= max_length:
+    
+    # Если текст короче минимума — дополняем резервом
+    if len(text) < min_length:
         return ensure_ends_with_dot(text)
     
-    last_punct = -1
-    for p in ('.', '!', '?'):
-        pos = text.rfind(p, 0, max_length)
-        if pos > last_punct:
-            last_punct = pos
+    # Разбиваем текст на предложения по . ! ?
+    sentences = re.split(r'(?<=[.!?])\s+', text)
     
-    if last_punct != -1:
-        result = text[:last_punct + 1]
-        result = re.sub(r'\s*,+\s*\.', '.', result)
-        result = re.sub(r',\s*\.', '.', result)
-        result = result.strip()
-        return ensure_ends_with_dot(result)
+    # Собираем предложения, пока не превысим максимум
+    result = []
+    current_length = 0
     
-    last_space = text.rfind(' ', 0, max_length)
-    if last_space != -1:
-        result = text[:last_space] + '.'
-        return ensure_ends_with_dot(result)
+    for sentence in sentences:
+        sentence = sentence.strip()
+        if not sentence:
+            continue
+        
+        # Проверяем, влезает ли предложение целиком
+        if current_length + len(sentence) + 1 <= max_length:
+            result.append(sentence)
+            current_length += len(sentence) + 1
+        else:
+            # Если предложение не влезает — пробуем взять предыдущие
+            break
     
-    return ensure_ends_with_dot(text[:max_length])
+    # Если ничего не собрали — берём первое предложение
+    if not result and sentences:
+        result = [sentences[0].strip()]
+    
+    # Собираем текст
+    final_text = ' '.join(result).strip()
+    
+    # Проверяем минимальную длину
+    if len(final_text) < min_length and sentences:
+        # Добавляем следующее предложение, даже если это превысит максимум
+        # но только если оно влезает в разумные пределы (максимум + 200)
+        for sentence in sentences[len(result):]:
+            if len(final_text) + len(sentence) + 1 <= max_length + 200:
+                final_text += ' ' + sentence
+                break
+    
+    # Гарантируем завершение
+    final_text = ensure_ends_with_dot(final_text)
+    
+    # Финальная проверка: если текст всё ещё обрезан на полуслове —
+    # удаляем последнее предложение
+    if final_text and not final_text.endswith(('.', '!', '?')):
+        # Удаляем последнее предложение
+        sentences_final = re.split(r'(?<=[.!?])\s+', final_text)
+        if len(sentences_final) > 1:
+            final_text = ' '.join(sentences_final[:-1]).strip()
+            final_text = ensure_ends_with_dot(final_text)
+    
+    return final_text
 
 def clean_text(text: str) -> str:
     if not text:
@@ -315,38 +327,39 @@ def generate_caption() -> str:
     
     if not DEEPSEEK_API_KEY:
         print("⚠️ Нет ключа DeepSeek, использую резерв")
-        return clean_text(get_fallback_caption())
+        caption = get_fallback_caption()
+        return clean_text(truncate_by_sentences(caption))
     
     style = random.choice(['everyday', 'funny', 'romantic', 'envy'])
     
     style_prompts = {
         'everyday': """Ты - Анатолий, холостой блогер с ироничным юмором. Пиши ТОЛЬКО готовый пост. Используй МАТ 1-2 раза (бля, сука, пиздец, хуйня - но без оскорблений людей). ОБРАЩАЙСЯ К ЧИТАТЕЛЯМ ВО МНОЖЕСТВЕННОМ ЧИСЛЕ (вы, вам, вас). НЕ УПОМИНАЙ ЖЕНУ.
 
-Напиши пост про молодых азиатских женщин (18-30 лет) в бикини или повседневной жизни, их фото в соц-сетях. Придумай забавную ситуацию на пляже или в жизни. Стиль - ироничный, с юмором, простая житейская мудрость. Без оскорблений национальностей.
+Напиши пост про молодых азиатских женщин (18-30 лет), их повседневную жизнь, фото в соц-сетях, стиль, образы. Придумай забавную ситуацию из жизни, бытовую или городскую. Стиль - ироничный, с юмором, простая житейская мудрость. Без оскорблений национальностей.
 
 Требования:
-- 500-650 символов
+- 700-900 символов
 - С матом 1-2 раза
 - С юмором
 - Завершённая мысль""",
 
         'funny': """Ты - Анатолий, холостой смешной блогер. Пиши ТОЛЬКО готовый пост. Используй МАТ 1-2 раза (бля, сука, пиздец, хуйня - но без оскорблений людей). ОБРАЩАЙСЯ К ЧИТАТЕЛЯМ ВО МНОЖЕСТВЕННОМ ЧИСЛЕ (вы, вам, вас). НЕ УПОМИНАЙ ЖЕНУ.
 
-Напиши смешной пост про молодых азиатских женщин (18-30 лет) в бикини или повседневной жизни. С иронией, без оскорблений. 500-650 символов. Завершённая мысль.""",
+Напиши смешной пост про молодых азиатских женщин (18-30 лет) из повседневной жизни, их фото в соц-сетях. С иронией, без оскорблений. 700-900 символов. Завершённая мысль.""",
 
         'romantic': """Ты - Анатолий, холостой романтичный блогер. Пиши ТОЛЬКО готовый пост. Используй МАТ 1 раз (бля, сука, пиздец - но без оскорблений). ОБРАЩАЙСЯ К ЧИТАТЕЛЯМ ВО МНОЖЕСТВЕННОМ ЧИСЛЕ (вы, вам, вас). НЕ УПОМИНАЙ ЖЕНУ.
 
-Напиши романтичный пост про молодых азиатских женщин (18-30 лет) в бикини или повседневной жизни. С юмором и лёгким матом. 500-650 символов. Завершённая мысль.""",
+Напиши романтичный пост про молодых азиатских женщин (18-30 лет) из повседневной жизни. С юмором и лёгким матом. 700-900 символов. Завершённая мысль.""",
 
         'envy': """Ты - Анатолий, холостой успешный блогер. Пиши ТОЛЬКО готовый пост. Используй МАТ 1-2 раза (бля, сука, пиздец - но без оскорблений). ОБРАЩАЙСЯ К ЧИТАТЕЛЯМ ВО МНОЖЕСТВЕННОМ ЧИСЛЕ (вы, вам, вас). НЕ УПОМИНАЙ ЖЕНУ.
 
-Напиши пост, вызывающий лёгкую зависть, про молодых азиатских женщин (18-30 лет) в бикини или повседневной жизни. С юмором и матом. 500-650 символов. Завершённая мысль.""",
+Напиши пост, вызывающий лёгкую зависть, про молодых азиатских женщин (18-30 лет) из повседневной жизни, их фото в соц-сетях. С юмором и матом. 700-900 символов. Завершённая мысль.""",
     }
     
     alternative_prompts = [
-        "Напиши смешной пост о молодых азиатских женщинах в бикини на пляже. С матом 1-2 раза. Без упоминаний жены. 500-650 символов.",
-        "Напиши ироничный пост про молодых азиатских женщин в возрасте 18-30 лет в бикини. С матом 1-2 раза. Без оскорблений. Без упоминаний жены. 500-650 символов.",
-        "Напиши забавный пост про молодых азиатских женщин на пляже. С юмором и матом. Без оскорблений. Без упоминаний жены. 500-650 символов.",
+        "Напиши смешной пост о молодых азиатских женщинах из повседневной жизни. С матом 1-2 раза. Без упоминаний жены. 700-900 символов.",
+        "Напиши ироничный пост про молодых азиатских женщин в возрасте 18-30 лет из соц-сетей. С матом 1-2 раза. Без оскорблений. Без упоминаний жены. 700-900 символов.",
+        "Напиши забавный пост про молодых азиатских женщин. С юмором и матом. Без оскорблений. Без упоминаний жены. 700-900 символов.",
     ]
     
     prompt = style_prompts.get(style, style_prompts['funny'])
@@ -372,7 +385,7 @@ def generate_caption() -> str:
                     {"role": "user", "content": current_prompt}
                 ],
                 "temperature": 1.3,
-                "max_tokens": 500,
+                "max_tokens": 600,
             }
             
             response = requests.post(url, headers=headers, json=data, timeout=30)
@@ -405,7 +418,7 @@ def generate_caption() -> str:
                 continue
             
             caption = clean_text(caption)
-            caption = truncate_by_sentences(caption, 900)
+            caption = truncate_by_sentences(caption)
             
             if len(caption) < 30:
                 print("⚠️ Пост слишком короткий, пробуем ещё...")
@@ -424,21 +437,22 @@ def generate_caption() -> str:
             continue
     
     print("⚠️ Не удалось сгенерировать уникальный пост, использую резерв")
-    return clean_text(get_fallback_caption())
+    caption = get_fallback_caption()
+    return clean_text(truncate_by_sentences(caption))
 
 def get_fallback_caption() -> str:
     fallbacks = [
-        "Вот вы сидите тут, паритесь, копите на квартиры, на тачки. А я смотрю на фото молодой азиатки в бикини на пляже и думаю: блядь, как же они умеют жить.",
+        "Вот вы сидите тут, паритесь, копите на квартиры, на тачки. А я смотрю на фото молодой азиатки в Instagram и думаю: блядь, как же они умеют жить. Обычный день, обычное фото, а выглядит как обложка журнала.",
         
-        "Слушайте, я влюбился в молодую азиатку в бикини. Она выложила фото в Instagram, и у меня сердце замирает.",
+        "Слушайте, я влюбился в молодую азиатку. Она выложила фото в Instagram, и у меня сердце замирает. Обычный день, обычная улица, а выглядит как фотосессия.",
         
-        "Сижу, ем доширак, смотрю на фото азиатки в бикини. Она на пляже, а я в трусах. И мне хорошо.",
+        "Сижу, ем доширак, смотрю на фото азиатки в соц-сетях. Она в обычной одежде, а я в трусах. И мне хорошо.",
         
-        "Пиздец, я только что понял, что жизнь удалась. Я в Instagram, вижу азиатку в бикини.",
+        "Пиздец, я только что понял, что жизнь удалась. Я в Instagram, рядом молодая азиатка в обычном образе. Вы там работаете, а я тут листаю ленту.",
         
-        "Знаете, что я понял? Азиатки в бикини - это лучшее, что случалось со мной.",
+        "Знаете, что я понял? Молодые азиатки из соц-сетей - это лучшее, что случалось со мной.",
         
-        "Раньше я думал, что знаю, что такое красота. А потом увидел азиатку в бикини на пляже.",
+        "Раньше я думал, что знаю, что такое красота. А потом увидел фото азиатки в обычной жизни.",
     ]
     return random.choice(fallbacks)
 
@@ -665,7 +679,7 @@ def get_random_photo():
     
     queries = SEARCH_QUERIES.copy()
     
-    if random.random() < 0.2:
+    if random.random() < 0.1:
         queries.extend(FITNESS_QUERIES)
         print("💪 Добавлен фитнес-запрос (редко)")
     
@@ -723,10 +737,10 @@ async def send_post(chat_id, photo_url=None, caption=None):
         if not caption:
             caption = generate_caption()
             caption = clean_text(caption)
-            caption = truncate_by_sentences(caption, 900)
+            caption = truncate_by_sentences(caption)
             
             if not caption or len(caption) < 10:
-                caption = truncate_by_sentences(get_fallback_caption(), 900)
+                caption = truncate_by_sentences(get_fallback_caption())
         
         if not caption:
             await bot.send_photo(chat_id=chat_id, photo=photo_url)
@@ -768,10 +782,10 @@ async def send_to_all_users():
     
     caption = generate_caption()
     caption = clean_text(caption)
-    caption = truncate_by_sentences(caption, 900)
+    caption = truncate_by_sentences(caption)
     
     if not caption or len(caption) < 10:
-        caption = truncate_by_sentences(get_fallback_caption(), 900)
+        caption = truncate_by_sentences(get_fallback_caption())
     
     for chat_id in users:
         try:
@@ -888,7 +902,7 @@ async def start(msg: Message):
     
     await msg.answer(
         f"✅ Вы подписаны на рассылку!\n"
-        f"📸 Уникальные посты про молодых азиаток (18-30 лет) в бикини и повседневной жизни\n"
+        f"📸 Уникальные посты про молодых азиаток (18-30 лет) из повседневной жизни\n"
         f"⏰ Расписание: {times}\n"
         f"📢 Авто-канал: {'найден' if await get_channel_id() else 'не найден'}\n"
         f"{channel_status}\n"
@@ -1035,7 +1049,7 @@ async def test(msg: Message):
     
     caption = generate_caption()
     caption = clean_text(caption)
-    caption = truncate_by_sentences(caption, 900)
+    caption = truncate_by_sentences(caption)
     await msg.answer(f"📝 Результат:\n\n{caption}\n\n📊 Длина: {len(caption)} символов")
 
 @dp.message(Command("clear_history"))
@@ -1097,7 +1111,7 @@ async def broadcast(msg: Message):
 
 async def main():
     print("=" * 60)
-    print("🤖 Бот запущен (повседневные фото + бикини, 18-30 лет)")
+    print("🤖 Бот запущен (повседневные фото, 18-30 лет)")
     print("🔍 Приоритет: Bing → Google → Yandex → Pexels")
     print(f"📊 Подписчиков: {len(users)}")
     print(f"📸 Фото в истории: {len(history)}")
@@ -1108,9 +1122,8 @@ async def main():
     
     print(f"📢 Канал: {CHANNEL_ID if CHANNEL_ID else 'авто-поиск'}")
     print(f"👤 Владелец: {OWNER_ID if OWNER_ID else '❌ не задан'}")
-    print("👙 Бикини: часто (~40-50% запросов)")
-    print("📸 Повседневные фото: часто (~30-40%)")
-    print("💪 Фитнес-фото: редко (~20%)")
+    print("📏 Длина текста: 700-1023 символа")
+    print("📝 Логическое завершение: обязательно")
     print("=" * 60)
     
     gc.collect()
