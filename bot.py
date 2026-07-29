@@ -17,6 +17,7 @@ from aiogram.exceptions import TelegramConflictError
 # ===== НАСТРОЙКИ =====
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
+CHANNEL_ID = os.getenv("CHANNEL_ID")
 
 if not BOT_TOKEN:
     print("❌ Ошибка: BOT_TOKEN не задан")
@@ -57,15 +58,9 @@ def ensure_ends_with_dot(text: str) -> str:
     return text
 
 def truncate_by_sentences(text: str, max_length: int = 900) -> str:
-    """
-    Обрезает текст до целых предложений, не превышая max_length.
-    Если последнее предложение не влезает целиком - оно добавляется целиком,
-    даже если это превышает лимит (но не более чем на длину одного предложения).
-    """
     if len(text) <= max_length:
         return ensure_ends_with_dot(text)
     
-    # Ищем последний знак завершения предложения в пределах max_length
     last_punct = -1
     for p in ('.', '!', '?'):
         pos = text.rfind(p, 0, max_length)
@@ -171,7 +166,7 @@ def is_similar(text: str) -> bool:
             return True
     return False
 
-# ===== ГЕНЕРАЦИЯ ПОСТОВ =====
+# ===== ГЕНЕРАЦИЯ ПОСТОВ (БЕЗ РАССУЖДЕНИЙ) =====
 
 def generate_caption() -> str:
     print("🧠 Генерирую уникальный пост...")
@@ -185,88 +180,64 @@ def generate_caption() -> str:
     ])
     
     style_prompts = {
-        'aggressive': """Ты - Анатолий, агрессивный и дерзкий блогер в стиле @maddysontg. Пиши ТОЛЬКО готовый пост. ИСПОЛЬЗУЙ МАТ. Твоя задача - выплеснуть ненависть и агрессию, но с юмором. ОБРАЩАЙСЯ К ЧИТАТЕЛЯМ ВО МНОЖЕСТВЕННОМ ЧИСЛЕ (вы, вам, вас).
-
-Пример стиля:
-"Бля, ну как же они бесят эти азиатки. Такие красивые, что просто пиздец. Сидите, смотрите на них и понимаете, что жизнь прошла мимо. Сука, почему вы не родились в Азии."
+        'aggressive': """Ты - Анатолий, агрессивный и дерзкий блогер. Пиши ТОЛЬКО готовый пост. Твоя задача - выплеснуть ненависть, но с юмором. ОБРАЩАЙСЯ К ЧИТАТЕЛЯМ ВО МНОЖЕСТВЕННОМ ЧИСЛЕ (вы, вам, вас).
 
 Напиши агрессивный пост про азиатских женщин. Требования:
 - 500-650 символов
-- Агрессивный, дерзкий, с ненавистью
-- Мат 2-3 раза
+- Агрессивный, дерзкий, с матом
 - Юмор через злость
 - Обращение к читателям во множественном числе
 - Завершённая мысль""",
 
-        'romantic': """Ты - Анатолий, романтичный и чувствительный блогер в стиле @maddysontg. Пиши ТОЛЬКО готовый пост. ИСПОЛЬЗУЙ МАТ 1 РАЗ. ОБРАЩАЙСЯ К ЧИТАТЕЛЯМ ВО МНОЖЕСТВЕННОМ ЧИСЛЕ (вы, вам, вас).
-
-Пример стиля:
-"Слушайте, я влюбился в азиатку. Она смеётся, и у меня сердце замирает. Маленькая, смешная, говорит на языке, которого я не понимаю. Но мне и не нужно понимать. Я просто счастлив."
+        'romantic': """Ты - Анатолий, романтичный блогер. Пиши ТОЛЬКО готовый пост. ОБРАЩАЙСЯ К ЧИТАТЕЛЯМ ВО МНОЖЕСТВЕННОМ ЧИСЛЕ (вы, вам, вас).
 
 Напиши романтичный пост про азиатских женщин. Требования:
 - 500-650 символов
-- Романтичный, нежный, чувственный
-- Мат 1 раз для остроты
+- Романтичный, нежный
 - С юмором
 - Обращение к читателям во множественном числе
 - Завершённая мысль""",
 
-        'vulgar': """Ты - Анатолий, пошлый и развязный блогер в стиле @maddysontg. Пиши ТОЛЬКО готовый пост. ИСПОЛЬЗУЙ МАТ 2-3 РАЗА. ОБРАЩАЙСЯ К ЧИТАТЕЛЯМ ВО МНОЖЕСТВЕННОМ ЧИСЛЕ (вы, вам, вас).
-
-Пример стиля:
-"Сижу, ем доширак, смотрю на азиатку. Она в купальнике, а я в трусах. И мне хорошо. Потому что я знаю: она всё равно улыбнётся мне. Потому что я Анатолий. А вы так не умеете."
+        'vulgar': """Ты - Анатолий, пошлый блогер. Пиши ТОЛЬКО готовый пост. ОБРАЩАЙСЯ К ЧИТАТЕЛЯМ ВО МНОЖЕСТВЕННОМ ЧИСЛЕ (вы, вам, вас).
 
 Напиши пошлый пост про азиатских женщин. Требования:
 - 500-650 символов
-- Пошлый, грязный, с двойным смыслом
-- Мат 2-3 раза
+- Пошлый, с двойным смыслом
 - С юмором
 - Обращение к читателям во множественном числе
 - Завершённая мысль""",
 
-        'everyday': """Ты - Анатолий, обычный парень с бытовым юмором в стиле @maddysontg. Пиши ТОЛЬКО готовый пост. ИСПОЛЬЗУЙ МАТ 1-2 РАЗА. ОБРАЩАЙСЯ К ЧИТАТЕЛЯМ ВО МНОЖЕСТВЕННОМ ЧИСЛЕ (вы, вам, вас).
-
-Пример стиля:
-"Сижу, думаю: а зачем вам всё это? Работа, деньги, проблемы. А есть она, азиатка, которая смеётся над моими шутками. И мне больше ничего не нужно."
+        'everyday': """Ты - Анатолий, обычный парень. Пиши ТОЛЬКО готовый пост. ОБРАЩАЙСЯ К ЧИТАТЕЛЯМ ВО МНОЖЕСТВЕННОМ ЧИСЛЕ (вы, вам, вас).
 
 Напиши бытовой пост про азиатских женщин. Требования:
 - 500-650 символов
 - Жизненный, бытовой, простой
-- Мат 1-2 раза
 - С юмором
 - Обращение к читателям во множественном числе
 - Завершённая мысль""",
 
-        'envy': """Ты - Анатолий, успешный и уверенный блогер в стиле @maddysontg. Пиши ТОЛЬКО готовый пост. ИСПОЛЬЗУЙ МАТ 1-2 РАЗА. ОБРАЩАЙСЯ К ЧИТАТЕЛЯМ ВО МНОЖЕСТВЕННОМ ЧИСЛЕ (вы, вам, вас).
-
-Пример стиля:
-"Пиздец, я только что понял, что жизнь удалась. Я на море, рядом азиатка в купальнике. Вы там работаете, а я тут отдыхаю. Мечтайте дальше."
+        'envy': """Ты - Анатолий, успешный блогер. Пиши ТОЛЬКО готовый пост. ОБРАЩАЙСЯ К ЧИТАТЕЛЯМ ВО МНОЖЕСТВЕННОМ ЧИСЛЕ (вы, вам, вас).
 
 Напиши пост, вызывающий зависть у читателей. Требования:
 - 500-650 символов
 - Гордый, самоуверенный
-- Мат 1-2 раза
 - Вызывающий зависть
 - С юмором
 - Обращение к читателям во множественном числе
 - Завершённая мысль""",
 
-        'funny': """Ты - Анатолий, смешной и ироничный блогер в стиле @maddysontg. Пиши ТОЛЬКО готовый пост. ИСПОЛЬЗУЙ МАТ 1-2 РАЗА. ОБРАЩАЙСЯ К ЧИТАТЕЛЯМ ВО МНОЖЕСТВЕННОМ ЧИСЛЕ (вы, вам, вас).
-
-Пример стиля:
-"Бля, она такая смешная. Говорит что-то на своём, жестикулирует, а я ничего не понимаю. Но мне нравится. Потому что я чувствую себя живым. А вы так можете?"
+        'funny': """Ты - Анатолий, смешной блогер. Пиши ТОЛЬКО готовый пост. ОБРАЩАЙСЯ К ЧИТАТЕЛЯМ ВО МНОЖЕСТВЕННОМ ЧИСЛЕ (вы, вам, вас).
 
 Напиши смешной пост про азиатских женщин. Требования:
 - 500-650 символов
 - Максимально смешной, ироничный
-- Мат 1-2 раза
 - Шутки, сарказм
 - Обращение к читателям во множественном числе
 - Завершённая мысль""",
     }
     
     prompt = style_prompts.get(style, style_prompts['funny'])
-    prompt += "\n\nТвой ответ (ТОЛЬКО пост):"
+    prompt += "\n\nТвой ответ (ТОЛЬКО ПОСТ, БЕЗ РАССУЖДЕНИЙ):"
     
     for attempt in range(3):
         try:
@@ -279,7 +250,7 @@ def generate_caption() -> str:
             data = {
                 "model": "deepseek-v4-flash",
                 "messages": [
-                    {"role": "system", "content": f"Ты стендап-комик Анатолий в стиле @maddysontg. Отвечай только готовым постом. Никаких рассуждений. Только текст поста. Используй только обычное тире '-'. НЕ УПОМИНАЙ ДРУГИХ БЛОГЕРОВ. Используй обычные кавычки \" вместо «». ОБЯЗАТЕЛЬНО используй мат. ОБРАЩАЙСЯ К ЧИТАТЕЛЯМ ВО МНОЖЕСТВЕННОМ ЧИСЛЕ (вы, вам, вас). Стиль поста: {style}. Пост должен быть смешным."},
+                    {"role": "system", "content": "Ты стендап-комик Анатолий. Отвечай ТОЛЬКО готовым постом. НИКАКИХ РАССУЖДЕНИЙ. Только текст поста. Используй только обычное тире '-'. НЕ УПОМИНАЙ ДРУГИХ БЛОГЕРОВ. ОБРАЩАЙСЯ К ЧИТАТЕЛЯМ ВО МНОЖЕСТВЕННОМ ЧИСЛЕ (вы, вам, вас). Пост должен быть смешным."},
                     {"role": "user", "content": prompt}
                 ],
                 "temperature": 1.3,
@@ -295,16 +266,15 @@ def generate_caption() -> str:
             result = response.json()
             content = result["choices"][0].get("message", {}).get("content", "")
             
-            if not content:
-                content = result["choices"][0].get("message", {}).get("reasoning_content", "")
-            
+            # Игнорируем reasoning_content полностью
             if not content or len(content.strip()) < 20:
                 print("❌ Пустой или короткий ответ")
                 continue
             
             caption = content.strip().strip('"').strip("'")
             
-            if caption.lower().startswith(("мы должны", "нужно", "я должен", "напиши", "вот")):
+            # Проверяем, что это не рассуждение
+            if caption.lower().startswith(("мы должны", "нужно", "я должен", "напиши", "вот", "давайте", "попробуем")):
                 print("⚠️ DeepSeek выдал рассуждение, пробуем другой промпт...")
                 continue
             
@@ -574,34 +544,32 @@ def get_random_photo():
     
     return None
 
-async def send_photo(chat_id):
+async def send_post(chat_id, photo_url=None, caption=None):
     try:
-        photo_url = get_random_photo()
+        if not photo_url:
+            photo_url = get_random_photo()
         
-        if photo_url:
-            full_caption = generate_caption()
-            full_caption = clean_text(full_caption)
-            full_caption = truncate_by_sentences(full_caption, 900)
-            
-            if not full_caption or len(full_caption) < 10:
-                full_caption = truncate_by_sentences(get_fallback_caption(), 900)
-            
-            await bot.send_photo(
-                chat_id=chat_id, 
-                photo=photo_url,
-                caption=full_caption
-            )
-            print(f"✅ Фото отправлено в чат {chat_id}")
-            return True
-        else:
-            await bot.send_message(
-                chat_id=chat_id, 
-                text="❌ Не удалось найти фото. Попробуйте позже."
-            )
+        if not photo_url:
             return False
+        
+        if not caption:
+            caption = generate_caption()
+            caption = clean_text(caption)
+            caption = truncate_by_sentences(caption, 900)
             
+            if not caption or len(caption) < 10:
+                caption = truncate_by_sentences(get_fallback_caption(), 900)
+        
+        await bot.send_photo(
+            chat_id=chat_id,
+            photo=photo_url,
+            caption=caption
+        )
+        print(f"✅ Пост отправлен в чат {chat_id}")
+        return True
+        
     except Exception as e:
-        print(f"❌ Ошибка: {e}")
+        print(f"❌ Ошибка отправки в {chat_id}: {e}")
         return False
 
 async def send_to_all_users():
@@ -613,63 +581,25 @@ async def send_to_all_users():
     
     print(f"📤 Отправка поста {len(users)} пользователям...")
     
-    for chat_id in users:
-        await send_photo(chat_id)
-        await asyncio.sleep(3)
-
-# ===== РАСПИСАНИЕ =====
-
-is_sending = False
-
-async def scheduler():
-    global is_sending
+    photo_url = get_random_photo()
+    if not photo_url:
+        print("❌ Не удалось найти фото")
+        return
     
-    while True:
-        now = datetime.now()
-        
-        minute1 = random.randint(0, 59)
-        minute2 = random.randint(0, 59)
-        
-        hour1 = random.randint(12, 14)
-        hour2 = random.randint(17, 21)
-        
-        times = [(hour1, minute1), (hour2, minute2)]
-        times.sort()
-        
-        target_times = []
-        for hour, minute in times:
-            target = datetime(now.year, now.month, now.day, hour, minute, 0)
-            if target <= now:
-                target += timedelta(days=1)
-            target_times.append(target)
-        
-        wait_seconds = (target_times[0] - now).total_seconds()
-        if wait_seconds > 0:
-            print(f"⏳ Первая отправка в {target_times[0].strftime('%H:%M')} (через {wait_seconds/3600:.1f} часов)")
-            await asyncio.sleep(wait_seconds)
-        
-        if not is_sending:
-            is_sending = True
-            try:
-                await send_to_all_users()
-            finally:
-                is_sending = False
-        else:
-            print("⚠️ Отправка уже идёт, пропускаем")
-        
-        wait_seconds = (target_times[1] - target_times[0]).total_seconds()
-        if wait_seconds > 0:
-            print(f"⏳ Вторая отправка в {target_times[1].strftime('%H:%M')} (через {wait_seconds/3600:.1f} часов)")
-            await asyncio.sleep(wait_seconds)
-        
-        if not is_sending:
-            is_sending = True
-            try:
-                await send_to_all_users()
-            finally:
-                is_sending = False
-        else:
-            print("⚠️ Отправка уже идёт, пропускаем")
+    caption = generate_caption()
+    caption = clean_text(caption)
+    caption = truncate_by_sentences(caption, 900)
+    
+    if not caption or len(caption) < 10:
+        caption = truncate_by_sentences(get_fallback_caption(), 900)
+    
+    for chat_id in users:
+        await send_post(chat_id, photo_url, caption)
+        await asyncio.sleep(3)
+    
+    if CHANNEL_ID:
+        print(f"📤 Отправка в канал {CHANNEL_ID}...")
+        await send_post(CHANNEL_ID, photo_url, caption)
 
 # ===== КОМАНДЫ =====
 
@@ -680,6 +610,10 @@ async def start(msg: Message):
     chat_id = msg.chat.id
     user_id = msg.from_user.id
     chat_type = msg.chat.type
+    
+    if chat_type == "channel":
+        await msg.answer("ℹ️ Я работаю в канале автоматически, команды не требуются.")
+        return
     
     if chat_type in ["group", "supergroup"]:
         if not await is_user_admin(chat_id, user_id):
@@ -701,17 +635,20 @@ async def start(msg: Message):
         save_users(users)
         print(f"✅ Добавлен пользователь: {chat_id}")
     
+    channel_status = f"\n📢 Канал: {'✅ подключён' if CHANNEL_ID else '❌ не настроен'}"
+    
     await msg.answer(
         f"✅ Вы подписаны на рассылку!\n"
         f"📸 Уникальные посты про азиаток с острым юмором 2 раза в день\n"
         f"⏰ Первый пост: 12:00-15:00\n"
         f"⏰ Второй пост: 17:00-22:00\n"
+        f"{channel_status}\n"
         f"🔄 /photo - получить фото сейчас\n"
         f"🛑 /stop - отписаться"
     )
     
     await asyncio.sleep(1)
-    await send_photo(chat_id)
+    await send_post(chat_id)
 
 @dp.message(Command("photo"))
 async def photo(msg: Message):
@@ -719,13 +656,17 @@ async def photo(msg: Message):
     user_id = msg.from_user.id
     chat_type = msg.chat.type
     
+    if chat_type == "channel":
+        await msg.answer("ℹ️ В канале отправка по команде не требуется.")
+        return
+    
     if chat_type in ["group", "supergroup"]:
         if not await is_user_admin(chat_id, user_id):
             await msg.reply("⛔ Только администраторы могут запрашивать фото.")
             return
     
     await msg.answer("🔥 Ждём выпадение кишки...")
-    await send_photo(chat_id)
+    await send_post(chat_id)
 
 @dp.message(Command("stop"))
 async def stop(msg: Message):
@@ -734,6 +675,10 @@ async def stop(msg: Message):
     chat_id = msg.chat.id
     user_id = msg.from_user.id
     chat_type = msg.chat.type
+    
+    if chat_type == "channel":
+        await msg.answer("ℹ️ В канале отписка не требуется.")
+        return
     
     if chat_type in ["group", "supergroup"]:
         if not await is_user_admin(chat_id, user_id):
@@ -754,6 +699,12 @@ async def status(msg: Message):
     user_id = msg.from_user.id
     chat_type = msg.chat.type
     
+    if chat_type == "channel":
+        await msg.answer(f"📊 Статус канала:\n"
+                        f"• Канал: {'✅ подключён' if CHANNEL_ID else '❌ не настроен'}\n"
+                        f"• ID канала: {CHANNEL_ID or 'не задан'}")
+        return
+    
     if chat_type in ["group", "supergroup"]:
         if not await is_user_admin(chat_id, user_id):
             await msg.reply("⛔ Только администраторы могут смотреть статус.")
@@ -766,7 +717,8 @@ async def status(msg: Message):
         f"• Подписка: {'✅ Активна' if is_subscribed else '❌ Неактивна'}\n"
         f"• Всего подписчиков: {len(users)}\n"
         f"• Фото в истории: {len(history)}\n"
-        f"• Расписание: 12:00-15:00 и 17:00-22:00"
+        f"• Расписание: 12:00-15:00 и 17:00-22:00\n"
+        f"• Канал: {'✅ подключён' if CHANNEL_ID else '❌ не настроен'}"
     )
     
     await msg.answer(status_text)
@@ -832,20 +784,80 @@ async def broadcast(msg: Message):
                 users.remove(chat_id)
                 save_users(users)
     
-    await msg.answer(f"✅ Отправлено {sent} подписчикам")
+    if CHANNEL_ID:
+        try:
+            await bot.send_message(chat_id=CHANNEL_ID, text=text)
+            sent += 1
+            print(f"✅ Отправлено в канал {CHANNEL_ID}")
+        except Exception as e:
+            print(f"❌ Ошибка отправки в канал: {e}")
+    
+    await msg.answer(f"✅ Отправлено {sent} получателям (включая канал)")
+
+# ===== РАСПИСАНИЕ =====
+
+is_sending = False
+
+async def scheduler():
+    global is_sending
+    
+    while True:
+        now = datetime.now()
+        
+        minute1 = random.randint(0, 59)
+        minute2 = random.randint(0, 59)
+        
+        hour1 = random.randint(12, 14)
+        hour2 = random.randint(17, 21)
+        
+        times = [(hour1, minute1), (hour2, minute2)]
+        times.sort()
+        
+        target_times = []
+        for hour, minute in times:
+            target = datetime(now.year, now.month, now.day, hour, minute, 0)
+            if target <= now:
+                target += timedelta(days=1)
+            target_times.append(target)
+        
+        wait_seconds = (target_times[0] - now).total_seconds()
+        if wait_seconds > 0:
+            print(f"⏳ Первая отправка в {target_times[0].strftime('%H:%M')} (через {wait_seconds/3600:.1f} часов)")
+            await asyncio.sleep(wait_seconds)
+        
+        if not is_sending:
+            is_sending = True
+            try:
+                await send_to_all_users()
+            finally:
+                is_sending = False
+        else:
+            print("⚠️ Отправка уже идёт, пропускаем")
+        
+        wait_seconds = (target_times[1] - target_times[0]).total_seconds()
+        if wait_seconds > 0:
+            print(f"⏳ Вторая отправка в {target_times[1].strftime('%H:%M')} (через {wait_seconds/3600:.1f} часов)")
+            await asyncio.sleep(wait_seconds)
+        
+        if not is_sending:
+            is_sending = True
+            try:
+                await send_to_all_users()
+            finally:
+                is_sending = False
+        else:
+            print("⚠️ Отправка уже идёт, пропускаем")
 
 # ===== ЗАПУСК =====
 
 async def main():
     print("=" * 60)
-    print("🤖 Бот запущен (стиль @maddysontg, мн. число)")
+    print("🤖 Бот запущен (БЕЗ РАССУЖДЕНИЙ)")
     print("🔍 Приоритет: Bing → Google → Yandex → Pexels")
     print(f"📊 Подписчиков: {len(users)}")
     print(f"📸 Фото в истории: {len(history)}")
     print("⏰ Расписание: 12:00-15:00 и 17:00-22:00")
-    print("📝 Максимальная длина текста: 900 символов")
-    print("📝 Одно фото за запрос")
-    print("📝 Обращение к читателям во множественном числе")
+    print(f"📢 Канал: {CHANNEL_ID if CHANNEL_ID else '❌ не настроен'}")
     print("=" * 60)
     
     gc.collect()
