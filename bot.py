@@ -43,25 +43,94 @@ HISTORY_FILE = "history.json"
 
 # ===== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ =====
 
-def truncate_caption(text: str, max_length: int = 1000) -> str:
-    """Обрезает текст до максимальной длины, оставляя только целые предложения."""
-    if len(text) <= max_length:
-        return text
+def split_text_into_sentences(text: str) -> list:
+    """Разбивает текст на предложения по . ! ?"""
+    sentences = []
+    current = []
+    
+    for char in text:
+        current.append(char)
+        if char in ('.', '!', '?'):
+            sentences.append(''.join(current).strip())
+            current = []
+    
+    if current:
+        sentences.append(''.join(current).strip())
+    
+    return sentences
 
+def get_complete_sentences(text: str, max_length: int) -> str:
+    """Возвращает максимальное количество целых предложений в пределах лимита"""
+    sentences = split_text_into_sentences(text)
+    result = []
+    current_len = 0
+    
+    for sentence in sentences:
+        # Если даже первое предложение не влезает — возвращаем его целиком (пусть будет короткое)
+        if not result and len(sentence) > max_length:
+            return sentence[:max_length]
+        
+        if current_len + len(sentence) + 1 <= max_length:
+            result.append(sentence)
+            current_len += len(sentence) + 1
+        else:
+            break
+    
+    return ' '.join(result)
+
+def split_caption(text: str) -> tuple:
+    """
+    Разбивает текст на две части:
+    - первая часть (для подписи к фото): до 900 символов, заканчивается на . ! ?
+    - вторая часть (для отдельного сообщения): остаток текста
+    Возвращает (caption_part, continuation_part)
+    """
+    if len(text) <= 900:
+        return text, None
+    
+    # Ищем последний знак препинания в пределах 900 символов
+    truncated = text[:900]
     last_punct = -1
     for p in ('.', '!', '?'):
-        pos = text.rfind(p, 0, max_length)
+        pos = truncated.rfind(p)
         if pos > last_punct:
             last_punct = pos
-
+    
     if last_punct != -1:
-        return text[:last_punct + 1].strip()
+        caption_part = text[:last_punct + 1]
+        continuation = text[last_punct + 1:].strip()
+        return caption_part, continuation if continuation else None
+    
+    # Если знака нет — ищем последний пробел
+    last_space = truncated.rfind(' ')
+    if last_space != -1:
+        caption_part = text[:last_space] + '.'
+        continuation = text[last_space:].strip()
+        return caption_part, continuation if continuation else None
+    
+    # Если ничего не нашли — обрезаем по символам
+    return text[:900], text[900:]
 
-    last_space = text.rfind(' ', 0, max_length)
+def truncate_caption(text: str, max_length: int = 900) -> str:
+    """Обрезает текст для подписи к фото (всегда заканчивается на . ! ?)"""
+    if len(text) <= max_length:
+        return text
+    
+    truncated = text[:max_length]
+    last_punct = -1
+    for p in ('.', '!', '?'):
+        pos = truncated.rfind(p)
+        if pos > last_punct:
+            last_punct = pos
+    
+    if last_punct != -1:
+        return text[:last_punct + 1]
+    
+    last_space = truncated.rfind(' ')
     if last_space != -1:
         return text[:last_space] + '.'
-
-    return ''
+    
+    return text[:max_length]
 
 def clean_text(text: str) -> str:
     """Очищает текст от упоминаний и заменяет длинное тире"""
@@ -246,7 +315,7 @@ def get_fallback_caption() -> str:
         fallback += random.choice(endings)
     return fallback
 
-# ===== УЛУЧШЕННЫЙ ПОИСК ФОТО =====
+# ===== ПОИСК ФОТО =====
 
 async def is_user_admin(chat_id: int, user_id: int) -> bool:
     try:
@@ -256,7 +325,6 @@ async def is_user_admin(chat_id: int, user_id: int) -> bool:
         return False
 
 def search_bing(query):
-    """Поиск фото через Bing Images"""
     try:
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -269,31 +337,24 @@ def search_bing(query):
         
         response = requests.get(url, headers=headers, timeout=15)
         
-        # Ищем URL изображений
         pattern = r'"murl":"([^"]+)"'
         images = re.findall(pattern, response.text)
         
         pattern2 = r'"mediaurl":"([^"]+)"'
         images.extend(re.findall(pattern2, response.text))
         
-        # Фильтруем только качественные изображения
         clean_images = []
         for img in images:
             img = img.replace('\\u0026', '&')
             img = img.replace('\\/', '/')
             
-            # Только jpg, jpeg, png, webp
             if any(ext in img.lower() for ext in ['.jpg', '.jpeg', '.png', '.webp']):
-                # Исключаем логотипы и служебные изображения
                 if not any(x in img.lower() for x in ['gstatic', 'google', 'favicon', 'logo', 'bing', 'avatar']):
-                    # Проверяем размер (должен быть достаточно большим)
                     if 'w=800' in img or 'w=1024' in img or 'w=1200' in img or 'w=1500' in img:
                         clean_images.append(img)
-                    # Если размер не указан, добавляем всё равно, но с меньшим приоритетом
                     elif 'w=' not in img:
                         clean_images.append(img)
         
-        # Удаляем дубликаты
         clean_images = list(dict.fromkeys(clean_images))
         
         if clean_images:
@@ -306,7 +367,6 @@ def search_bing(query):
         return None
 
 def search_google_direct(query):
-    """Поиск фото через Google Images"""
     try:
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -347,30 +407,40 @@ def search_google_direct(query):
         return None
 
 def search_yandex(query):
-    """Поиск фото через Yandex Images (если Google не сработал)"""
     try:
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.5",
+            "Accept-Encoding": "gzip, deflate, br",
+            "Connection": "keep-alive",
         }
         
         encoded_query = quote(query)
-        url = f"https://yandex.com/images/search?text={encoded_query}&rdrnd=1&rpt=imageview"
+        url = f"https://yandex.ru/images/search?text={encoded_query}&rdrnd=1&rpt=imageview&noreask=1"
         
         response = requests.get(url, headers=headers, timeout=15)
         
-        pattern = r'"img_url":"([^"]+)"'
-        images = re.findall(pattern, response.text)
+        patterns = [
+            r'"img_url":"([^"]+)"',
+            r'"url":"([^"]+\.(jpg|jpeg|png|webp))"',
+            r'<img[^>]+src="([^"]+\.(jpg|jpeg|png|webp))"',
+        ]
+        
+        images = []
+        for pattern in patterns:
+            found = re.findall(pattern, response.text)
+            for item in found:
+                if isinstance(item, tuple):
+                    item = item[0]
+                if item and not any(x in item.lower() for x in ['logo', 'favicon', 'gif']):
+                    images.append(item.replace('\\u0026', '&').replace('\\/', '/'))
         
         clean_images = []
         for img in images:
-            img = img.replace('\\u0026', '&')
-            img = img.replace('\\/', '/')
-            
             if any(ext in img.lower() for ext in ['.jpg', '.jpeg', '.png', '.webp']):
-                if not any(x in img.lower() for x in ['logo', 'favicon']):
-                    clean_images.append(img)
+                if not any(x in img.lower() for x in ['gstatic', 'google', 'favicon', 'logo']):
+                    if not img.startswith('data:'):
+                        clean_images.append(img)
         
         clean_images = list(dict.fromkeys(clean_images))
         
@@ -384,7 +454,6 @@ def search_yandex(query):
         return None
 
 def search_pexels(query):
-    """Поиск фото через Pexels API (резервный вариант)"""
     try:
         PEXELS_KEY = os.getenv("PEXELS_KEY")
         if not PEXELS_KEY:
@@ -415,10 +484,6 @@ def search_pexels(query):
         return None
 
 def get_random_photo():
-    """
-    Получает случайное фото, которого нет в истории.
-    Приоритет: Bing → Google → Yandex → Pexels
-    """
     global history
     
     if len(history) > 80:
@@ -429,7 +494,6 @@ def get_random_photo():
     queries = SEARCH_QUERIES.copy()
     random.shuffle(queries)
     
-    # Функции поиска в порядке приоритета
     search_functions = [
         ('Bing', search_bing),
         ('Google', search_google_direct),
@@ -453,7 +517,6 @@ def get_random_photo():
             
             time.sleep(0.3)
     
-    # Если ничего не найдено - очищаем историю и пробуем ещё раз
     print("⚠️ Не удалось найти новое фото, очищаю историю...")
     history = []
     save_history(history)
@@ -477,21 +540,39 @@ async def send_photo(chat_id):
         photo_url = get_random_photo()
         
         if photo_url:
-            caption = generate_caption()
-            caption = truncate_caption(caption, 1000)
+            full_caption = generate_caption()
+            full_caption = clean_text(full_caption)
             
-            if caption:
-                await bot.send_photo(
-                    chat_id=chat_id, 
-                    photo=photo_url,
-                    caption=caption
-                )
-            else:
-                await bot.send_photo(
-                    chat_id=chat_id, 
-                    photo=photo_url
-                )
+            # Разбиваем текст на подпись и продолжение
+            caption_part, continuation = split_caption(full_caption)
+            
+            # Отправляем фото с подписью
+            await bot.send_photo(
+                chat_id=chat_id, 
+                photo=photo_url,
+                caption=caption_part
+            )
             print(f"✅ Фото отправлено в чат {chat_id}")
+            
+            # Если есть продолжение — отправляем отдельным сообщением
+            if continuation:
+                # Проверяем, не превышает ли продолжение лимит 4096 символов
+                if len(continuation) > 4096:
+                    # Если слишком длинное — разбиваем на части
+                    for i in range(0, len(continuation), 4000):
+                        part = continuation[i:i+4000]
+                        await bot.send_message(
+                            chat_id=chat_id,
+                            text=part
+                        )
+                        await asyncio.sleep(0.5)
+                else:
+                    await bot.send_message(
+                        chat_id=chat_id,
+                        text=continuation
+                    )
+                print(f"📝 Продолжение отправлено в чат {chat_id}")
+            
             return True
         else:
             await bot.send_message(
@@ -681,9 +762,16 @@ async def test(msg: Message):
     
     await msg.answer("🧠 Генерирую уникальный пост...")
     
-    caption = generate_caption()
-    caption = truncate_caption(caption, 1000)
-    await msg.answer(f"📝 Результат:\n\n{caption}")
+    full_caption = generate_caption()
+    full_caption = clean_text(full_caption)
+    
+    caption_part, continuation = split_caption(full_caption)
+    
+    result = f"📝 Подпись к фото (до 900 символов):\n\n{caption_part}"
+    if continuation:
+        result += f"\n\n📝 Продолжение:\n\n{continuation}"
+    
+    await msg.answer(result)
 
 @dp.message(Command("clear_history"))
 async def clear_history(msg: Message):
@@ -737,11 +825,13 @@ async def broadcast(msg: Message):
 
 async def main():
     print("=" * 60)
-    print("🤖 Бот запущен (улучшенный поиск фото)")
+    print("🤖 Бот запущен (с разделением длинных постов)")
     print("🔍 Приоритет: Bing → Google → Yandex → Pexels")
     print(f"📊 Подписчиков: {len(users)}")
     print(f"📸 Фото в истории: {len(history)}")
     print("⏰ Расписание: 12:00-15:00 и 17:00-22:00")
+    print("📝 Подпись к фото: до 900 символов (целые предложения)")
+    print("📝 Продолжение: отдельным сообщением")
     print("=" * 60)
     
     gc.collect()
