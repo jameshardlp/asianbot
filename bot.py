@@ -35,7 +35,7 @@ USERS_FILE = "users.json"
 HISTORY_FILE = "history.json"
 SCHEDULE_FILE = "schedule.json"
 
-# ===== ПОИСКОВЫЕ ЗАПРОСЫ (ТОЛЬКО ЯПОНКИ, КИТАЯНКИ, КОРЕЯНКИ, ТАЙКИ) =====
+# ===== ПОИСКОВЫЕ ЗАПРОСЫ =====
 SEARCH_QUERIES = [
     "japanese girl casual selfie",
     "japanese woman everyday life",
@@ -92,14 +92,13 @@ FITNESS_QUERIES = [
     "thai sport girl",
 ]
 
-# ===== КЛЮЧЕВЫЕ СЛОВА ДЛЯ ВОЗРАСТА (18-30) =====
+# ===== КЛЮЧЕВЫЕ СЛОВА =====
 AGE_POSITIVE_KEYWORDS = [
     '18', '19', '20', '21', '22', '23', '24', '25',
     '26', '27', '28', '29', '30', '20s',
     'young', 'college', 'university'
 ]
 
-# ===== КЛЮЧЕВЫЕ СЛОВА-ИСКЛЮЧЕНИЯ =====
 EXCLUDE_KEYWORDS = [
     'african', 'black', 'white', 'caucasian', 'european', 'american',
     'latina', 'mexican', 'brazilian', 'indian', 'middle eastern',
@@ -117,7 +116,6 @@ EXCLUDE_KEYWORDS = [
     'asian male', 'asian man', 'guy portrait', 'male portrait',
 ]
 
-# ===== ИСКЛЮЧЕНИЯ ДЛЯ ТРАДИЦИОННОЙ ОДЕЖДЫ =====
 TRADITIONAL_EXCLUDE = [
     'kimono', 'hanbok', 'cheongsam', 'qi pao', 'sari', 'ao dai',
     'traditional', 'folk costume', 'national dress'
@@ -143,11 +141,9 @@ def ensure_ends_with_dot(text: str) -> str:
     text = text.strip()
     if text[-1] in ('.', '!', '?'):
         return text
-    # Не добавляем точку к незавершённому предложению — обрезаем до последнего завершённого
     last_end = max(text.rfind('.'), text.rfind('!'), text.rfind('?'))
     if last_end != -1:
         return text[:last_end + 1].strip()
-    # Нет ни одного знака конца предложения — возвращаем как есть, без фальшивой точки
     return text
 
 def get_last_sentence(text: str) -> str:
@@ -231,7 +227,6 @@ def is_sentence_complete(sentence: str) -> bool:
     return has_verb and has_subject
 
 def drop_incomplete_tail(text: str) -> str:
-    """Обрезает незавершённый хвост текста до последнего знака конца предложения."""
     text = text.strip()
     if not text:
         return ''
@@ -247,7 +242,6 @@ def truncate_by_sentences(text: str, max_length: int = 1023) -> str:
         return ''
     
     text = text.strip()
-    # Сначала отбрасываем незавершённый хвост (обрезано на полуслове)
     text = drop_incomplete_tail(text)
     
     if len(text) <= max_length:
@@ -467,7 +461,6 @@ def is_similar(text: str) -> bool:
 # ===== ПРОДОЛЖЕНИЕ ОБРЕЗАННОГО ТЕКСТА =====
 
 def request_continuation(previous_text: str) -> str:
-    """Дописывает концовку, если DeepSeek обрезал текст по лимиту токенов."""
     try:
         url = "https://api.deepseek.com/chat/completions"
         headers = {
@@ -493,16 +486,13 @@ def request_continuation(previous_text: str) -> str:
     return ""
 
 def complete_truncated_text(content: str, finish_reason: str) -> str:
-    """Если текст обрезан по лимиту токенов — пытается дописать концовку."""
     if finish_reason == "length" and content:
         print(f"⚠️ Текст обрезан (finish_reason=length, {len(content)} символов). Запрашиваю продолжение...")
         continuation = request_continuation(content)
         if continuation:
-            # Очищаем продолжение и проверяем на дубликат
             continuation = clean_text(continuation)
             tail_100 = content[-100:].lower()
             cont_start = continuation[:100].lower()
-            # Если продолжение начинается с текста, который уже есть в хвосте — не склеиваем
             if tail_100 and cont_start and (tail_100 in cont_start or cont_start in tail_100):
                 print("⚠️ Продолжение дублирует хвост, не склеиваю")
             elif continuation:
@@ -605,7 +595,6 @@ def generate_caption() -> str:
             usage = result.get("usage", {})
             print(f"📊 finish_reason={finish_reason} | tokens={usage.get('completion_tokens', '?')} | chars={len(content)}")
             
-            # Если текст обрезан по лимиту токенов — дописываем концовку
             if finish_reason == "length":
                 content = complete_truncated_text(content, finish_reason)
             
@@ -961,7 +950,6 @@ async def send_post(chat_id, photo_url=None, caption=None):
             print(f"✅ Фото (без подписи) отправлено в чат {chat_id}")
             return True
         
-        # Жёсткая проверка лимита Telegram (1024 символа для caption с фото)
         if len(caption) > 1024:
             print(f"⚠️ Caption превышает лимит Telegram ({len(caption)} > 1024), обрезаю...")
             caption = truncate_by_sentences(caption, max_length=1023)
@@ -1089,10 +1077,23 @@ async def scheduler():
 
 # ===== КОМАНДЫ =====
 
+async def check_user_can_use_command(message: Message) -> bool:
+    """Проверяет, может ли пользователь использовать команду"""
+    chat_type = message.chat.type
+    
+    # В личных сообщениях — всегда можно
+    if chat_type == "private":
+        return True
+    
+    # В группах и супергруппах — только администраторы
+    if chat_type in ["group", "supergroup"]:
+        return await is_user_admin(message.chat.id, message.from_user.id)
+    
+    # В каналах — команды не работают
+    return False
+
 @dp.message(Command("start"))
 async def start(msg: Message):
-    global users
-    
     chat_id = msg.chat.id
     user_id = msg.from_user.id
     chat_type = msg.chat.type
@@ -1101,11 +1102,12 @@ async def start(msg: Message):
         await msg.answer("ℹ️ Я работаю в канале автоматически, команды не требуются.")
         return
     
+    # Проверяем права
+    if not await check_user_can_use_command(msg):
+        await msg.reply("⛔ Эта команда только для администраторов группы.")
+        return
+    
     if chat_type in ["group", "supergroup"]:
-        if not await is_user_admin(chat_id, user_id):
-            await msg.reply("⛔ Эта команда только для администраторов группы.")
-            return
-        
         try:
             chat_member = await bot.get_chat_member(chat_id, bot.id)
             is_admin = chat_member.status in ["administrator", "creator"]
@@ -1149,18 +1151,52 @@ async def photo(msg: Message):
         await msg.answer("ℹ️ В канале отправка по команде не требуется.")
         return
     
-    if chat_type in ["group", "supergroup"]:
-        if not await is_user_admin(chat_id, user_id):
-            await msg.reply("⛔ Только администраторы могут запрашивать фото.")
-            return
+    # Проверяем права
+    if not await check_user_can_use_command(msg):
+        await msg.reply("⛔ Только администраторы могут запрашивать фото.")
+        return
     
-    await msg.answer("🔥 Ждём выпадение кишки...")
-    await send_post(chat_id)
+    if chat_id not in users:
+        await msg.answer("⚠️ Бот не активирован. Напишите /start")
+        return
+    
+    # Если пользователь НЕ владелец — отправляем ему в личку, а не в канал
+    is_owner = (user_id == OWNER_ID)
+    
+    if is_owner:
+        # Владелец: отправляем в канал (если есть) и в личку
+        await send_post(chat_id)
+        
+        # Отправляем в канал
+        channel_id = CHANNEL_ID
+        if not channel_id or not channel_id.strip():
+            channel_id = await get_channel_id()
+        
+        if channel_id:
+            # Создаём новый пост для канала
+            photo_url = get_random_photo()
+            if photo_url:
+                caption = generate_caption()
+                caption = clean_text(caption)
+                caption = truncate_by_sentences(caption)
+                validated, error = validate_caption(caption)
+                if validated:
+                    caption = validated
+                else:
+                    caption = clean_text(get_fallback_caption())
+                    caption = truncate_by_sentences(caption)
+                    validated, error = validate_caption(caption)
+                    if validated:
+                        caption = validated
+                
+                await send_post(channel_id, photo_url, caption)
+                await msg.answer("✅ Пост отправлен в канал")
+    else:
+        # Обычный пользователь: только в личку
+        await send_post(chat_id)
 
 @dp.message(Command("stop"))
 async def stop(msg: Message):
-    global users
-    
     chat_id = msg.chat.id
     user_id = msg.from_user.id
     chat_type = msg.chat.type
@@ -1169,10 +1205,9 @@ async def stop(msg: Message):
         await msg.answer("ℹ️ В канале отписка не требуется.")
         return
     
-    if chat_type in ["group", "supergroup"]:
-        if not await is_user_admin(chat_id, user_id):
-            await msg.reply("⛔ Только администраторы могут отключить бота.")
-            return
+    if not await check_user_can_use_command(msg):
+        await msg.reply("⛔ Только администраторы могут отключить бота.")
+        return
     
     if chat_id in users:
         users.remove(chat_id)
@@ -1195,10 +1230,9 @@ async def status(msg: Message):
         await msg.answer(channel_info)
         return
     
-    if chat_type in ["group", "supergroup"]:
-        if not await is_user_admin(chat_id, user_id):
-            await msg.reply("⛔ Только администраторы могут смотреть статус.")
-            return
+    if not await check_user_can_use_command(msg):
+        await msg.reply("⛔ Только администраторы могут смотреть статус.")
+        return
     
     is_subscribed = chat_id in users
     channel_id = CHANNEL_ID or await get_channel_id()
@@ -1221,7 +1255,11 @@ async def schedule(msg: Message):
     global OWNER_ID
     global schedule_data
     
-    if not OWNER_ID or msg.from_user.id != OWNER_ID:
+    if not await check_user_can_use_command(msg):
+        await msg.reply("⛔ Только администраторы могут изменять расписание.")
+        return
+    
+    if msg.from_user.id != OWNER_ID:
         await msg.answer("⛔ Доступ запрещён. Только для владельца.")
         return
     
@@ -1266,7 +1304,7 @@ async def schedule(msg: Message):
 async def test(msg: Message):
     global OWNER_ID
     
-    if not OWNER_ID or msg.from_user.id != OWNER_ID:
+    if msg.from_user.id != OWNER_ID:
         await msg.answer("⛔ Доступ запрещён.")
         return
     
@@ -1284,7 +1322,7 @@ async def test(msg: Message):
 async def clear_history(msg: Message):
     global history, OWNER_ID
     
-    if not OWNER_ID or msg.from_user.id != OWNER_ID:
+    if msg.from_user.id != OWNER_ID:
         await msg.answer("⛔ Доступ запрещён.")
         return
     
@@ -1296,7 +1334,7 @@ async def clear_history(msg: Message):
 async def broadcast(msg: Message):
     global OWNER_ID
     
-    if not OWNER_ID or msg.from_user.id != OWNER_ID:
+    if msg.from_user.id != OWNER_ID:
         await msg.answer("⛔ Доступ запрещён.")
         return
     
@@ -1339,7 +1377,7 @@ async def broadcast(msg: Message):
 
 async def main():
     print("=" * 60)
-    print("🤖 Бот запущен (только японки, китаянки, кореянки, тайки)")
+    print("🤖 Бот запущен")
     print("🔍 Приоритет: Bing → Google → Yandex → Pexels")
     print(f"📊 Подписчиков: {len(users)}")
     print(f"📸 Фото в истории: {len(history)}")
@@ -1353,7 +1391,6 @@ async def main():
     print("🇯🇵 Японки | 🇨🇳 Китаянки | 🇰🇷 Кореянки | 🇹🇭 Тайки")
     print("🚫 Мужчины, дети, другие национальности: исключены")
     print("📝 Логическое завершение: обязательно")
-    print("🚫 Запрещены: 'упа', 'будто', 'как', 'словно' в конце")
     print("=" * 60)
     
     gc.collect()
