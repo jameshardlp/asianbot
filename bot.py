@@ -109,7 +109,6 @@ def ensure_ends_with_dot(text: str) -> str:
     return text
 
 def get_last_sentence(text: str) -> str:
-    """Извлекает последнее предложение из текста"""
     if not text:
         return ''
     sentences = re.split(r'(?<=[.!?])\s+', text.strip())
@@ -117,39 +116,62 @@ def get_last_sentence(text: str) -> str:
         return sentences[-1].strip()
     return ''
 
-def get_sentence_count(text: str) -> int:
-    """Считает количество предложений в тексте"""
+def truncate_by_sentences(text: str, max_length: int = 1023) -> str:
     if not text:
-        return 0
-    sentences = re.split(r'(?<=[.!?])\s+', text.strip())
-    return len([s for s in sentences if s.strip()])
+        return ''
+    
+    text = text.strip()
+    if len(text) <= max_length:
+        return ensure_ends_with_dot(text)
+    
+    sentences = re.split(r'(?<=[.!?])\s+', text)
+    result = []
+    current_length = 0
+    
+    for sentence in sentences:
+        sentence = sentence.strip()
+        if not sentence:
+            continue
+        if current_length + len(sentence) + 1 <= max_length:
+            result.append(sentence)
+            current_length += len(sentence) + 1
+        else:
+            break
+    
+    if not result and sentences:
+        first = sentences[0].strip()
+        if len(first) <= max_length:
+            result.append(first)
+    
+    final_text = ' '.join(result).strip()
+    if final_text:
+        final_text = ensure_ends_with_dot(final_text)
+    return final_text
 
-def validate_caption(text: str) -> tuple:
-    """
-    Проверяет текст на соответствие правилам.
-    Возвращает (исправленный_текст, ошибка)
-    """
+def validate_caption(text: str, min_length: int = 700, max_length: int = 1023) -> tuple:
     if not text:
         return '', 'Текст пустой'
     
-    # Очищаем
     text = clean_text(text)
     
-    # Проверяем длину
     if len(text) < 10:
         return '', 'Слишком короткий'
     
-    # Проверяем завершение
     if not text.endswith(('.', '!', '?')):
-        # Добавляем точку
         text = ensure_ends_with_dot(text)
     
-    # Проверяем последнее предложение
     last_sentence = get_last_sentence(text)
     if last_sentence:
+        if not last_sentence.endswith(('.', '!', '?')):
+            sentences = re.split(r'(?<=[.!?])\s+', text)
+            if len(sentences) > 1:
+                text = ' '.join(sentences[:-1]).strip()
+                text = ensure_ends_with_dot(text)
+            else:
+                return '', 'Последнее предложение не завершено'
+        
         word_count = len(last_sentence.split())
         if word_count <= 1:
-            # Удаляем последнее предложение
             sentences = re.split(r'(?<=[.!?])\s+', text)
             if len(sentences) > 1:
                 text = ' '.join(sentences[:-1]).strip()
@@ -157,23 +179,9 @@ def validate_caption(text: str) -> tuple:
             else:
                 return '', 'Только одно предложение из 1 слова'
     
-    # Проверяем, что текст не обрезан на полуслове
-    # Ищем последнее предложение в тексте
-    sentences = re.split(r'(?<=[.!?])\s+', text)
-    if sentences:
-        last = sentences[-1].strip()
-        # Проверяем, что последнее предложение заканчивается на . ! ?
-        if last and not last.endswith(('.', '!', '?')):
-            if len(sentences) > 1:
-                text = ' '.join(sentences[:-1]).strip()
-                text = ensure_ends_with_dot(text)
-            else:
-                return '', 'Последнее предложение не завершено'
-    
-    # Проверяем минимальную длину (700 символов)
-    if len(text) < 700 and len(text) > 50:
-        # Если текст короткий, но есть хотя бы 2 предложения — оставляем
-        if get_sentence_count(text) < 2:
+    if len(text) < min_length:
+        sentences = re.split(r'(?<=[.!?])\s+', text)
+        if len([s for s in sentences if s.strip()]) < 2:
             return '', f'Слишком короткий ({len(text)} символов)'
     
     return text, None
@@ -191,19 +199,15 @@ def clean_text(text: str) -> str:
 def is_age_appropriate(url: str) -> bool:
     if not url:
         return False
-    
     url_lower = url.lower()
-    
     for word in AGE_POSITIVE_KEYWORDS:
         if word in url_lower:
             return True
-    
     if re.search(r'\b(age|years?|yo|y/o)\b', url_lower, re.IGNORECASE):
         for word in AGE_POSITIVE_KEYWORDS:
             if word in url_lower:
                 return True
         return False
-    
     return True
 
 def is_traditional_clothing(url: str) -> bool:
@@ -227,16 +231,12 @@ def is_definitely_not_asian(url: str) -> bool:
 def is_photo_acceptable(url: str) -> bool:
     if not url:
         return False
-    
     if is_definitely_not_asian(url):
         return False
-    
     if not is_age_appropriate(url):
         return False
-    
     if is_traditional_clothing(url):
         return False
-    
     return True
 
 # ===== РАБОТА С РАСПИСАНИЕМ =====
@@ -320,7 +320,7 @@ def is_similar(text: str) -> bool:
             return True
     return False
 
-# ===== ГЕНЕРАЦИЯ ПОСТОВ =====
+# ===== ГЕНЕРАЦИЯ ПОСТОВ (САРКАЗМ + САМОИРОНИЯ) =====
 
 def generate_caption() -> str:
     print("🧠 Генерирую уникальный пост...")
@@ -329,6 +329,7 @@ def generate_caption() -> str:
         print("⚠️ Нет ключа DeepSeek, использую резерв")
         caption = get_fallback_caption()
         caption = clean_text(caption)
+        caption = truncate_by_sentences(caption)
         validated, error = validate_caption(caption)
         if validated:
             return validated
@@ -337,33 +338,34 @@ def generate_caption() -> str:
     style = random.choice(['everyday', 'funny', 'romantic', 'envy'])
     
     style_prompts = {
-        'everyday': """Ты - Анатолий, холостой блогер с ироничным юмором. Пиши ТОЛЬКО готовый пост. Используй МАТ 1-2 раза (бля, сука, пиздец, хуйня - но без оскорблений людей). ОБРАЩАЙСЯ К ЧИТАТЕЛЯМ ВО МНОЖЕСТВЕННОМ ЧИСЛЕ (вы, вам, вас). НЕ УПОМИНАЙ ЖЕНУ.
+        'everyday': """Ты - Анатолий, холостой блогер. Твой стиль - самоирония, сарказм, провокация. Пиши ТОЛЬКО готовый пост. Используй МАТ 1-2 раза (бля, сука, пиздец, хуйня - но без оскорблений людей). ОБРАЩАЙСЯ К ЧИТАТЕЛЯМ ВО МНОЖЕСТВЕННОМ ЧИСЛЕ (вы, вам, вас). НЕ УПОМИНАЙ ЖЕНУ.
 
-Напиши пост про молодых азиатских женщин (18-30 лет), их повседневную жизнь, фото в соц-сетях. Будь провокационным, ироничным, но с юмором. Придумай ситуацию из жизни — метро, кафе, улица, дом. Заверши мысль.
+Напиши пост про молодых азиатских женщин (18-30 лет). Будь саркастичным, самоироничным, провокационным. Смеяться над собой и над ситуацией. Придумай забавную жизненную ситуацию.
 
 Требования:
 - 700-900 символов
 - С матом 1-2 раза
-- Провокационный, с юмором
+- Сарказм + самоирония
+- Провокация
 - Завершённая мысль""",
 
-        'funny': """Ты - Анатолий, холостой смешной блогер. Пиши ТОЛЬКО готовый пост. Используй МАТ 1-2 раза (бля, сука, пиздец, хуйня - но без оскорблений людей). ОБРАЩАЙСЯ К ЧИТАТЕЛЯМ ВО МНОЖЕСТВЕННОМ ЧИСЛЕ (вы, вам, вас). НЕ УПОМИНАЙ ЖЕНУ.
+        'funny': """Ты - Анатолий, холостой блогер. Твой стиль - самоирония, сарказм, провокация. Пиши ТОЛЬКО готовый пост. Используй МАТ 1-2 раза (бля, сука, пиздец, хуйня - но без оскорблений людей). ОБРАЩАЙСЯ К ЧИТАТЕЛЯМ ВО МНОЖЕСТВЕННОМ ЧИСЛЕ (вы, вам, вас). НЕ УПОМИНАЙ ЖЕНУ.
 
-Напиши смешной пост про молодых азиатских женщин (18-30 лет) из повседневной жизни. Провокационный, ироничный. 700-900 символов. Завершённая мысль.""",
+Напиши смешной пост про молодых азиатских женщин (18-30 лет). Саркастичный, самоироничный. 700-900 символов. Завершённая мысль.""",
 
-        'romantic': """Ты - Анатолий, холостой романтичный блогер. Пиши ТОЛЬКО готовый пост. Используй МАТ 1 раз (бля, сука, пиздец - но без оскорблений). ОБРАЩАЙСЯ К ЧИТАТЕЛЯМ ВО МНОЖЕСТВЕННОМ ЧИСЛЕ (вы, вам, вас). НЕ УПОМИНАЙ ЖЕНУ.
+        'romantic': """Ты - Анатолий, холостой блогер. Твой стиль - самоирония, сарказм, провокация. Пиши ТОЛЬКО готовый пост. Используй МАТ 1 раз (бля, сука, пиздец - но без оскорблений). ОБРАЩАЙСЯ К ЧИТАТЕЛЯМ ВО МНОЖЕСТВЕННОМ ЧИСЛЕ (вы, вам, вас). НЕ УПОМИНАЙ ЖЕНУ.
 
-Напиши романтичный пост про молодых азиатских женщин (18-30 лет) из повседневной жизни. С юмором и лёгким матом. 700-900 символов. Завершённая мысль.""",
+Напиши романтичный пост про молодых азиатских женщин (18-30 лет). С сарказмом и самоиронией. 700-900 символов. Завершённая мысль.""",
 
-        'envy': """Ты - Анатолий, холостой успешный блогер. Пиши ТОЛЬКО готовый пост. Используй МАТ 1-2 раза (бля, сука, пиздец - но без оскорблений). ОБРАЩАЙСЯ К ЧИТАТЕЛЯМ ВО МНОЖЕСТВЕННОМ ЧИСЛЕ (вы, вам, вас). НЕ УПОМИНАЙ ЖЕНУ.
+        'envy': """Ты - Анатолий, холостой блогер. Твой стиль - самоирония, сарказм, провокация. Пиши ТОЛЬКО готовый пост. Используй МАТ 1-2 раза (бля, сука, пиздец - но без оскорблений). ОБРАЩАЙСЯ К ЧИТАТЕЛЯМ ВО МНОЖЕСТВЕННОМ ЧИСЛЕ (вы, вам, вас). НЕ УПОМИНАЙ ЖЕНУ.
 
-Напиши пост, вызывающий лёгкую зависть, про молодых азиатских женщин (18-30 лет) из повседневной жизни. Провокационный, с юмором и матом. 700-900 символов. Завершённая мысль.""",
+Напиши пост, вызывающий зависть, про молодых азиатских женщин (18-30 лет). С сарказмом, самоиронией, провокацией. 700-900 символов. Завершённая мысль.""",
     }
     
     alternative_prompts = [
-        "Напиши провокационный пост о молодых азиатских женщинах из повседневной жизни. С матом 1-2 раза. Без упоминаний жены. 700-900 символов.",
-        "Напиши ироничный пост про молодых азиатских женщин в возрасте 18-30 лет. С матом 1-2 раза. Без оскорблений. Без упоминаний жены. 700-900 символов.",
-        "Напиши забавный провокационный пост про молодых азиатских женщин. С юмором и матом. Без оскорблений. Без упоминаний жены. 700-900 символов.",
+        "Напиши саркастичный пост о молодых азиатских женщинах. С матом 1-2 раза. Без упоминаний жены. 700-900 символов.",
+        "Напиши самоироничный пост про молодых азиатских женщин в возрасте 18-30 лет. С матом 1-2 раза. Без оскорблений. 700-900 символов.",
+        "Напиши провокационный пост про молодых азиатских женщин. С юмором и матом. Без оскорблений. 700-900 символов.",
     ]
     
     prompt = style_prompts.get(style, style_prompts['funny'])
@@ -385,7 +387,7 @@ def generate_caption() -> str:
             data = {
                 "model": "deepseek-v4-flash",
                 "messages": [
-                    {"role": "system", "content": "Ты стендап-комик Анатолий. Отвечай ТОЛЬКО готовым постом. НИКАКИХ РАССУЖДЕНИЙ. Только текст поста. Используй мат 1-2 раза (бля, сука, пиздец, хуйня). НЕ ОСКОРБЛЯЙ НАЦИОНАЛЬНОСТИ. НЕ УПОМИНАЙ ЖЕНУ. Пиши провокационно и с юмором."},
+                    {"role": "system", "content": "Ты стендап-комик Анатолий. Отвечай ТОЛЬКО готовым постом. НИКАКИХ РАССУЖДЕНИЙ. Только текст поста. Используй мат 1-2 раза (бля, сука, пиздец, хуйня). НЕ ОСКОРБЛЯЙ НАЦИОНАЛЬНОСТИ. НЕ УПОМИНАЙ ЖЕНУ. Пиши с сарказмом, самоиронией и провокацией."},
                     {"role": "user", "content": current_prompt}
                 ],
                 "temperature": 1.3,
@@ -422,8 +424,8 @@ def generate_caption() -> str:
                 continue
             
             caption = clean_text(caption)
+            caption = truncate_by_sentences(caption)
             
-            # ===== ПРОВЕРКА ТЕКСТА =====
             validated, error = validate_caption(caption)
             if validated:
                 print(f"✅ Сгенерирован пост ({len(validated)} символов)")
@@ -440,6 +442,7 @@ def generate_caption() -> str:
     print("⚠️ Не удалось сгенерировать уникальный пост, использую резерв")
     caption = get_fallback_caption()
     caption = clean_text(caption)
+    caption = truncate_by_sentences(caption)
     validated, error = validate_caption(caption)
     if validated:
         return validated
@@ -742,12 +745,13 @@ async def send_post(chat_id, photo_url=None, caption=None):
         if not caption:
             caption = generate_caption()
             caption = clean_text(caption)
-            # Дополнительная проверка
+            caption = truncate_by_sentences(caption)
             validated, error = validate_caption(caption)
             if validated:
                 caption = validated
             else:
                 caption = clean_text(get_fallback_caption())
+                caption = truncate_by_sentences(caption)
                 validated, error = validate_caption(caption)
                 if validated:
                     caption = validated
@@ -792,11 +796,13 @@ async def send_to_all_users():
     
     caption = generate_caption()
     caption = clean_text(caption)
+    caption = truncate_by_sentences(caption)
     validated, error = validate_caption(caption)
     if validated:
         caption = validated
     else:
         caption = clean_text(get_fallback_caption())
+        caption = truncate_by_sentences(caption)
         validated, error = validate_caption(caption)
         if validated:
             caption = validated
@@ -916,7 +922,7 @@ async def start(msg: Message):
     
     await msg.answer(
         f"✅ Вы подписаны на рассылку!\n"
-        f"📸 Уникальные посты про молодых азиаток (18-30 лет) из повседневной жизни\n"
+        f"📸 Уникальные посты про молодых азиаток (18-30 лет)\n"
         f"⏰ Расписание: {times}\n"
         f"📢 Авто-канал: {'найден' if await get_channel_id() else 'не найден'}\n"
         f"{channel_status}\n"
@@ -1063,6 +1069,7 @@ async def test(msg: Message):
     
     caption = generate_caption()
     caption = clean_text(caption)
+    caption = truncate_by_sentences(caption)
     validated, error = validate_caption(caption)
     if validated:
         caption = validated
@@ -1127,7 +1134,7 @@ async def broadcast(msg: Message):
 
 async def main():
     print("=" * 60)
-    print("🤖 Бот запущен (повседневные фото, 18-30 лет)")
+    print("🤖 Бот запущен (сарказм + самоирония)")
     print("🔍 Приоритет: Bing → Google → Yandex → Pexels")
     print(f"📊 Подписчиков: {len(users)}")
     print(f"📸 Фото в истории: {len(history)}")
@@ -1138,9 +1145,7 @@ async def main():
     
     print(f"📢 Канал: {CHANNEL_ID if CHANNEL_ID else 'авто-поиск'}")
     print(f"👤 Владелец: {OWNER_ID if OWNER_ID else '❌ не задан'}")
-    print("📏 Длина текста: проверка перед отправкой")
-    print("📝 Логическое завершение: обязательно")
-    print("🚫 Последнее предложение не может состоять из 1 слова")
+    print("🎭 Стиль: сарказм, самоирония, провокация")
     print("=" * 60)
     
     gc.collect()
