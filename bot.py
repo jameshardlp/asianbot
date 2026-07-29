@@ -25,11 +25,17 @@ if not BOT_TOKEN:
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
+# ===== РАСШИРЕННЫЕ ПОИСКОВЫЕ ЗАПРОСЫ =====
 SEARCH_QUERIES = [
-    "asian beautiful girl portrait",
-    "beautiful japanese woman",
-    "korean girl model",
-    "chinese woman portrait",
+    "asian beautiful girl portrait photography",
+    "japanese woman portrait model",
+    "korean girl model portrait",
+    "chinese woman portrait photography",
+    "east asian woman portrait",
+    "asian model portrait photography",
+    "beautiful asian girl selfie",
+    "asian woman natural portrait",
+    "japanese korean chinese woman portrait",
 ]
 
 USERS_FILE = "users.json"
@@ -38,34 +44,27 @@ HISTORY_FILE = "history.json"
 # ===== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ =====
 
 def truncate_caption(text: str, max_length: int = 1000) -> str:
-    """
-    Обрезает текст до максимальной длины, оставляя только целые предложения.
-    Если последнее предложение не влезает — оно удаляется целиком.
-    """
+    """Обрезает текст до максимальной длины, оставляя только целые предложения."""
     if len(text) <= max_length:
         return text
 
-    truncated = text[:max_length]
-
-    # Ищем последний знак завершения предложения
     last_punct = -1
     for p in ('.', '!', '?'):
-        pos = truncated.rfind(p)
+        pos = text.rfind(p, 0, max_length)
         if pos > last_punct:
             last_punct = pos
 
     if last_punct != -1:
-        return truncated[:last_punct + 1]
+        return text[:last_punct + 1].strip()
 
-    # Если знаков нет — удаляем последнее незавершённое предложение
-    last_space = truncated.rfind(' ')
+    last_space = text.rfind(' ', 0, max_length)
     if last_space != -1:
-        return truncated[:last_space] + '.'
+        return text[:last_space] + '.'
 
     return ''
 
 def clean_text(text: str) -> str:
-    """Заменяет длинное тире на обычное и убирает упоминания @maddysontg"""
+    """Очищает текст от упоминаний и заменяет длинное тире"""
     text = text.replace('—', '-').replace('–', '-')
     text = text.replace('@maddysontg', '').replace('@Maddysontg', '').replace('@MADDYSONTG', '')
     text = text.replace('maddysontg', '').replace('Maddysontg', '').replace('MADDYSONTG', '')
@@ -129,7 +128,7 @@ def is_similar(text: str) -> bool:
             return True
     return False
 
-# ===== ГЕНЕРАЦИЯ ПОСТОВ ЧЕРЕЗ DEEPSEEK API =====
+# ===== ГЕНЕРАЦИЯ ПОСТОВ =====
 
 def generate_caption() -> str:
     print("🧠 Генерирую уникальный пост...")
@@ -247,7 +246,7 @@ def get_fallback_caption() -> str:
         fallback += random.choice(endings)
     return fallback
 
-# ===== ПОИСК ФОТО =====
+# ===== УЛУЧШЕННЫЙ ПОИСК ФОТО =====
 
 async def is_user_admin(chat_id: int, user_id: int) -> bool:
     try:
@@ -257,6 +256,7 @@ async def is_user_admin(chat_id: int, user_id: int) -> bool:
         return False
 
 def search_bing(query):
+    """Поиск фото через Bing Images"""
     try:
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -265,25 +265,35 @@ def search_bing(query):
         }
         
         encoded_query = quote(query)
-        url = f"https://www.bing.com/images/search?q={encoded_query}&form=HDRSC3&first=1&count=35"
+        url = f"https://www.bing.com/images/search?q={encoded_query}&form=HDRSC3&first=1&count=35&safeSearch=moderate"
         
         response = requests.get(url, headers=headers, timeout=15)
         
+        # Ищем URL изображений
         pattern = r'"murl":"([^"]+)"'
         images = re.findall(pattern, response.text)
         
         pattern2 = r'"mediaurl":"([^"]+)"'
         images.extend(re.findall(pattern2, response.text))
         
+        # Фильтруем только качественные изображения
         clean_images = []
         for img in images:
             img = img.replace('\\u0026', '&')
             img = img.replace('\\/', '/')
             
+            # Только jpg, jpeg, png, webp
             if any(ext in img.lower() for ext in ['.jpg', '.jpeg', '.png', '.webp']):
-                if not any(x in img.lower() for x in ['gstatic', 'google', 'favicon', 'logo', 'bing']):
-                    clean_images.append(img)
+                # Исключаем логотипы и служебные изображения
+                if not any(x in img.lower() for x in ['gstatic', 'google', 'favicon', 'logo', 'bing', 'avatar']):
+                    # Проверяем размер (должен быть достаточно большим)
+                    if 'w=800' in img or 'w=1024' in img or 'w=1200' in img or 'w=1500' in img:
+                        clean_images.append(img)
+                    # Если размер не указан, добавляем всё равно, но с меньшим приоритетом
+                    elif 'w=' not in img:
+                        clean_images.append(img)
         
+        # Удаляем дубликаты
         clean_images = list(dict.fromkeys(clean_images))
         
         if clean_images:
@@ -296,6 +306,7 @@ def search_bing(query):
         return None
 
 def search_google_direct(query):
+    """Поиск фото через Google Images"""
     try:
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -304,7 +315,7 @@ def search_google_direct(query):
         }
         
         encoded_query = quote(query)
-        url = f"https://www.google.com/search?q={encoded_query}&tbm=isch&safe=active&tbs=isz:l"
+        url = f"https://www.google.com/search?q={encoded_query}&tbm=isch&safe=active&tbs=isz:l,itp:photo"
         
         response = requests.get(url, headers=headers, timeout=15)
         
@@ -335,7 +346,45 @@ def search_google_direct(query):
         print(f"Ошибка Google: {e}")
         return None
 
+def search_yandex(query):
+    """Поиск фото через Yandex Images (если Google не сработал)"""
+    try:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.5",
+        }
+        
+        encoded_query = quote(query)
+        url = f"https://yandex.com/images/search?text={encoded_query}&rdrnd=1&rpt=imageview"
+        
+        response = requests.get(url, headers=headers, timeout=15)
+        
+        pattern = r'"img_url":"([^"]+)"'
+        images = re.findall(pattern, response.text)
+        
+        clean_images = []
+        for img in images:
+            img = img.replace('\\u0026', '&')
+            img = img.replace('\\/', '/')
+            
+            if any(ext in img.lower() for ext in ['.jpg', '.jpeg', '.png', '.webp']):
+                if not any(x in img.lower() for x in ['logo', 'favicon']):
+                    clean_images.append(img)
+        
+        clean_images = list(dict.fromkeys(clean_images))
+        
+        if clean_images:
+            return random.choice(clean_images)
+        
+        return None
+        
+    except Exception as e:
+        print(f"Ошибка Yandex: {e}")
+        return None
+
 def search_pexels(query):
+    """Поиск фото через Pexels API (резервный вариант)"""
     try:
         PEXELS_KEY = os.getenv("PEXELS_KEY")
         if not PEXELS_KEY:
@@ -366,6 +415,10 @@ def search_pexels(query):
         return None
 
 def get_random_photo():
+    """
+    Получает случайное фото, которого нет в истории.
+    Приоритет: Bing → Google → Yandex → Pexels
+    """
     global history
     
     if len(history) > 80:
@@ -376,49 +429,46 @@ def get_random_photo():
     queries = SEARCH_QUERIES.copy()
     random.shuffle(queries)
     
-    for attempt in range(3):
-        for query in queries:
-            photo = search_bing(query)
-            if photo and photo not in history:
-                history.append(photo)
-                save_history(history)
-                print(f"✅ Найдено новое фото: {photo[:60]}...")
-                return photo
-            
-            photo = search_google_direct(query)
-            if photo and photo not in history:
-                history.append(photo)
-                save_history(history)
-                print(f"✅ Найдено новое фото: {photo[:60]}...")
-                return photo
-            
-            photo = search_pexels(query)
-            if photo and photo not in history:
-                history.append(photo)
-                save_history(history)
-                print(f"✅ Найдено новое фото: {photo[:60]}...")
-                return photo
-            
-            time.sleep(0.2)
+    # Функции поиска в порядке приоритета
+    search_functions = [
+        ('Bing', search_bing),
+        ('Google', search_google_direct),
+        ('Yandex', search_yandex),
+        ('Pexels', search_pexels),
+    ]
     
+    for query in queries:
+        for source_name, search_func in search_functions:
+            try:
+                print(f"🔍 Поиск в {source_name}: {query}")
+                photo = search_func(query)
+                if photo and photo not in history:
+                    history.append(photo)
+                    save_history(history)
+                    print(f"✅ Найдено фото в {source_name}: {photo[:60]}...")
+                    return photo
+            except Exception as e:
+                print(f"⚠️ Ошибка в {source_name}: {e}")
+                continue
+            
+            time.sleep(0.3)
+    
+    # Если ничего не найдено - очищаем историю и пробуем ещё раз
     print("⚠️ Не удалось найти новое фото, очищаю историю...")
     history = []
     save_history(history)
     
     for query in queries:
-        photo = search_bing(query)
-        if photo:
-            history.append(photo)
-            save_history(history)
-            print(f"✅ Найдено фото после очистки: {photo[:60]}...")
-            return photo
-        
-        photo = search_google_direct(query)
-        if photo:
-            history.append(photo)
-            save_history(history)
-            print(f"✅ Найдено фото после очистки: {photo[:60]}...")
-            return photo
+        for source_name, search_func in search_functions:
+            try:
+                photo = search_func(query)
+                if photo:
+                    history.append(photo)
+                    save_history(history)
+                    print(f"✅ Найдено фото после очистки: {photo[:60]}...")
+                    return photo
+            except:
+                continue
     
     return None
 
@@ -430,7 +480,6 @@ async def send_photo(chat_id):
             caption = generate_caption()
             caption = truncate_caption(caption, 1000)
             
-            # Если после обрезки текст пустой — не отправляем подпись
             if caption:
                 await bot.send_photo(
                     chat_id=chat_id, 
@@ -470,15 +519,19 @@ async def send_to_all_users():
 
 # ===== РАСПИСАНИЕ =====
 
+is_sending = False
+
 async def scheduler():
+    global is_sending
+    
     while True:
         now = datetime.now()
         
-        hour1 = random.randint(12, 14)
         minute1 = random.randint(0, 59)
-        
-        hour2 = random.randint(17, 21)
         minute2 = random.randint(0, 59)
+        
+        hour1 = random.randint(12, 14)
+        hour2 = random.randint(17, 21)
         
         times = [(hour1, minute1), (hour2, minute2)]
         times.sort()
@@ -491,14 +544,32 @@ async def scheduler():
             target_times.append(target)
         
         wait_seconds = (target_times[0] - now).total_seconds()
-        print(f"⏳ Первая отправка в {target_times[0].strftime('%H:%M')} (через {wait_seconds/3600:.1f} часов)")
-        await asyncio.sleep(wait_seconds)
-        await send_to_all_users()
+        if wait_seconds > 0:
+            print(f"⏳ Первая отправка в {target_times[0].strftime('%H:%M')} (через {wait_seconds/3600:.1f} часов)")
+            await asyncio.sleep(wait_seconds)
+        
+        if not is_sending:
+            is_sending = True
+            try:
+                await send_to_all_users()
+            finally:
+                is_sending = False
+        else:
+            print("⚠️ Отправка уже идёт, пропускаем")
         
         wait_seconds = (target_times[1] - target_times[0]).total_seconds()
-        print(f"⏳ Вторая отправка в {target_times[1].strftime('%H:%M')} (через {wait_seconds/3600:.1f} часов)")
-        await asyncio.sleep(wait_seconds)
-        await send_to_all_users()
+        if wait_seconds > 0:
+            print(f"⏳ Вторая отправка в {target_times[1].strftime('%H:%M')} (через {wait_seconds/3600:.1f} часов)")
+            await asyncio.sleep(wait_seconds)
+        
+        if not is_sending:
+            is_sending = True
+            try:
+                await send_to_all_users()
+            finally:
+                is_sending = False
+        else:
+            print("⚠️ Отправка уже идёт, пропускаем")
 
 # ===== КОМАНДЫ =====
 
@@ -666,12 +737,11 @@ async def broadcast(msg: Message):
 
 async def main():
     print("=" * 60)
-    print("🤖 Бот запущен (генерация уникальных постов)")
-    print("🔍 Поиск в: Bing → Google → Pexels")
+    print("🤖 Бот запущен (улучшенный поиск фото)")
+    print("🔍 Приоритет: Bing → Google → Yandex → Pexels")
     print(f"📊 Подписчиков: {len(users)}")
     print(f"📸 Фото в истории: {len(history)}")
     print("⏰ Расписание: 12:00-15:00 и 17:00-22:00")
-    print("📝 Уникальные посты, завершённые предложения")
     print("=" * 60)
     
     gc.collect()
