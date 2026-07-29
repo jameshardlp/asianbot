@@ -11,7 +11,7 @@ import hashlib
 from urllib.parse import quote
 from datetime import datetime, timedelta
 from typing import Optional, Tuple, List, Dict, Any
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 from enum import Enum
 import logging
 
@@ -23,11 +23,11 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Для Redis (опционально)
+REDIS_AVAILABLE = False
 try:
     import redis.asyncio as redis
     REDIS_AVAILABLE = True
 except ImportError:
-    REDIS_AVAILABLE = False
     logger.warning("Redis не установлен. Использую локальную очередь")
 
 # Для Telegram
@@ -233,7 +233,6 @@ def is_asian_photo(url: str, additional_context: str = "") -> bool:
     # 2. Проверка на исключения (не азиатки)
     for keyword in NON_ASIAN_KEYWORDS:
         if keyword in text_to_check:
-            logger.debug(f"❌ Не азиатка: найдено '{keyword}' в {url[:60]}...")
             return False
     
     # 3. Проверка на наличие азиатских имен
@@ -275,7 +274,6 @@ def is_asian_photo(url: str, additional_context: str = "") -> bool:
             return True
     
     # Если ничего не найдено - считаем, что фото не азиатское
-    logger.debug(f"❌ Не азиатка: нет признаков в {url[:60]}...")
     return False
 
 def is_age_appropriate(url: str) -> bool:
@@ -651,7 +649,6 @@ def validate_caption(text: str, min_length: int = 700, max_length: int = 1023) -
                 return '', f'Последнее предложение слишком короткое ({word_count} слов)'
         
         if not is_sentence_complete(last_sentence):
-            logger.warning(f"Последнее предложение логически не завершено: '{last_sentence}'")
             if len(all_sentences) > 1:
                 text = ' '.join(all_sentences[:-1]).strip()
                 text = ensure_ends_with_dot(text)
@@ -1154,17 +1151,14 @@ def get_random_photo():
                 if photo and photo not in history:
                     # Проверяем, что это действительно азиатка
                     if not is_asian_photo(photo):
-                        logger.debug(f"Пропущено (не азиатка): {photo[:60]}...")
                         continue
                     
                     # Проверяем возраст
                     if not is_age_appropriate(photo):
-                        logger.debug(f"Пропущено (возраст): {photo[:60]}...")
                         continue
                     
                     # Проверяем традиционную одежду
                     if is_traditional_clothing(photo):
-                        logger.debug(f"Пропущено (традиционная одежда): {photo[:60]}...")
                         continue
                     
                     # Все проверки пройдены
@@ -1184,7 +1178,7 @@ def get_random_photo():
     save_history(history)
     
     # Повторяем поиск с очищенной историей
-    for query in queries[:10]:  # Ограничиваем количество попыток
+    for query in queries[:10]:
         for source_name, search_func in search_functions:
             try:
                 photo = search_func(query)
@@ -1233,7 +1227,6 @@ class TaskQueue:
             return False
     
     async def push(self, queue_name: str, data: Dict[str, Any]):
-        """Добавить задачу в очередь"""
         try:
             if self.connected:
                 task_id = f"{queue_name}:{int(time.time())}:{hashlib.md5(str(data).encode()).hexdigest()[:8]}"
@@ -1255,7 +1248,6 @@ class TaskQueue:
             return False
     
     async def pop(self, queue_name: str) -> Optional[Dict[str, Any]]:
-        """Получить задачу из очереди"""
         try:
             if self.connected:
                 item = await self.redis.lpop(queue_name)
@@ -1271,7 +1263,6 @@ class TaskQueue:
             return None
     
     async def get_queue_length(self, queue_name: str) -> int:
-        """Получить длину очереди"""
         try:
             if self.connected:
                 return await self.redis.llen(queue_name) or 0
@@ -1322,7 +1313,6 @@ class ContentModerator:
         ]
     
     async def moderate_content(self, post: PostContent) -> Tuple[Optional[bool], str]:
-        """Модерация контента. Возвращает: (одобрено, причина)"""
         try:
             text_lower = post.caption.lower()
             photo_lower = post.photo_url.lower()
@@ -1355,7 +1345,6 @@ class ContentModerator:
             return False, f"Ошибка: {str(e)}"
     
     def _check_text_quality(self, text: str) -> float:
-        """Проверка качества текста (0-1)"""
         try:
             score = 0.0
             
@@ -1407,7 +1396,6 @@ class ContentModerator:
             return False
     
     async def manual_moderate(self, post_id: str, approved: bool, moderator_id: int, note: str = ""):
-        """Ручная модерация"""
         try:
             if post_id in self.pending_posts:
                 post = self.pending_posts[post_id]
@@ -1442,9 +1430,7 @@ moderator = ContentModerator()
 # ===== ОБРАБОТЧИК ОЧЕРЕДИ =====
 
 async def send_post(chat_id, photo_url=None, caption=None):
-    """Отправка поста с двойной проверкой"""
     try:
-        # Если photo_url не передан - ищем
         if not photo_url:
             photo_url = get_random_photo()
         
@@ -1452,7 +1438,6 @@ async def send_post(chat_id, photo_url=None, caption=None):
             logger.error("Не удалось найти фото")
             return False
         
-        # Финальная проверка перед отправкой
         if not is_asian_photo(photo_url):
             logger.warning(f"Фото не азиатской внешности: {photo_url[:60]}...")
             return False
@@ -1465,7 +1450,6 @@ async def send_post(chat_id, photo_url=None, caption=None):
             logger.warning(f"Традиционная одежда: {photo_url[:60]}...")
             return False
         
-        # Генерация подписи
         if not caption:
             caption = generate_caption()
             caption = clean_text(caption)
@@ -1480,7 +1464,6 @@ async def send_post(chat_id, photo_url=None, caption=None):
                 if validated:
                     caption = validated
         
-        # Отправка
         if not caption:
             await bot.send_photo(chat_id=chat_id, photo=photo_url)
             logger.info(f"Фото (без подписи) отправлено в чат {chat_id}")
@@ -1511,7 +1494,6 @@ async def send_post(chat_id, photo_url=None, caption=None):
         return False
 
 async def queue_processor():
-    """Обработчик очереди задач"""
     logger.info("Запущен обработчик очереди...")
     
     while True:
@@ -1521,7 +1503,6 @@ async def queue_processor():
             if task:
                 logger.info(f"Получена задача из очереди: {task.get('id', 'unknown')}")
                 
-                # Извлекаем данные из задачи
                 if 'data' in task:
                     data = task['data']
                 else:
@@ -1552,7 +1533,6 @@ async def queue_processor():
             await asyncio.sleep(5)
 
 async def process_post_task(data: Dict[str, Any]):
-    """Обработка задачи на отправку поста"""
     try:
         chat_id = data.get('chat_id')
         photo_url = data.get('photo_url')
@@ -1569,9 +1549,7 @@ async def process_post_task(data: Dict[str, Any]):
         logger.error(f"Ошибка обработки задачи: {e}")
 
 async def process_moderation_task(data: Dict[str, Any]):
-    """Обработка задачи модерации"""
     try:
-        # Проверяем структуру данных
         post_data = data.get('post_data', {})
         if not post_data:
             post_data = data
@@ -1619,7 +1597,6 @@ async def process_moderation_task(data: Dict[str, Any]):
         traceback.print_exc()
 
 async def notify_owner_for_moderation(post_id: str, post: PostContent):
-    """Уведомление владельца о необходимости модерации"""
     if not OWNER_ID:
         return
     
@@ -1646,7 +1623,6 @@ async def notify_owner_for_moderation(post_id: str, post: PostContent):
         logger.error(f"Ошибка уведомления владельца: {e}")
 
 async def generate_and_queue_post(chat_id: str, user_id: int = 0, skip_moderation: bool = False):
-    """Генерирует пост и добавляет в очередь"""
     try:
         photo_url = get_random_photo()
         if not photo_url:
@@ -1687,7 +1663,6 @@ async def generate_and_queue_post(chat_id: str, user_id: int = 0, skip_moderatio
         return False
 
 async def send_to_all_users():
-    """Отправка поста всем пользователям через очередь"""
     try:
         users = load_users()
         
@@ -1750,7 +1725,6 @@ async def send_to_all_users():
         logger.error(f"Ошибка в send_to_all_users: {e}")
 
 async def get_channel_id() -> Optional[str]:
-    """Получение ID канала"""
     if CHANNEL_ID and CHANNEL_ID.strip():
         return CHANNEL_ID.strip()
     
@@ -1784,7 +1758,6 @@ async def get_channel_id() -> Optional[str]:
 # ===== КОМАНДЫ =====
 
 async def check_user_can_use_command(message: Message) -> bool:
-    """Проверяет, может ли пользователь использовать команду"""
     try:
         chat_type = message.chat.type
         
@@ -1809,7 +1782,6 @@ async def is_user_admin(chat_id: int, user_id: int) -> bool:
 
 @dp.callback_query(lambda c: c.data.startswith('mod_'))
 async def handle_moderation_callback(callback: CallbackQuery):
-    """Обработка callback'ов модерации"""
     try:
         if callback.from_user.id != OWNER_ID:
             await callback.answer("⛔ Доступ запрещен", show_alert=True)
@@ -2057,7 +2029,6 @@ async def schedule(msg: Message):
 
 @dp.message(Command("moderate"))
 async def moderate_pending(msg: Message):
-    """Показать посты на модерации"""
     try:
         if msg.from_user.id != OWNER_ID:
             await msg.answer("⛔ Доступ запрещён")
@@ -2076,7 +2047,6 @@ async def moderate_pending(msg: Message):
 
 @dp.message(Command("moderation_stats"))
 async def moderation_stats(msg: Message):
-    """Статистика модерации"""
     try:
         if msg.from_user.id != OWNER_ID:
             await msg.answer("⛔ Доступ запрещён")
@@ -2182,18 +2152,15 @@ async def main():
         
         gc.collect()
         
-        # Очищаем вебхук перед запуском
         try:
             await bot.delete_webhook(drop_pending_updates=True)
             logger.info("Webhook удалён")
         except Exception as e:
             logger.warning(f"Ошибка webhook: {e}")
         
-        # Запускаем фоновые задачи
         asyncio.create_task(queue_processor())
         asyncio.create_task(scheduler())
         
-        # Запускаем polling с обработкой ошибок
         retry_count = 0
         max_retries = 5
         
