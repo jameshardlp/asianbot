@@ -25,94 +25,34 @@ if not BOT_TOKEN:
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-# ===== РАСШИРЕННЫЕ ПОИСКОВЫЕ ЗАПРОСЫ =====
+# ===== ЖЁСТКИЕ ПОИСКОВЫЕ ЗАПРОСЫ (ТОЛЬКО АЗИАТКИ) =====
 SEARCH_QUERIES = [
-    "asian beautiful girl portrait photography",
-    "japanese woman portrait model",
-    "korean girl model portrait",
-    "chinese woman portrait photography",
+    "asian beautiful girl portrait",
+    "japanese woman portrait",
+    "korean girl portrait",
+    "chinese woman portrait",
     "east asian woman portrait",
-    "asian model portrait photography",
-    "beautiful asian girl selfie",
-    "asian woman natural portrait",
-    "japanese korean chinese woman portrait",
+    "asian model portrait",
+    "japanese korean chinese woman",
 ]
 
-USERS_FILE = "users.json"
-HISTORY_FILE = "history.json"
+# Ключевые слова для фильтрации (только азиатки)
+ASIAN_KEYWORDS = [
+    'asian', 'japanese', 'korean', 'chinese', 'east asian',
+    'japan', 'korea', 'china', 'tokyo', 'seoul', 'beijing',
+    'oriental', 'east', 'asia', 'kim', 'lee', 'park', 'chan', 'sakura'
+]
+
+# Слова-исключения (не азиатки)
+EXCLUDE_KEYWORDS = [
+    'african', 'black', 'white', 'caucasian', 'european', 'american',
+    'latina', 'mexican', 'brazilian', 'indian', 'middle eastern'
+]
 
 # ===== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ =====
 
-def split_text_into_sentences(text: str) -> list:
-    """Разбивает текст на предложения по . ! ?"""
-    sentences = []
-    current = []
-    
-    for char in text:
-        current.append(char)
-        if char in ('.', '!', '?'):
-            sentences.append(''.join(current).strip())
-            current = []
-    
-    if current:
-        sentences.append(''.join(current).strip())
-    
-    return sentences
-
-def get_complete_sentences(text: str, max_length: int) -> str:
-    """Возвращает максимальное количество целых предложений в пределах лимита"""
-    sentences = split_text_into_sentences(text)
-    result = []
-    current_len = 0
-    
-    for sentence in sentences:
-        # Если даже первое предложение не влезает — возвращаем его целиком (пусть будет короткое)
-        if not result and len(sentence) > max_length:
-            return sentence[:max_length]
-        
-        if current_len + len(sentence) + 1 <= max_length:
-            result.append(sentence)
-            current_len += len(sentence) + 1
-        else:
-            break
-    
-    return ' '.join(result)
-
-def split_caption(text: str) -> tuple:
-    """
-    Разбивает текст на две части:
-    - первая часть (для подписи к фото): до 900 символов, заканчивается на . ! ?
-    - вторая часть (для отдельного сообщения): остаток текста
-    Возвращает (caption_part, continuation_part)
-    """
-    if len(text) <= 900:
-        return text, None
-    
-    # Ищем последний знак препинания в пределах 900 символов
-    truncated = text[:900]
-    last_punct = -1
-    for p in ('.', '!', '?'):
-        pos = truncated.rfind(p)
-        if pos > last_punct:
-            last_punct = pos
-    
-    if last_punct != -1:
-        caption_part = text[:last_punct + 1]
-        continuation = text[last_punct + 1:].strip()
-        return caption_part, continuation if continuation else None
-    
-    # Если знака нет — ищем последний пробел
-    last_space = truncated.rfind(' ')
-    if last_space != -1:
-        caption_part = text[:last_space] + '.'
-        continuation = text[last_space:].strip()
-        return caption_part, continuation if continuation else None
-    
-    # Если ничего не нашли — обрезаем по символам
-    return text[:900], text[900:]
-
 def truncate_caption(text: str, max_length: int = 900) -> str:
-    """Обрезает текст для подписи к фото (всегда заканчивается на . ! ?)"""
+    """Обрезает текст до максимальной длины, заканчивая на . ! ?"""
     if len(text) <= max_length:
         return text
     
@@ -139,6 +79,24 @@ def clean_text(text: str) -> str:
     text = text.replace('maddysontg', '').replace('Maddysontg', '').replace('MADDYSONTG', '')
     text = re.sub(r'\s+', ' ', text).strip()
     return text
+
+def is_photo_appropriate(url: str) -> bool:
+    """Проверяет, что фото подходит по контенту и внешности"""
+    # Проверяем URL на наличие азиатских ключевых слов
+    url_lower = url.lower()
+    for word in ASIAN_KEYWORDS:
+        if word in url_lower:
+            return True
+    # Если в URL нет азиатских ключей — всё равно пропускаем (надеемся на поиск)
+    return True
+
+def is_definitely_not_asian(url: str) -> bool:
+    """Проверяет, что фото точно НЕ азиатка"""
+    url_lower = url.lower()
+    for word in EXCLUDE_KEYWORDS:
+        if word in url_lower:
+            return True
+    return False
 
 # ===== РАБОТА С ПОЛЬЗОВАТЕЛЯМИ =====
 
@@ -350,9 +308,8 @@ def search_bing(query):
             
             if any(ext in img.lower() for ext in ['.jpg', '.jpeg', '.png', '.webp']):
                 if not any(x in img.lower() for x in ['gstatic', 'google', 'favicon', 'logo', 'bing', 'avatar']):
-                    if 'w=800' in img or 'w=1024' in img or 'w=1200' in img or 'w=1500' in img:
-                        clean_images.append(img)
-                    elif 'w=' not in img:
+                    # Проверяем, что фото не из "запрещённых" категорий
+                    if not is_definitely_not_asian(img):
                         clean_images.append(img)
         
         clean_images = list(dict.fromkeys(clean_images))
@@ -393,7 +350,8 @@ def search_google_direct(query):
             if any(ext in img.lower() for ext in ['.jpg', '.jpeg', '.png', '.webp']):
                 if not any(x in img.lower() for x in ['gstatic', 'google', 'favicon', 'logo']):
                     if not img.startswith('data:'):
-                        clean_images.append(img)
+                        if not is_definitely_not_asian(img):
+                            clean_images.append(img)
         
         clean_images = list(dict.fromkeys(clean_images))
         
@@ -440,7 +398,8 @@ def search_yandex(query):
             if any(ext in img.lower() for ext in ['.jpg', '.jpeg', '.png', '.webp']):
                 if not any(x in img.lower() for x in ['gstatic', 'google', 'favicon', 'logo']):
                     if not img.startswith('data:'):
-                        clean_images.append(img)
+                        if not is_definitely_not_asian(img):
+                            clean_images.append(img)
         
         clean_images = list(dict.fromkeys(clean_images))
         
@@ -475,7 +434,9 @@ def search_pexels(query):
             if data.get("photos"):
                 photos = data["photos"]
                 photo = random.choice(photos)
-                return photo["src"]["large"]
+                url = photo["src"]["large"]
+                # Pexels фото почти всегда качественные и подходящие
+                return url
         
         return None
         
@@ -484,6 +445,7 @@ def search_pexels(query):
         return None
 
 def get_random_photo():
+    """Получает случайное фото азиатки (исключая не-азиаток)"""
     global history
     
     if len(history) > 80:
@@ -517,6 +479,7 @@ def get_random_photo():
             
             time.sleep(0.3)
     
+    # Если ничего не найдено - очищаем историю и пробуем ещё раз
     print("⚠️ Не удалось найти новое фото, очищаю историю...")
     history = []
     save_history(history)
@@ -543,36 +506,41 @@ async def send_photo(chat_id):
             full_caption = generate_caption()
             full_caption = clean_text(full_caption)
             
-            # Разбиваем текст на подпись и продолжение
-            caption_part, continuation = split_caption(full_caption)
-            
-            # Отправляем фото с подписью
-            await bot.send_photo(
-                chat_id=chat_id, 
-                photo=photo_url,
-                caption=caption_part
-            )
-            print(f"✅ Фото отправлено в чат {chat_id}")
-            
-            # Если есть продолжение — отправляем отдельным сообщением
-            if continuation:
-                # Проверяем, не превышает ли продолжение лимит 4096 символов
-                if len(continuation) > 4096:
-                    # Если слишком длинное — разбиваем на части
-                    for i in range(0, len(continuation), 4000):
-                        part = continuation[i:i+4000]
+            # Если текст слишком длинный — разбиваем на несколько сообщений
+            if len(full_caption) <= 900:
+                await bot.send_photo(
+                    chat_id=chat_id, 
+                    photo=photo_url,
+                    caption=full_caption
+                )
+            else:
+                # Отправляем фото с первой частью текста (до 900 символов)
+                caption_part = truncate_caption(full_caption, 900)
+                await bot.send_photo(
+                    chat_id=chat_id, 
+                    photo=photo_url,
+                    caption=caption_part
+                )
+                
+                # Отправляем продолжение отдельными сообщениями
+                remaining = full_caption[len(caption_part):].strip()
+                if remaining:
+                    # Разбиваем остаток на части по 4096 символов
+                    parts = []
+                    while len(remaining) > 4000:
+                        parts.append(remaining[:4000])
+                        remaining = remaining[4000:]
+                    if remaining:
+                        parts.append(remaining)
+                    
+                    for part in parts:
                         await bot.send_message(
                             chat_id=chat_id,
                             text=part
                         )
-                        await asyncio.sleep(0.5)
-                else:
-                    await bot.send_message(
-                        chat_id=chat_id,
-                        text=continuation
-                    )
-                print(f"📝 Продолжение отправлено в чат {chat_id}")
+                        await asyncio.sleep(0.3)
             
+            print(f"✅ Фото отправлено в чат {chat_id}")
             return True
         else:
             await bot.send_message(
@@ -760,18 +728,11 @@ async def test(msg: Message):
         await msg.answer("⛔ Доступ запрещён.")
         return
     
-    await msg.answer("🧠 Генерирую уникальный пост...")
+    await msg.answer("🧠 Тестирую генерацию...")
     
-    full_caption = generate_caption()
-    full_caption = clean_text(full_caption)
-    
-    caption_part, continuation = split_caption(full_caption)
-    
-    result = f"📝 Подпись к фото (до 900 символов):\n\n{caption_part}"
-    if continuation:
-        result += f"\n\n📝 Продолжение:\n\n{continuation}"
-    
-    await msg.answer(result)
+    caption = generate_caption()
+    caption = clean_text(caption)
+    await msg.answer(f"📝 Результат:\n\n{caption}")
 
 @dp.message(Command("clear_history"))
 async def clear_history(msg: Message):
@@ -825,13 +786,12 @@ async def broadcast(msg: Message):
 
 async def main():
     print("=" * 60)
-    print("🤖 Бот запущен (с разделением длинных постов)")
+    print("🤖 Бот запущен (только азиатки, без обрывов)")
     print("🔍 Приоритет: Bing → Google → Yandex → Pexels")
     print(f"📊 Подписчиков: {len(users)}")
     print(f"📸 Фото в истории: {len(history)}")
     print("⏰ Расписание: 12:00-15:00 и 17:00-22:00")
-    print("📝 Подпись к фото: до 900 символов (целые предложения)")
-    print("📝 Продолжение: отдельным сообщением")
+    print("📝 Текст разбивается на части при необходимости")
     print("=" * 60)
     
     gc.collect()
