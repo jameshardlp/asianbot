@@ -37,6 +37,7 @@ SCHEDULE_FILE = "schedule.json"
 
 # ===== ПОИСКОВЫЕ ЗАПРОСЫ (ТОЛЬКО ЯПОНКИ, КИТАЯНКИ, КОРЕЯНКИ, ТАЙКИ) =====
 SEARCH_QUERIES = [
+    # Японки
     "japanese girl casual selfie",
     "japanese woman everyday life",
     "japanese girl instagram photo",
@@ -47,6 +48,8 @@ SEARCH_QUERIES = [
     "japanese woman cafe selfie",
     "japanese girl summer outfit",
     "japanese woman modern style",
+    
+    # Китаянки
     "chinese girl casual selfie",
     "chinese woman everyday life",
     "chinese girl instagram photo",
@@ -57,6 +60,8 @@ SEARCH_QUERIES = [
     "chinese woman cafe selfie",
     "chinese girl summer dress",
     "chinese woman modern outfit",
+    
+    # Кореянки
     "korean girl casual selfie",
     "korean woman everyday life",
     "korean girl instagram photo",
@@ -67,6 +72,8 @@ SEARCH_QUERIES = [
     "korean woman cafe selfie",
     "korean girl summer dress",
     "korean woman modern style",
+    
+    # Тайки
     "thai girl casual selfie",
     "thai woman everyday life",
     "thai girl instagram photo",
@@ -77,6 +84,8 @@ SEARCH_QUERIES = [
     "thai woman cafe selfie",
     "thai girl summer outfit",
     "thai woman modern dress",
+    
+    # Бикини (всех национальностей)
     "japanese girl bikini beach",
     "korean girl bikini photo",
     "chinese girl swimsuit",
@@ -101,14 +110,27 @@ AGE_POSITIVE_KEYWORDS = [
 
 # ===== КЛЮЧЕВЫЕ СЛОВА-ИСКЛЮЧЕНИЯ =====
 EXCLUDE_KEYWORDS = [
+    # Другие национальности
     'african', 'black', 'white', 'caucasian', 'european', 'american',
     'latina', 'mexican', 'brazilian', 'indian', 'middle eastern',
     'arab', 'persian', 'turkish',
+    'malaysian', 'filipina', 'vietnamese', 'indonesian',
+    
+    # Возраст
     'mature', 'old', 'age 40', 'age 50', 'age 60', 'senior',
     'grandma', 'elderly', 'wrinkles',
+    
+    # Дети
     'kid', 'child', 'baby', 'toddler', 'infant', 'girl 12', 'girl 13',
     'girl 14', 'girl 15', 'girl 16', 'girl 17', 'teenager', 'teen',
-    'malaysian', 'filipina', 'vietnamese', 'indonesian'
+    
+    # ===== МУЖЧИНЫ (ИСКЛЮЧАЕМ) =====
+    'man', 'male', 'guy', 'boy', 'men', 'dude', 'bro', 'brother',
+    'father', 'dad', 'son', 'husband', 'boyfriend', 'gentleman',
+    'мужчина', 'парень', 'мужик', 'пацан', 'мальчик', 'юноша',
+    'мужской', 'мужские', 'man model', 'male model', 'fitness man',
+    'korean man', 'japanese man', 'chinese man', 'thai man',
+    'asian male', 'asian man', 'guy portrait', 'male portrait',
 ]
 
 # ===== ИСКЛЮЧЕНИЯ ДЛЯ ТРАДИЦИОННОЙ ОДЕЖДЫ =====
@@ -464,11 +486,11 @@ def generate_caption() -> str:
 - С матом 1-2 раза
 - Сарказм + самоирония
 - Провокация
-- ОБЯЗАТЕЛЬНО ЗАВЕРШИ МЫСЛЬ. Последнее предложение должно быть выводом или итогом. НЕ ЗАКАНЧИВАЙ НА НЕЗАВЕРШЁННЫХ ОБОРОТАХ вроде "она берет", "он говорит", "я думаю".""",
+- ОБЯЗАТЕЛЬНО ЗАВЕРШИ МЫСЛЬ. Последнее предложение должно быть выводом или итогом.""",
 
         'funny': """Ты - Анатолий, холостой блогер. Твой стиль - самоирония, сарказм, провокация. Пиши ТОЛЬКО готовый пост. Используй МАТ 1-2 раза (бля, сука, пиздец, хуйня - но без оскорблений людей). ОБРАЩАЙСЯ К ЧИТАТЕЛЯМ ВО МНОЖЕСТВЕННОМ ЧИСЛЕ (вы, вам, вас). НЕ УПОМИНАЙ ЖЕНУ.
 
-Напиши смешной пост про молодых японок, китаянок, кореянок или таек (18-30 лет). Саркастичный, самоироничный. 700-800 символов. ЗАКОНЧИ ВЫВОДОМ. НЕ ЗАКАНЧИВАЙ НА НЕЗАВЕРШЁННЫХ ОБОРОТАХ.""",
+Напиши смешной пост про молодых японок, китаянок, кореянок или таек (18-30 лет). Саркастичный, самоироничный. 700-800 символов. ЗАКОНЧИ ВЫВОДОМ.""",
 
         'romantic': """Ты - Анатолий, холостой блогер. Твой стиль - самоирония, сарказм, провокация. Пиши ТОЛЬКО готовый пост. Используй МАТ 1 раз (бля, сука, пиздец - но без оскорблений). ОБРАЩАЙСЯ К ЧИТАТЕЛЯМ ВО МНОЖЕСТВЕННОМ ЧИСЛЕ (вы, вам, вас). НЕ УПОМИНАЙ ЖЕНУ.
 
@@ -504,7 +526,7 @@ def generate_caption() -> str:
             data = {
                 "model": "deepseek-v4-flash",
                 "messages": [
-                    {"role": "system", "content": "Ты стендап-комик Анатолий. Отвечай ТОЛЬКО готовым постом. НИКАКИХ РАССУЖДЕНИЙ. Только текст поста. Используй мат 1-2 раза (бля, сука, пиздец, хуйня). НЕ ОСКОРБЛЯЙ НАЦИОНАЛЬНОСТИ. НЕ УПОМИНАЙ ЖЕНУ. Пиши с сарказмом, самоиронией и провокацией. ОБЯЗАТЕЛЬНО ЗАВЕРШИ МЫСЛЬ — пост должен заканчиваться логическим выводом или итогом. НЕ ЗАКАНЧИВАЙ НА НЕЗАВЕРШЁННЫХ ОБОРОТАХ вроде 'она берет', 'он говорит', 'я думаю'."},
+                    {"role": "system", "content": "Ты стендап-комик Анатолий. Отвечай ТОЛЬКО готовым постом. НИКАКИХ РASSУЖДЕНИЙ. Только текст поста. Используй мат 1-2 раза (бля, сука, пиздец, хуйня). НЕ ОСКОРБЛЯЙ НАЦИОНАЛЬНОСТИ. НЕ УПОМИНАЙ ЖЕНУ. Пиши с сарказмом, самоиронией и провокацией. ОБЯЗАТЕЛЬНО ЗАВЕРШИ МЫСЛЬ — пост должен заканчиваться логическим выводом или итогом."},
                     {"role": "user", "content": current_prompt}
                 ],
                 "temperature": 1.3,
@@ -1263,9 +1285,8 @@ async def main():
     print(f"📢 Канал: {CHANNEL_ID if CHANNEL_ID else 'авто-поиск'}")
     print(f"👤 Владелец: {OWNER_ID if OWNER_ID else '❌ не задан'}")
     print("🇯🇵 Японки | 🇨🇳 Китаянки | 🇰🇷 Кореянки | 🇹🇭 Тайки")
-    print("🚫 Дети и другие национальности: исключены")
+    print("🚫 Мужчины, дети, другие национальности: исключены")
     print("📝 Логическое завершение: обязательно")
-    print("🚫 Запрещены обороты: 'она берет', 'он говорит', 'я думаю'")
     print("=" * 60)
     
     gc.collect()
