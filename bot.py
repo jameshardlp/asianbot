@@ -692,7 +692,9 @@ def save_schedule(schedule_data):
             json.dump(schedule_data, f)
         return True
     except:
-        return Falseschedule_data = load_schedule()
+        return False
+
+schedule_data = load_schedule()
 
 def load_users():
     try:
@@ -952,10 +954,6 @@ def search_bing(query):
         for pattern in patterns:
             found = re.findall(pattern, response.text)
             images.extend(found)
-        
-        # Также ищем в тексте описания
-        titles = re.findall(r'"title":"([^"]+)"', response.text)
-        descriptions = re.findall(r'"description":"([^"]+)"', response.text)
         
         clean_images = []
         for img in images:
