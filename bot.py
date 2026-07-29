@@ -18,10 +18,14 @@ from aiogram.exceptions import TelegramConflictError
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 CHANNEL_ID = os.getenv("CHANNEL_ID")
+OWNER_ID = int(os.getenv("OWNER_ID", 0))  # <-- НОВАЯ ПЕРЕМЕННАЯ
 
 if not BOT_TOKEN:
     print("❌ Ошибка: BOT_TOKEN не задан")
     sys.exit(1)
+
+if not OWNER_ID:
+    print("⚠️ ВНИМАНИЕ: OWNER_ID не задан. Команды /test, /schedule, /broadcast, /clear_history будут недоступны.")
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
@@ -118,7 +122,10 @@ def is_traditional_clothing(url: str) -> bool:
 def load_schedule():
     try:
         with open(SCHEDULE_FILE, "r") as f:
-            return json.load(f)
+            data = json.load(f)
+            if not data.get("times"):
+                return {"times": ["12:00", "21:00"]}
+            return data
     except:
         return {"times": ["12:00", "21:00"]}
 
@@ -331,7 +338,6 @@ async def is_user_admin(chat_id: int, user_id: int) -> bool:
         return False
 
 async def get_channel_id() -> str:
-    """Автоматически получает ID канала, где бот администратор"""
     if CHANNEL_ID:
         return CHANNEL_ID
     
@@ -818,7 +824,7 @@ async def status(msg: Message):
 
 @dp.message(Command("schedule"))
 async def schedule(msg: Message):
-    OWNER_ID = int(os.getenv("CHAT_ID", 0))
+    global OWNER_ID
     
     if msg.from_user.id != OWNER_ID:
         await msg.answer("⛔ Доступ запрещён. Только для владельца.")
@@ -862,7 +868,7 @@ async def schedule(msg: Message):
 
 @dp.message(Command("test"))
 async def test(msg: Message):
-    OWNER_ID = int(os.getenv("CHAT_ID", 0))
+    global OWNER_ID
     
     if msg.from_user.id != OWNER_ID:
         await msg.answer("⛔ Доступ запрещён.")
@@ -877,9 +883,7 @@ async def test(msg: Message):
 
 @dp.message(Command("clear_history"))
 async def clear_history(msg: Message):
-    global history
-    
-    OWNER_ID = int(os.getenv("CHAT_ID", 0))
+    global history, OWNER_ID
     
     if msg.from_user.id != OWNER_ID:
         await msg.answer("⛔ Доступ запрещён.")
@@ -891,7 +895,7 @@ async def clear_history(msg: Message):
 
 @dp.message(Command("broadcast"))
 async def broadcast(msg: Message):
-    OWNER_ID = int(os.getenv("CHAT_ID", 0))
+    global OWNER_ID
     
     if msg.from_user.id != OWNER_ID:
         await msg.answer("⛔ Доступ запрещён.")
@@ -936,13 +940,14 @@ async def broadcast(msg: Message):
 
 async def main():
     print("=" * 60)
-    print("🤖 Бот запущен (без CHAT_ID)")
+    print("🤖 Бот запущен (без CHAT_ID, с OWNER_ID)")
     print("🔍 Приоритет: Bing → Google → Yandex → Pexels")
     print(f"📊 Подписчиков: {len(users)}")
     print(f"📸 Фото в истории: {len(history)}")
     times = ", ".join(schedule.get("times", ["12:00", "21:00"]))
     print(f"⏰ Расписание: {times}")
     print(f"📢 Канал: {CHANNEL_ID if CHANNEL_ID else 'авто-поиск'}")
+    print(f"👤 Владелец: {OWNER_ID if OWNER_ID else '❌ не задан'}")
     print("=" * 60)
     
     gc.collect()
