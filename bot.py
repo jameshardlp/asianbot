@@ -186,7 +186,7 @@ def is_similar(text: str) -> bool:
             return True
     return False
 
-# ===== ГЕНЕРАЦИЯ ПОСТОВ (БЕЗ УПОМИНАНИЙ ЖЕНЫ) =====
+# ===== ГЕНЕРАЦИЯ ПОСТОВ =====
 
 def generate_caption() -> str:
     print("🧠 Генерирую уникальный пост...")
@@ -331,11 +331,15 @@ async def is_user_admin(chat_id: int, user_id: int) -> bool:
         return False
 
 async def get_channel_id() -> str:
+    """Автоматически получает ID канала, где бот администратор"""
     if CHANNEL_ID:
         return CHANNEL_ID
     
     try:
-        updates = await bot.get_updates(offset=-1, limit=1)
+        me = await bot.get_me()
+        print(f"🤖 Бот: @{me.username}")
+        
+        updates = await bot.get_updates(offset=-1, limit=10)
         for update in updates:
             if update.channel_post:
                 chat_id = update.channel_post.chat.id
@@ -597,6 +601,8 @@ async def send_post(chat_id, photo_url=None, caption=None):
 async def send_to_all_users():
     global users
     
+    users = load_users()
+    
     if not users:
         print("⚠️ Нет пользователей для отправки")
         return
@@ -633,6 +639,9 @@ is_sending = False
 
 async def scheduler():
     global is_sending
+    
+    await asyncio.sleep(10)
+    print("✅ Планировщик запущен")
     
     while True:
         now = datetime.now()
@@ -671,6 +680,8 @@ async def scheduler():
                 is_sending = True
                 try:
                     await send_to_all_users()
+                except Exception as e:
+                    print(f"❌ Ошибка отправки: {e}")
                 finally:
                     is_sending = False
             else:
@@ -925,7 +936,7 @@ async def broadcast(msg: Message):
 
 async def main():
     print("=" * 60)
-    print("🤖 Бот запущен (без упоминаний жены)")
+    print("🤖 Бот запущен (без CHAT_ID)")
     print("🔍 Приоритет: Bing → Google → Yandex → Pexels")
     print(f"📊 Подписчиков: {len(users)}")
     print(f"📸 Фото в истории: {len(history)}")
