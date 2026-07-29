@@ -39,36 +39,39 @@ HISTORY_FILE = "history.json"
 
 def truncate_caption(text: str, max_length: int = 1000) -> str:
     """
-    Обрезает текст до максимальной длины, заканчивая на последней точке.
-    Если текст длиннее max_length, обрезает до последней точки перед лимитом.
+    Обрезает текст до максимальной длины, заканчивая на последней точке,
+    вопросительном или восклицательном знаке. Если знаков нет — обрезает до
+    последнего пробела и ставит точку.
     """
     if len(text) <= max_length:
         return text
-    
+
     truncated = text[:max_length]
-    
-    last_punctuation = -1
-    for punct in ['.', '!', '?']:
-        pos = truncated.rfind(punct)
-        if pos > last_punctuation:
-            last_punctuation = pos
-    
-    if last_punctuation > 0:
-        return truncated[:last_punctuation + 1]
-    
+
+    # Ищем последний знак завершения предложения
+    last_punct = -1
+    for p in ('.', '!', '?'):
+        pos = truncated.rfind(p)
+        if pos > last_punct:
+            last_punct = pos
+
+    # Если нашли — обрезаем до него включительно
+    if last_punct != -1:
+        return truncated[:last_punct + 1]
+
+    # Если знаков нет — ищем последний пробел
     last_space = truncated.rfind(' ')
-    if last_space > 50:
+    if last_space != -1:
         return truncated[:last_space] + '.'
-    
+
+    # Если и пробела нет — просто обрезаем
     return truncated
 
 def clean_text(text: str) -> str:
     """Заменяет длинное тире на обычное и убирает упоминания @maddysontg"""
     text = text.replace('—', '-').replace('–', '-')
-    # Убираем упоминания @maddysontg в любом виде
     text = text.replace('@maddysontg', '').replace('@Maddysontg', '').replace('@MADDYSONTG', '')
     text = text.replace('maddysontg', '').replace('Maddysontg', '').replace('MADDYSONTG', '')
-    # Убираем лишние пробелы после удаления
     text = re.sub(r'\s+', ' ', text).strip()
     return text
 
@@ -114,7 +117,6 @@ history = load_history()
 last_posts = []
 
 def add_to_last_posts(text: str):
-    """Добавляет пост в историю последних постов"""
     global last_posts
     key = text[:100]
     last_posts.append(key)
@@ -122,7 +124,6 @@ def add_to_last_posts(text: str):
         last_posts.pop(0)
 
 def is_similar(text: str) -> bool:
-    """Проверяет, не похож ли новый пост на недавние"""
     global last_posts
     key = text[:100]
     for post in last_posts:
@@ -134,10 +135,6 @@ def is_similar(text: str) -> bool:
 # ===== ГЕНЕРАЦИЯ ПОСТОВ ЧЕРЕЗ DEEPSEEK API =====
 
 def generate_caption() -> str:
-    """
-    Генерирует провокационный пост через DeepSeek API.
-    Без упоминаний @maddysontg. Имя автора - Анатолий.
-    """
     print("🧠 Генерирую уникальный пост...")
     
     if not DEEPSEEK_API_KEY:
@@ -225,9 +222,7 @@ def generate_caption() -> str:
                 print("⚠️ Пост похож на недавний, пробуем ещё...")
                 continue
             
-            # Очищаем от упоминаний
             caption = clean_text(caption)
-            
             add_to_last_posts(caption)
             print(f"✅ Сгенерирован уникальный пост: {caption[:50]}...")
             return caption
@@ -240,7 +235,6 @@ def generate_caption() -> str:
     return clean_text(get_fallback_caption())
 
 def get_fallback_caption() -> str:
-    """Резервные посты (если API не работает)"""
     fallbacks = [
         "Бля, смотрю на азиатку и думаю: вот это поворот. Я-то думал, что люблю блондинок, а тут такая хуйня. Глаза, сука, такие, что забываешь, как дышать. И улыбка от которой у меня встал не только член, но и желание жить. Сижу и думаю: нахуя я тратил время на всех этих ебаных моделей? Теперь я хочу учить японский, есть палочками и смотреть аниме. Пиздец, куда качусь.",
         
@@ -256,7 +250,7 @@ def get_fallback_caption() -> str:
         fallback += random.choice(endings)
     return fallback
 
-# ===== ПОИСК ФОТО С ИСТОРИЕЙ =====
+# ===== ПОИСК ФОТО =====
 
 async def is_user_admin(chat_id: int, user_id: int) -> bool:
     try:
@@ -473,11 +467,6 @@ async def send_to_all_users():
 # ===== РАСПИСАНИЕ =====
 
 async def scheduler():
-    """
-    Отправляет посты в случайное время в интервалах:
-    - Первый: с 12:00 до 15:00
-    - Второй: с 17:00 до 22:00
-    """
     while True:
         now = datetime.now()
         
@@ -507,7 +496,7 @@ async def scheduler():
         await asyncio.sleep(wait_seconds)
         await send_to_all_users()
 
-# ===== КОМАНДЫ БОТА =====
+# ===== КОМАНДЫ =====
 
 @dp.message(Command("start"))
 async def start(msg: Message):
@@ -678,7 +667,7 @@ async def main():
     print(f"📊 Подписчиков: {len(users)}")
     print(f"📸 Фото в истории: {len(history)}")
     print("⏰ Расписание: 12:00-15:00 и 17:00-22:00")
-    print("📝 Уникальные посты, без упоминаний @maddysontg")
+    print("📝 Уникальные посты, завершённые предложения")
     print("=" * 60)
     
     gc.collect()
