@@ -44,7 +44,7 @@ OWNER_ID = int(os.getenv("OWNER_ID", 0))
 
 # Настройки для Stars
 STARS_CHANNEL_ID = 1361723521  # Получатель звёзд
-BROADCAST_CHANNEL_ID = -1003988169576  # Канал для команды broadcast
+BROADCAST_GROUP_ID = -1003988169576  # Группа для команды broadcast (ИСПРАВЛЕНО)
 BROADCAST_PRICE_FILE = "broadcast_price.json"  # Файл для хранения цены
 
 # Redis настройки (опционально)
@@ -1842,7 +1842,7 @@ async def set_price(message: Message):
         logger.error(f"Ошибка в команде price: {e}")
         await message.answer("❌ Произошла ошибка. Попробуйте позже.")
 
-# ===== КОМАНДА /BROADCAST С ОПЛАТОЙ ЗВЁЗДАМИ =====
+# ===== КОМАНДА /BROADCAST В ГРУППОВОМ ЧАТЕ =====
 
 # Хранилище для данных broadcast
 broadcast_data = {}
@@ -1852,11 +1852,11 @@ pending_broadcasts = {}
 
 @dp.message(Command("broadcast"))
 async def broadcast_command(message: Message):
-    """Команда для отправки сообщения всем пользователям за звёзды"""
+    """Команда для отправки сообщения всем пользователям за звёзды (работает в группе)"""
     try:
-        # Проверяем, что команда вызвана в правильном канале
-        if message.chat.id != BROADCAST_CHANNEL_ID:
-            await message.answer("ℹ️ Эта команда работает только в специальном канале.")
+        # Проверяем, что команда вызвана в правильной группе
+        if message.chat.id != BROADCAST_GROUP_ID:
+            await message.answer("ℹ️ Эта команда работает только в специальной группе.")
             return
         
         user_id = message.from_user.id
@@ -2590,7 +2590,7 @@ async def main():
         logger.info(f"Владелец: {OWNER_ID if OWNER_ID else '❌ не задан'}")
         current_price = load_broadcast_price()
         logger.info(f"⭐ Цена broadcast: {current_price} звёзд")
-        logger.info(f"📢 Канал broadcast: {BROADCAST_CHANNEL_ID}")
+        logger.info(f"📢 Группа broadcast: {BROADCAST_GROUP_ID}")
         logger.info(f"💰 Получатель звёзд: {STARS_CHANNEL_ID}")
         logger.info("Азиатские девушки | 18-30 лет | Модерация включена")
         logger.info(f"📨 Сообщения владельцу отправляются с интервалом 1 минута")
