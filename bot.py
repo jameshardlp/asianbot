@@ -33,7 +33,7 @@ except ImportError:
 # Для Telegram
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
-from aiogram.types import Message, ChatMember, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, PreCheckoutQuery, LabeledPrice, MessageEntity
+from aiogram.types import Message, ChatMember, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, PreCheckoutQuery, LabeledPrice
 from aiogram.exceptions import TelegramConflictError, TelegramAPIError
 
 # ===== КОНФИГУРАЦИЯ =====
@@ -770,7 +770,7 @@ def request_continuation(previous_text: str) -> str:
         }
         tail = previous_text[-500:]
         data = {
-            "model": "deepseek-chat",  # Исправлено: правильное имя модели
+            "model": "deepseek-chat",
             "messages": [
                 {"role": "system", "content": "Ты стендап-комик Анатолий. Текст поста был обрезан. Допиши ТОЛЬКО концовку — 1-3 завершающих предложения с логическим выводом. Не повторяй уже написанное. Только текст продолжения."},
                 {"role": "user", "content": f"Вот текст, который оборвался:\n\n...{tail}\n\nДопиши концовку (1-3 предложения, завершающих мысль). Не повторяй текст выше."}
@@ -860,7 +860,7 @@ def generate_caption() -> str:
                 logger.info(f"Пробую альтернативный промпт (попытка {attempt+1})...")
             
             data = {
-                "model": "deepseek-chat",  # Исправлено: правильное имя модели
+                "model": "deepseek-chat",
                 "messages": [
                     {"role": "system", "content": """Ты — Анатолий, холостой блогер средних лет в очках, с короткой стрижкой и небольшой щетиной. Ты путешествуешь по Азии и ведёшь блог от своего лица.
 
@@ -1751,18 +1751,20 @@ async def get_channel_id() -> Optional[str]:
         logger.info(f"Бот: @{me.username}")
         
         try:
-            async with asyncio.timeout(10):
-                updates = await bot.get_updates(offset=-1, limit=10)
-                for update in updates:
-                    if update.channel_post:
-                        chat_id = update.channel_post.chat.id
-                        try:
-                            chat_member = await bot.get_chat_member(chat_id, bot.id)
-                            if chat_member.status in ["administrator", "creator"]:
-                                logger.info(f"Найден канал: {chat_id}")
-                                return str(chat_id)
-                        except:
-                            pass
+            updates = await asyncio.wait_for(
+                bot.get_updates(offset=-1, limit=10),
+                timeout=10
+            )
+            for update in updates:
+                if update.channel_post:
+                    chat_id = update.channel_post.chat.id
+                    try:
+                        chat_member = await bot.get_chat_member(chat_id, bot.id)
+                        if chat_member.status in ["administrator", "creator"]:
+                            logger.info(f"Найден канал: {chat_id}")
+                            return str(chat_id)
+                    except:
+                        pass
         except asyncio.TimeoutError:
             logger.warning("Таймаут получения обновлений")
         except Exception as e:
@@ -2081,7 +2083,7 @@ async def send_broadcast_for_moderation(broadcast_id: str, text: str, user_id: i
     except Exception as e:
         logger.error(f"Ошибка отправки на модерацию: {e}")
 
-@dp.callback_query(lambda c: c.data.startswith('broad_'))
+@dp.callback_query(lambda c: c.data and c.data.startswith('broad_'))
 async def handle_broadcast_moderation(callback: CallbackQuery):
     """Обработка модерации broadcast сообщений"""
     try:
@@ -2185,7 +2187,7 @@ async def handle_broadcast_moderation(callback: CallbackQuery):
 
 # ===== ОСТАЛЬНЫЕ КОМАНДЫ =====
 
-@dp.callback_query(lambda c: c.data.startswith('mod_'))
+@dp.callback_query(lambda c: c.data and c.data.startswith('mod_'))
 async def handle_moderation_callback(callback: CallbackQuery):
     try:
         if callback.from_user.id != OWNER_ID:
