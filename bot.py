@@ -42,8 +42,11 @@ DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 CHANNEL_ID = os.getenv("CHANNEL_ID")
 OWNER_ID = int(os.getenv("OWNER_ID", 0))
 
+# Разрешённые пользователи для команды /photo в ЛС
+ALLOWED_PHOTO_USERS = [OWNER_ID, 1361723521]  # Владелец и пользователь 1361723521
+
 # Настройки для Stars
-STARS_CHANNEL_ID = 1361723521  # Получатель звёзд
+STARS_CHANNEL_ID = -1003893727881  # Получатель звёзд (канал)
 BROADCAST_PRICE_FILE = "broadcast_price.json"  # Файл для хранения цены
 
 # Redis настройки (опционально)
@@ -79,7 +82,7 @@ def load_broadcast_price() -> int:
     try:
         with open(BROADCAST_PRICE_FILE, "r") as f:
             data = json.load(f)
-            return data.get("price", 100)  # По умолчанию 100 звёзд
+            return data.get("price", 100)
     except:
         return 100
 
@@ -1892,7 +1895,7 @@ pending_broadcasts = {}
 
 @dp.message(Command("broadcast"))
 async def broadcast_command(message: Message):
-    """Команда для отправки сообщения всем пользователям за звёзды (только в личных сообщениях)"""
+    """Команда для отправки сообщения всем пользователям за звёзды (только в ЛС)"""
     try:
         # Проверяем, что команда вызвана в личных сообщениях
         if message.chat.type != "private":
@@ -1910,7 +1913,8 @@ async def broadcast_command(message: Message):
             await message.answer(
                 f"📢 Чтобы отправить сообщение всем подписчикам, напишите:\n"
                 f"/broadcast Ваше сообщение\n\n"
-                f"⭐ Стоимость: {current_price} звёзд\n\n"
+                f"⭐ Стоимость: {current_price} звёзд\n"
+                f"💰 Средства поступят на канал\n\n"
                 f"После оплаты сообщение будет отправлено на модерацию."
             )
             return
@@ -1920,6 +1924,7 @@ async def broadcast_command(message: Message):
         prices = [LabeledPrice(label="⭐ Рассылка", amount=current_price)]
         
         # Отправляем счет на оплату
+        # Бот должен быть администратором канала STARS_CHANNEL_ID
         await bot.send_invoice(
             chat_id=chat_id,
             title="📢 Рассылка сообщения",
@@ -1929,6 +1934,7 @@ async def broadcast_command(message: Message):
             currency="XTR",
             prices=prices,
             start_parameter="broadcast",
+            chat_id_for_payment=STARS_CHANNEL_ID,  # Звёзды приходят на канал
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text=f"⭐ Оплатить {current_price} звёзд", pay=True)]
             ])
@@ -2026,7 +2032,8 @@ async def send_broadcast_for_moderation(broadcast_id: str, text: str, user_id: i
             text=f"📋 Новая рассылка на модерацию #{broadcast_id}\n\n"
                  f"📝 Текст:\n{text_preview}\n\n"
                  f"👤 Заказчик ID: {user_id}\n"
-                 f"💰 Оплачено: {load_broadcast_price()} ⭐\n\n"
+                 f"💰 Оплачено: {load_broadcast_price()} ⭐\n"
+                 f"📤 Средства поступят на канал {STARS_CHANNEL_ID}\n\n"
                  f"⏳ После подтверждения будет задержка 5 минут перед публикацией.",
             reply_markup=keyboard
         )
@@ -2138,6 +2145,34 @@ async def handle_broadcast_moderation(callback: CallbackQuery):
         logger.error(f"Ошибка в broadcast модерации: {e}")
         await callback.answer("❌ Ошибка", show_alert=True)
 
+# ===== КОМАНДА /CHECK_CHANNEL (ДЛЯ ПРОВЕРКИ ПРАВ БОТА) =====
+
+@dp.message(Command("check_channel"))
+async def check_channel(message: Message):
+    """Проверка прав бота в канале (только для владельца)"""
+    try:
+        if message.from_user.id != OWNER_ID:
+            await message.answer("⛔ Доступ запрещён")
+            return
+        
+        try:
+            chat_member = await bot.get_chat_member(STARS_CHANNEL_ID, bot.id)
+            
+            status_text = f"📊 Статус бота в канале {STARS_CHANNEL_ID}:\n"
+            status_text += f"• Статус: {chat_member.status}\n"
+            status_text += f"• Может отправлять: {chat_member.can_send_messages}\n"
+            status_text += f"• Может управлять: {chat_member.can_manage_chat}\n"
+            status_text += f"• Может публиковать: {chat_member.can_post_messages}\n"
+            status_text += f"• Может управлять видеочатами: {chat_member.can_manage_video_chats}\n"
+            
+            await message.answer(status_text)
+        except Exception as e:
+            await message.answer(f"❌ Ошибка: {e}\n\nУбедитесь, что бот добавлен в канал {STARS_CHANNEL_ID} как администратор.")
+            
+    except Exception as e:
+        logger.error(f"Ошибка проверки канала: {e}")
+        await message.answer("❌ Произошла ошибка")
+
 # ===== ОСТАЛЬНЫЕ КОМАНДЫ =====
 
 @dp.callback_query(lambda c: c.data and c.data.startswith('mod_'))
@@ -2232,7 +2267,7 @@ async def start(msg: Message):
             f"{channel_status}\n"
             f"🔄 /photo - получить фото сейчас\n"
             f"⏰ /schedule - изменить расписание\n"
-            f"📢 /broadcast - отправить сообщение всем (⭐ {current_price} звёзд) - только в ЛС\n"
+            f"📢 /broadcast - отправить сообщение всем (⭐ {current_price} звёзд)\n"
             f"🛑 /stop - отписаться"
         )
     except Exception as e:
@@ -2250,6 +2285,13 @@ async def photo(msg: Message):
             await msg.answer("ℹ️ В канале отправка по команде не требуется.")
             return
         
+        # Проверяем, что команда вызвана в личных сообщениях
+        if chat_type == "private":
+            # Проверяем, разрешён ли пользователь
+            if user_id not in ALLOWED_PHOTO_USERS:
+                await msg.answer("⛔ Команда /photo в личных сообщениях доступна только владельцу бота.")
+                return
+        
         if not await check_user_can_use_command(msg):
             await msg.reply("⛔ Только администраторы могут запрашивать фото.")
             return
@@ -2258,7 +2300,7 @@ async def photo(msg: Message):
             await msg.answer("⚠️ Бот не активирован. Напишите /start")
             return
         
-        is_owner = (user_id == OWNER_ID)
+        is_owner = (user_id in ALLOWED_PHOTO_USERS)
         
         if is_owner:
             await generate_and_queue_post(str(chat_id), user_id, skip_moderation=True)
@@ -2332,7 +2374,8 @@ async def status(msg: Message):
             f"• Фото в истории: {len(history)}\n"
             f"• Расписание: {times}\n"
             f"• Канал: {'✅ ' + channel_id if channel_id else '❌ не найден'}\n"
-            f"• Цена рассылки: {current_price} ⭐"
+            f"• Цена рассылки: {current_price} ⭐\n"
+            f"• Канал для звёзд: {STARS_CHANNEL_ID}"
         )
         
         await msg.answer(status_text)
@@ -2626,12 +2669,14 @@ async def main():
         logger.info(f"Владелец: {OWNER_ID if OWNER_ID else '❌ не задан'}")
         current_price = load_broadcast_price()
         logger.info(f"⭐ Цена broadcast: {current_price} звёзд")
-        logger.info(f"💰 Получатель звёзд: {STARS_CHANNEL_ID}")
+        logger.info(f"💰 Получатель звёзд (канал): {STARS_CHANNEL_ID}")
         logger.info("Азиатские девушки | 18-30 лет | Модерация включена")
         logger.info("🚫 Детские фото исключены")
         logger.info(f"📨 Сообщения владельцу отправляются с интервалом 1 минута")
         logger.info(f"📊 Посты в канал не чаще 1 раза в {MIN_POST_INTERVAL // 3600} часа (случайное время)")
         logger.info("📢 /broadcast - только в личных сообщениях")
+        logger.info("📸 /photo - в ЛС только для владельца и пользователя 1361723521")
+        logger.info("💡 /check_channel - проверить права бота в канале для звёзд")
         
         await task_queue.connect()
         logger.info("=" * 60)
