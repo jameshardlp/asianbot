@@ -44,7 +44,6 @@ OWNER_ID = int(os.getenv("OWNER_ID", 0))
 
 # Настройки для Stars
 STARS_CHANNEL_ID = 1361723521  # Получатель звёзд
-BROADCAST_GROUP_ID = -1003988169576  # Группа для команды broadcast (ИСПРАВЛЕНО)
 BROADCAST_PRICE_FILE = "broadcast_price.json"  # Файл для хранения цены
 
 # Redis настройки (опционально)
@@ -80,9 +79,9 @@ def load_broadcast_price() -> int:
     try:
         with open(BROADCAST_PRICE_FILE, "r") as f:
             data = json.load(f)
-            return data.get("price", 5)
+            return data.get("price", 100)  # По умолчанию 100 звёзд
     except:
-        return 5
+        return 100
 
 def save_broadcast_price(price: int):
     """Сохраняет цену в файл"""
@@ -160,6 +159,17 @@ TRADITIONAL_EXCLUDE = [
     'mongolian traditional', 'tibetan traditional', 'uyghur traditional',
 ]
 
+# Запрещённые слова для исключения фото детей
+CHILD_EXCLUDE_WORDS = [
+    'child', 'children', 'kid', 'kids', 'baby', 'babies', 'toddler',
+    'infant', 'preschool', 'kindergarten', 'schoolgirl', 'schoolboy',
+    'girl scout', 'boy scout', 'cub scout', 'teen', 'teenager',
+    'minor', 'underage', 'little girl', 'little boy', 'young girl',
+    'young boy', 'daughter', 'son', 'family', 'family photo',
+    'childhood', 'baby girl', 'baby boy', 'newborn', 'cute baby',
+    'child model', 'kid model', 'baby model', 'toddler girl', 'toddler boy',
+]
+
 # ===== ПОИСКОВЫЕ ЗАПРОСЫ (улучшенные) =====
 SEARCH_QUERIES = [
     "japanese girl casual selfie 20",
@@ -230,6 +240,29 @@ FITNESS_QUERIES = [
 
 # ===== УЛУЧШЕННАЯ ФИЛЬТРАЦИЯ =====
 
+def is_child_photo(url: str) -> bool:
+    """Проверяет, не является ли фото детским"""
+    if not url:
+        return False
+    
+    url_lower = url.lower()
+    for word in CHILD_EXCLUDE_WORDS:
+        if word in url_lower:
+            return True
+    
+    # Проверяем возрастные маркеры, указывающие на детей
+    child_age_patterns = [
+        r'\b(0|1|2|3|4|5|6|7|8|9|10|11|12|13|14|15|16|17)\b',
+        r'\b(infant|toddler|child|kid|teen)\b',
+        r'\b(grade|class|school)\s+[1-9]\b',
+    ]
+    
+    for pattern in child_age_patterns:
+        if re.search(pattern, url_lower, re.IGNORECASE):
+            return True
+    
+    return False
+
 def is_asian_photo(url: str, additional_context: str = "") -> bool:
     if not url:
         return False
@@ -286,6 +319,10 @@ def is_age_appropriate(url: str) -> bool:
     
     url_lower = url.lower()
     
+    # Проверяем на детские фото
+    if is_child_photo(url):
+        return False
+    
     for word in AGE_POSITIVE_KEYWORDS:
         if word in url_lower:
             return True
@@ -294,9 +331,6 @@ def is_age_appropriate(url: str) -> bool:
         for word in AGE_POSITIVE_KEYWORDS:
             if word in url_lower:
                 return True
-        return False
-    
-    if 'child' in url_lower or 'kid' in url_lower or 'baby' in url_lower:
         return False
     
     if 'mature' in url_lower or 'old' in url_lower or 'senior' in url_lower:
@@ -322,6 +356,9 @@ def is_photo_acceptable(url: str, additional_context: str = "") -> Tuple[bool, s
     if not url:
         return False, "Пустой URL"
     
+    if is_child_photo(url):
+        return False, "Фото содержит ребёнка"
+    
     if not is_asian_photo(url, additional_context):
         return False, "Не азиатская внешность"
     
@@ -338,23 +375,17 @@ def is_photo_acceptable(url: str, additional_context: str = "") -> Tuple[bool, s
     
     return True, "OK"
 
-# ===== СТИЛИ ДЛЯ ГЕНЕРАЦИИ (С ШУТКАМИ) =====
+# ===== СТИЛИ ДЛЯ ГЕНЕРАЦИИ (БЕЗ УПОМИНАНИЯ ВНЕШНОСТИ) =====
 style_prompts = {
     'everyday': """
 Ты — Анатолий, холостой блогер средних лет, который много путешествует по Азии.
-
-Твоя внешность:
-- Носишь очки
-- Короткая стрижка
-- Небольшая щетина на лице
-- Обычный парень, не модель
 
 Твой стиль:
 - Рассказываешь реальные истории, будто они произошли вчера или сегодня.
 - Всегда сначала действие, потом размышления.
 - Главный объект самоиронии — ты сам. Ты часто оказываешься в неловких ситуациях.
 - Юмор строится на иронии над собой и ситуациях, где ты выглядишь глупо.
-- Добавляй одну острую шутку в стиле @Maddysontg — не оскорбительную, с юмором, может содержать мат. Шути про себя или про жизнь, но без политики.
+- Добавляй одну острую шутку — не оскорбительную, с юмором, может содержать мат. Шути про себя или про жизнь, но без политики.
 - Пишешь живым разговорным языком, будто рассказываешь историю друзьям.
 
 Напиши пост про реальную ситуацию в Азии, где ты попал в неловкое положение.
@@ -368,7 +399,7 @@ style_prompts = {
 Требования:
 - 700-900 символов
 - Мат 1-2 раза (бля, сука, пиздец), только как эмоция
-- Одна острая шутка в стиле @Maddysontg
+- Одна острая шутка
 - Обращайся к читателям на "вы"
 - Не упоминай жену
 - Не используй штампы
@@ -376,13 +407,13 @@ style_prompts = {
 """,
 
     'funny': """
-Ты — Анатолий, холостой блогер средних лет, в очках, с короткой стрижкой и небольшой щетиной.
+Ты — Анатолий, холостой блогер средних лет.
 
 Твой стиль:
 - Рассказываешь смешные истории из жизни в Азии
 - Главный объект шуток — ты сам и твои неловкие ситуации
 - Юмор самоироничный, без оскорблений других
-- Добавляй одну острую шутку в стиле @Maddysontg
+- Добавляй одну острую шутку
 - Пишешь живым языком, как рассказываешь друзьям
 
 Напиши смешной пост про свою жизнь в Азии.
@@ -402,13 +433,13 @@ style_prompts = {
 """,
 
     'romantic': """
-Ты — Анатолий, холостой блогер средних лет, в очках, с короткой стрижкой и щетиной.
+Ты — Анатолий, холостой блогер средних лет.
 
 Твой стиль:
 - Рассказываешь о своих чувствах с самоиронией
 - Немного романтики, но с юмором
 - Честно говоришь о своих недостатках
-- Добавляй одну острую шутку в стиле @Maddysontg (про себя, не про девушку)
+- Добавляй одну острую шутку (про себя, не про девушку)
 - Пишешь тепло, но без пафоса
 
 Напиши романтичный пост о встрече с азиаткой.
@@ -428,13 +459,13 @@ style_prompts = {
 """,
 
     'envy': """
-Ты — Анатолий, холостой блогер средних лет, в очках, с короткой стрижкой и щетиной.
+Ты — Анатолий, холостой блогер средних лет.
 
 Твой стиль:
 - Рассказываешь о том, чему завидуешь, с юмором
 - Самоирония над своей жизнью
 - Честно и смешно о своих желаниях
-- Добавляй одну острую шутку в стиле @Maddysontg
+- Добавляй одну острую шутку
 - Пишешь живо и увлекательно
 
 Напиши пост о том, чему ты завидуешь в Азии.
@@ -454,7 +485,7 @@ style_prompts = {
 """,
 
     'joke': """
-Ты — Анатолий, холостой блогер средних лет, в очках, с короткой стрижкой и щетиной.
+Ты — Анатолий, холостой блогер средних лет.
 
 Твой стиль:
 - Твои посты — это 70% шуток и 30% жизненных наблюдений
@@ -468,7 +499,7 @@ style_prompts = {
 
 Структура:
 1. Жизненная ситуация
-2. Острая шутка (в стиле @Maddysontg)
+2. Острая шутка
 3. Развитие ситуации
 4. Ещё одна шутка или ироничный вывод
 
@@ -807,13 +838,13 @@ def complete_truncated_text(content: str, finish_reason: str) -> str:
 
 def get_fallback_caption() -> str:
     fallbacks = [
-        "Вчера в Бангкоке ко мне подошла стайка тайских девчонок и попросила сфоткаться. Я, бля, сразу расправил плечи - ну, думаю, наконец-то заметили мой шарм, мои очки, мою щетину, харизму. Делаю serious face, как будто я важный чел. А они визжат, тычут пальцами. И тут одна тянет мой телефон, начинает листать и показывает на фото какого-то китайского блогера с двумя миллионами подписчиков. Оказалось, я просто попал в кадр, потому что стоял на том же месте, где он снимал своё видосик. Стою, улыбаюсь, а в голове: Анатолий, ну ты и дурак, опять повёлся. Ну и ладно, зато теперь я типа знаменит локально - сегодня меня уже трижды окликнули эй, Толик! на базаре. Вывод один: слава - это когда тебя путают с другим, но ты всё равно рад, что хоть с кем-то перепутали. И это пиздец как греет душу, честно вам скажу.",
+        "Вчера в Бангкоке ко мне подошла стайка тайских девчонок и попросила сфоткаться. Я сразу расправил плечи - ну, думаю, наконец-то заметили мой шарм, мою харизму. Делаю serious face, как будто я важный чел. А они визжат, тычут пальцами. И тут одна тянет мой телефон, начинает листать и показывает на фото какого-то китайского блогера с двумя миллионами подписчиков. Оказалось, я просто попал в кадр, потому что стоял на том же месте, где он снимал своё видосик. Стою, улыбаюсь, а в голове: Анатолий, ну ты и дурак, опять повёлся. Ну и ладно, зато теперь я типа знаменит локально - сегодня меня уже трижды окликнули эй, Толик! на базаре. Вывод один: слава - это когда тебя путают с другим, но ты всё равно рад, что хоть с кем-то перепутали. И это пиздец как греет душу, честно вам скажу.",
         
-        "Сижу в кафе в Чиангмае, пью кофе, поправляю очки, смотрю на прохожих. Вдруг подходит местная девушка и говорит: Вы тот самый блогер? Я, сука, сразу напрягся, думаю - неужели узнали? А она показывает на мою футболку с логотипом какой-то группы и говорит, что ей нравится их музыка. Оказалось, она думала, что я участник группы. Я даже не стал её разочаровывать - улыбнулся, сфоткался с ней и пошёл дальше. Теперь я официально музыкант. Хотя на гитаре играю только в голове. Но знаете, приятно, когда тебя замечают, даже если по ошибке. Вот так и живём, ребята.",
+        "Сижу в кафе в Чиангмае, пью кофе, смотрю на прохожих. Вдруг подходит местная девушка и говорит: Вы тот самый блогер? Я сразу напрягся, думаю - неужели узнали? А она показывает на мою футболку с логотипом какой-то группы и говорит, что ей нравится их музыка. Оказалось, она думала, что я участник группы. Я даже не стал её разочаровывать - улыбнулся, сфоткался с ней и пошёл дальше. Теперь я официально музыкант. Хотя на гитаре играю только в голове. Но знаете, приятно, когда тебя замечают, даже если по ошибке. Вот так и живём, ребята.",
         
-        "Вчера на рынке в Бангкоке продавщица назвала меня красивым иностранным мужчиной. Я, бля, чуть не подавился соком. Поправил очки, расправил плечи, уже приготовился торговаться с чувством собственного достоинства. А она оказалась просто вежливая - так она всех мужиков называет, чтобы цену набить. Но осадочек остался, приятный такой. Домой пришёл, в зеркало посмотрел - ну вроде ничего, щетина, очки, харизма. Наверное, я всё-таки красавчик, просто в этом городе слишком много настоящих красавчиков. Но мы не сдаёмся, коллеги!",
+        "Вчера на рынке в Бангкоке продавщица назвала меня красивым иностранным мужчиной. Я чуть не подавился соком. Расправил плечи, уже приготовился торговаться с чувством собственного достоинства. А она оказалась просто вежливая - так она всех мужиков называет, чтобы цену набить. Но осадочек остался, приятный такой. Домой пришёл, в зеркало посмотрел - ну вроде ничего, харизма есть. Наверное, я всё-таки красавчик, просто в этом городе слишком много настоящих красавчиков. Но мы не сдаёмся, коллеги!",
         
-        "Тайские девушки - это отдельный вид искусства. Вчера одна сказала мне: Ты такой забавный, как мой папа. Я, бля, чуть кофе не поперхнулся. Поправил очки, щетину погладил, думаю - ну всё, старость пришла. А она потом говорит: Это комплимент, папа у меня крутой! Ну ладно, тогда норм. Буду теперь гордо носить звание папик в Таиланде. Хотя, сука, обидно было первые пять секунд.",
+        "Тайские девушки - это отдельный вид искусства. Вчера одна сказала мне: Ты такой забавный, как мой папа. Я чуть кофе не поперхнулся. Думаю - ну всё, старость пришла. А она потом говорит: Это комплимент, папа у меня крутой! Ну ладно, тогда норм. Буду теперь гордо носить звание папик в Таиланде. Хотя, сука, обидно было первые пять секунд.",
     ]
     return random.choice(fallbacks)
 
@@ -862,21 +893,16 @@ def generate_caption() -> str:
             data = {
                 "model": "deepseek-chat",
                 "messages": [
-                    {"role": "system", "content": """Ты — Анатолий, холостой блогер средних лет в очках, с короткой стрижкой и небольшой щетиной. Ты путешествуешь по Азии и ведёшь блог от своего лица.
+                    {"role": "system", "content": """Ты — Анатолий, холостой блогер средних лет. Ты путешествуешь по Азии и ведёшь блог от своего лица.
 
 Твой стиль:
 - Самоирония и сарказм
 - Рассказываешь реальные истории из жизни
-- Можешь добавить острую шутку в стиле @Maddysontg — не оскорбительную, с юмором, может содержать мат
+- Можешь добавить острую шутку — не оскорбительную, с юмором, может содержать мат
 - Шути про себя или про жизнь, но без политики
 - Пиши так, будто рассказываешь друзьям в баре
 
 Важно:
-- Ты носишь очки
-- У тебя короткая стрижка
-- У тебя небольшая щетина
-- Ты средних лет
-- Ты не модель и не красавчик
 - Пиши от первого лица
 - Используй мат 1-2 раза для эмоций (бля, сука, пиздец)
 - Обращайся к читателям на "вы"
@@ -992,6 +1018,10 @@ def search_bing(query):
             if any(x in img.lower() for x in ['gstatic', 'google', 'favicon', 'logo', 'bing', 'avatar']):
                 continue
             
+            # Проверка на детские фото
+            if is_child_photo(img):
+                continue
+            
             if not is_asian_photo(img):
                 continue
             
@@ -1040,8 +1070,9 @@ def search_google_direct(query):
             if any(ext in img.lower() for ext in ['.jpg', '.jpeg', '.png', '.webp']):
                 if not any(x in img.lower() for x in ['gstatic', 'google', 'favicon', 'logo']):
                     if not img.startswith('data:'):
-                        if is_asian_photo(img) and is_age_appropriate(img):
-                            clean_images.append(img)
+                        if not is_child_photo(img):
+                            if is_asian_photo(img) and is_age_appropriate(img):
+                                clean_images.append(img)
         
         clean_images = list(dict.fromkeys(clean_images))
         
@@ -1091,8 +1122,9 @@ def search_yandex(query):
             if any(ext in img.lower() for ext in ['.jpg', '.jpeg', '.png', '.webp']):
                 if not any(x in img.lower() for x in ['gstatic', 'google', 'favicon', 'logo']):
                     if not img.startswith('data:'):
-                        if is_asian_photo(img) and is_age_appropriate(img):
-                            clean_images.append(img)
+                        if not is_child_photo(img):
+                            if is_asian_photo(img) and is_age_appropriate(img):
+                                clean_images.append(img)
         
         clean_images = list(dict.fromkeys(clean_images))
         
@@ -1132,8 +1164,9 @@ def search_pexels(query):
                 random.shuffle(photos)
                 for photo in photos:
                     url = photo["src"]["large"]
-                    if is_asian_photo(url) and is_age_appropriate(url):
-                        return url
+                    if not is_child_photo(url):
+                        if is_asian_photo(url) and is_age_appropriate(url):
+                            return url
         
         return None
         
@@ -1172,6 +1205,9 @@ def get_random_photo():
                 photo = search_func(query)
                 
                 if photo and photo not in history:
+                    if is_child_photo(photo):
+                        continue
+                    
                     if not is_asian_photo(photo):
                         continue
                     
@@ -1200,7 +1236,7 @@ def get_random_photo():
         for source_name, search_func in search_functions:
             try:
                 photo = search_func(query)
-                if photo and is_asian_photo(photo) and is_age_appropriate(photo):
+                if photo and not is_child_photo(photo) and is_asian_photo(photo) and is_age_appropriate(photo):
                     history.append(photo)
                     save_history(history)
                     logger.info(f"Найдено фото после очистки: {photo[:60]}...")
@@ -1454,6 +1490,10 @@ async def send_post(chat_id, photo_url=None, caption=None):
         
         if not photo_url:
             logger.error("Не удалось найти фото")
+            return False
+        
+        if is_child_photo(photo_url):
+            logger.warning(f"Фото содержит ребёнка: {photo_url[:60]}...")
             return False
         
         if not is_asian_photo(photo_url):
@@ -1818,14 +1858,14 @@ async def set_price(message: Message):
                 f"💰 Текущая цена рассылки: {current_price} ⭐ звёзд\n\n"
                 f"Чтобы изменить, напишите:\n"
                 f"/price 10\n\n"
-                f"Цена должна быть от 1 до 100 звёзд."
+                f"Цена должна быть от 1 до 1000 звёзд."
             )
             return
         
         try:
             price = int(args)
-            if price < 1 or price > 100:
-                await message.answer("❌ Цена должна быть от 1 до 100 звёзд.")
+            if price < 1 or price > 1000:
+                await message.answer("❌ Цена должна быть от 1 до 1000 звёзд.")
                 return
             
             save_broadcast_price(price)
@@ -1842,7 +1882,7 @@ async def set_price(message: Message):
         logger.error(f"Ошибка в команде price: {e}")
         await message.answer("❌ Произошла ошибка. Попробуйте позже.")
 
-# ===== КОМАНДА /BROADCAST В ГРУППОВОМ ЧАТЕ =====
+# ===== КОМАНДА /BROADCAST В ЛИЧНЫХ СООБЩЕНИЯХ =====
 
 # Хранилище для данных broadcast
 broadcast_data = {}
@@ -1852,11 +1892,11 @@ pending_broadcasts = {}
 
 @dp.message(Command("broadcast"))
 async def broadcast_command(message: Message):
-    """Команда для отправки сообщения всем пользователям за звёзды (работает в группе)"""
+    """Команда для отправки сообщения всем пользователям за звёзды (только в личных сообщениях)"""
     try:
-        # Проверяем, что команда вызвана в правильной группе
-        if message.chat.id != BROADCAST_GROUP_ID:
-            await message.answer("ℹ️ Эта команда работает только в специальной группе.")
+        # Проверяем, что команда вызвана в личных сообщениях
+        if message.chat.type != "private":
+            await message.answer("ℹ️ Эта команда работает только в личных сообщениях с ботом.")
             return
         
         user_id = message.from_user.id
@@ -1870,8 +1910,7 @@ async def broadcast_command(message: Message):
             await message.answer(
                 f"📢 Чтобы отправить сообщение всем подписчикам, напишите:\n"
                 f"/broadcast Ваше сообщение\n\n"
-                f"⭐ Стоимость: {current_price} звёзд\n"
-                f"💰 Средства поступят на счёт канала\n\n"
+                f"⭐ Стоимость: {current_price} звёзд\n\n"
                 f"После оплаты сообщение будет отправлено на модерацию."
             )
             return
@@ -2193,7 +2232,7 @@ async def start(msg: Message):
             f"{channel_status}\n"
             f"🔄 /photo - получить фото сейчас\n"
             f"⏰ /schedule - изменить расписание\n"
-            f"📢 /broadcast - отправить сообщение всем (⭐ {current_price} звёзд)\n"
+            f"📢 /broadcast - отправить сообщение всем (⭐ {current_price} звёзд) - только в ЛС\n"
             f"🛑 /stop - отписаться"
         )
     except Exception as e:
@@ -2509,9 +2548,6 @@ async def forward_all_messages_to_owner(message: Message):
                 })
                 logger.info(f"Медиа добавлено в очередь владельца (очередь: {len(owner_message_queue)})")
             
-            # Пересылаем само медиа отдельно (если нужно)
-            # Но для упрощения - просто уведомление
-            
     except Exception as e:
         logger.error(f"Ошибка пересылки сообщения владельцу: {e}")
 
@@ -2590,11 +2626,12 @@ async def main():
         logger.info(f"Владелец: {OWNER_ID if OWNER_ID else '❌ не задан'}")
         current_price = load_broadcast_price()
         logger.info(f"⭐ Цена broadcast: {current_price} звёзд")
-        logger.info(f"📢 Группа broadcast: {BROADCAST_GROUP_ID}")
         logger.info(f"💰 Получатель звёзд: {STARS_CHANNEL_ID}")
         logger.info("Азиатские девушки | 18-30 лет | Модерация включена")
+        logger.info("🚫 Детские фото исключены")
         logger.info(f"📨 Сообщения владельцу отправляются с интервалом 1 минута")
         logger.info(f"📊 Посты в канал не чаще 1 раза в {MIN_POST_INTERVAL // 3600} часа (случайное время)")
+        logger.info("📢 /broadcast - только в личных сообщениях")
         
         await task_queue.connect()
         logger.info("=" * 60)
