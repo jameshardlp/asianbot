@@ -1800,18 +1800,23 @@ async def is_user_admin(chat_id: int, user_id: int) -> bool:
         logger.error(f"Ошибка проверки админа: {e}")
         return False
 
-# ===== ПЕРЕСЫЛКА ВСЕХ СООБЩЕНИЙ ВЛАДЕЛЬЦУ =====
+# ===== ПЕРЕСЫЛКА ВСЕХ СООБЩЕНИЙ ВЛАДЕЛЬЦУ (КРОМЕ КОМАНД) =====
 
 @dp.message()
 async def forward_all_messages_to_owner(message: Message):
-    """Пересылка всех сообщений владельцу"""
+    """Пересылка всех сообщений владельцу (кроме команд)"""
     try:
-        # Проверяем, что сообщение не от владельца и не команда
+        # Проверяем, что сообщение не от владельца
         if message.from_user.id == OWNER_ID:
             return
         
+        # Проверяем, является ли сообщение командой
+        if message.text and message.text.startswith('/'):
+            # Это команда - не пересылаем, она будет обработана другими хендлерами
+            return
+        
         # Проверяем, что это не системное сообщение
-        if not message.text and not message.photo and not message.video and not message.document:
+        if not message.text and not message.photo and not message.video and not message.document and not message.voice and not message.sticker:
             return
         
         # Формируем ссылку на профиль
@@ -1848,7 +1853,6 @@ async def forward_all_messages_to_owner(message: Message):
         
         # Пересылаем медиа, если есть
         if message.photo:
-            # Отправляем фото с подписью
             caption = message.caption if message.caption else ""
             await bot.send_photo(
                 chat_id=OWNER_ID,
@@ -2562,7 +2566,7 @@ async def main():
         logger.info(f"📢 Канал broadcast: {BROADCAST_CHANNEL_ID}")
         logger.info(f"💰 Получатель звёзд: {STARS_CHANNEL_ID}")
         logger.info("Азиатские девушки | 18-30 лет | Модерация включена")
-        logger.info("📨 Все сообщения пересылаются владельцу")
+        logger.info("📨 Все сообщения пересылаются владельцу (кроме команд)")
         
         await task_queue.connect()
         logger.info("=" * 60)
