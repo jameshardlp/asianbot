@@ -33,7 +33,7 @@ except ImportError:
 # Для Telegram
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
-from aiogram.types import Message, ChatMember, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from aiogram.types import Message, ChatMember, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, PreCheckoutQuery, LabeledPrice, MessageEntity
 from aiogram.exceptions import TelegramConflictError, TelegramAPIError
 
 # ===== КОНФИГУРАЦИЯ =====
@@ -41,6 +41,11 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 CHANNEL_ID = os.getenv("CHANNEL_ID")
 OWNER_ID = int(os.getenv("OWNER_ID", 0))
+
+# Настройки для Stars
+STARS_CHANNEL_ID = 1361723521  # Получатель звёзд
+BROADCAST_CHANNEL_ID = -1003988169576  # Канал для команды broadcast
+BROADCAST_PRICE_FILE = "broadcast_price.json"  # Файл для хранения цены
 
 # Redis настройки (опционально)
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
@@ -68,11 +73,33 @@ USERS_FILE = "users.json"
 HISTORY_FILE = "history.json"
 SCHEDULE_FILE = "schedule.json"
 
+# ===== РАБОТА С ЦЕНОЙ =====
+
+def load_broadcast_price() -> int:
+    """Загружает цену из файла"""
+    try:
+        with open(BROADCAST_PRICE_FILE, "r") as f:
+            data = json.load(f)
+            return data.get("price", 5)
+    except:
+        return 5
+
+def save_broadcast_price(price: int):
+    """Сохраняет цену в файл"""
+    try:
+        with open(BROADCAST_PRICE_FILE, "w") as f:
+            json.dump({"price": price}, f)
+        return True
+    except:
+        return False
+
+broadcast_price = load_broadcast_price()
+
 # ===== РАСШИРЕННЫЕ СПИСКИ КЛЮЧЕВЫХ СЛОВ =====
 
 # Азиатские страны и национальности
 ASIAN_KEYWORDS = [
-    'asian', 'japanese', 'korean', 'chinese', 'thai', 'vietnamese', 
+    'asian', 'japanese', 'korean', 'chinese', 'thai', 'vietnamese',
     'filipino', 'indonesian', 'malaysian', 'singaporean', 'taiwanese',
     'mongolian', 'burmese', 'cambodian', 'laotian', 'east asian',
     'south east asian', 'oriental', 'asia girl', 'asia woman',
@@ -135,7 +162,6 @@ TRADITIONAL_EXCLUDE = [
 
 # ===== ПОИСКОВЫЕ ЗАПРОСЫ (улучшенные) =====
 SEARCH_QUERIES = [
-    # Японки
     "japanese girl casual selfie 20",
     "japanese woman everyday life 20s",
     "japanese girl instagram photo 20",
@@ -149,8 +175,6 @@ SEARCH_QUERIES = [
     "japanese college girl 20",
     "japanese university student 20",
     "japanese girl 20s portrait",
-    
-    # Китаянки
     "chinese girl casual selfie 20",
     "chinese woman everyday life 20s",
     "chinese girl instagram photo 20",
@@ -163,8 +187,6 @@ SEARCH_QUERIES = [
     "chinese woman modern outfit 20",
     "chinese college girl 20",
     "chinese university student 20",
-    
-    # Кореянки
     "korean girl casual selfie 20",
     "korean woman everyday life 20s",
     "korean girl instagram photo 20",
@@ -177,8 +199,6 @@ SEARCH_QUERIES = [
     "korean woman modern style 20",
     "korean college girl 20",
     "korean university student 20",
-    
-    # Тайки
     "thai girl casual selfie 20",
     "thai woman everyday life 20s",
     "thai girl instagram photo 20",
@@ -191,8 +211,6 @@ SEARCH_QUERIES = [
     "thai woman modern dress 20",
     "thai college girl 20",
     "thai university student 20",
-    
-    # Общие с уточнением
     "asian girl 20 years old instagram",
     "east asian woman 20s casual",
     "southeast asian girl 20s photo",
@@ -213,49 +231,37 @@ FITNESS_QUERIES = [
 # ===== УЛУЧШЕННАЯ ФИЛЬТРАЦИЯ =====
 
 def is_asian_photo(url: str, additional_context: str = "") -> bool:
-    """
-    Улучшенная проверка на азиатскую внешность
-    Проверяет несколько источников: URL, описание, метаданные
-    """
     if not url:
         return False
     
-    # Объединяем все источники для проверки
     text_to_check = url.lower()
     if additional_context:
         text_to_check += " " + additional_context.lower()
     
-    # 1. Проверка на явные указания азиатского происхождения
     for keyword in ASIAN_KEYWORDS:
         if keyword in text_to_check:
             return True
     
-    # 2. Проверка на исключения (не азиатки)
     for keyword in NON_ASIAN_KEYWORDS:
         if keyword in text_to_check:
             return False
     
-    # 3. Проверка на наличие азиатских имен
     for name in ASIAN_NAMES:
         if name in text_to_check:
             return True
     
-    # 4. Проверка на возраст (для азиаток часто указывают возраст)
     has_age = False
     for pattern in AGE_POSITIVE_KEYWORDS:
         if pattern in text_to_check:
             has_age = True
             break
     
-    # Если есть возраст, но нет явных признаков не-азиатки - считаем азиаткой
     if has_age:
-        # Но проверяем, что нет явных признаков европейской внешности
         for keyword in ['blonde', 'blue eyes', 'green eyes', 'redhead', 'ginger']:
             if keyword in text_to_check:
                 return False
         return True
     
-    # 5. Проверка на типичные азиатские черты в описании
     asian_features = [
         'slender', 'petite', 'olive skin', 'dark hair', 'black hair',
         'straight hair', 'bangs', 'double eyelid', 'monolid',
@@ -267,36 +273,29 @@ def is_asian_photo(url: str, additional_context: str = "") -> bool:
         if feature in text_to_check:
             return True
     
-    # 6. Проверка на азиатские домены или источники
     asian_domains = ['.jp', '.kr', '.cn', '.tw', '.hk', '.mo', '.sg', '.th', '.vn', '.ph', '.my', '.id']
     for domain in asian_domains:
         if domain in url.lower():
             return True
     
-    # Если ничего не найдено - считаем, что фото не азиатское
     return False
 
 def is_age_appropriate(url: str) -> bool:
-    """Проверка на подходящий возраст"""
     if not url:
         return False
     
     url_lower = url.lower()
     
-    # Проверяем наличие указания возраста
     for word in AGE_POSITIVE_KEYWORDS:
         if word in url_lower:
             return True
     
-    # Проверяем паттерны возраста
     if re.search(r'\b(age|years?|yo|y/o)\b', url_lower, re.IGNORECASE):
         for word in AGE_POSITIVE_KEYWORDS:
             if word in url_lower:
                 return True
         return False
     
-    # Если возраст не указан - считаем, что подходит (но не для всех)
-    # Проверяем, что нет явных признаков детей или пожилых
     if 'child' in url_lower or 'kid' in url_lower or 'baby' in url_lower:
         return False
     
@@ -306,7 +305,6 @@ def is_age_appropriate(url: str) -> bool:
     return True
 
 def is_traditional_clothing(url: str) -> bool:
-    """Проверка на традиционную одежду"""
     if not url:
         return False
     
@@ -315,33 +313,24 @@ def is_traditional_clothing(url: str) -> bool:
         if word in url_lower:
             return True
     
-    # Дополнительная проверка
     if 'traditional dress' in url_lower or 'folk costume' in url_lower:
         return True
     
     return False
 
 def is_photo_acceptable(url: str, additional_context: str = "") -> Tuple[bool, str]:
-    """
-    Улучшенная проверка на допустимость фото
-    Возвращает: (допустимо, причина)
-    """
     if not url:
         return False, "Пустой URL"
     
-    # Проверяем, что это фото азиатки
     if not is_asian_photo(url, additional_context):
         return False, "Не азиатская внешность"
     
-    # Проверяем возраст
     if not is_age_appropriate(url):
         return False, "Возраст не подходит"
     
-    # Проверяем на традиционную одежду
     if is_traditional_clothing(url):
         return False, "Традиционная одежда"
     
-    # Проверяем на нежелательные темы
     unwanted = ['naked', 'nude', 'porn', 'xxx', 'sex', 'erotic', 'bikini']
     for word in unwanted:
         if word in url.lower():
@@ -349,7 +338,7 @@ def is_photo_acceptable(url: str, additional_context: str = "") -> Tuple[bool, s
     
     return True, "OK"
 
-# ===== СТИЛИ ДЛЯ ГЕНЕРАЦИИ (ОБНОВЛЕННЫЕ) =====
+# ===== СТИЛИ ДЛЯ ГЕНЕРАЦИИ (С ШУТКАМИ) =====
 style_prompts = {
     'everyday': """
 Ты — Анатолий, холостой блогер средних лет, который много путешествует по Азии.
@@ -365,6 +354,7 @@ style_prompts = {
 - Всегда сначала действие, потом размышления.
 - Главный объект самоиронии — ты сам. Ты часто оказываешься в неловких ситуациях.
 - Юмор строится на иронии над собой и ситуациях, где ты выглядишь глупо.
+- Добавляй одну острую шутку в стиле @Maddysontg — не оскорбительную, с юмором, может содержать мат. Шути про себя или про жизнь, но без политики.
 - Пишешь живым разговорным языком, будто рассказываешь историю друзьям.
 
 Напиши пост про реальную ситуацию в Азии, где ты попал в неловкое положение.
@@ -378,6 +368,7 @@ style_prompts = {
 Требования:
 - 700-900 символов
 - Мат 1-2 раза (бля, сука, пиздец), только как эмоция
+- Одна острая шутка в стиле @Maddysontg
 - Обращайся к читателям на "вы"
 - Не упоминай жену
 - Не используй штампы
@@ -391,6 +382,7 @@ style_prompts = {
 - Рассказываешь смешные истории из жизни в Азии
 - Главный объект шуток — ты сам и твои неловкие ситуации
 - Юмор самоироничный, без оскорблений других
+- Добавляй одну острую шутку в стиле @Maddysontg
 - Пишешь живым языком, как рассказываешь друзьям
 
 Напиши смешной пост про свою жизнь в Азии.
@@ -404,6 +396,7 @@ style_prompts = {
 Требования:
 - 700-900 символов
 - Мат 1-2 раза
+- Одна острая шутка
 - Обращайся к читателям на "вы"
 - Пиши только готовый пост
 """,
@@ -415,6 +408,7 @@ style_prompts = {
 - Рассказываешь о своих чувствах с самоиронией
 - Немного романтики, но с юмором
 - Честно говоришь о своих недостатках
+- Добавляй одну острую шутку в стиле @Maddysontg (про себя, не про девушку)
 - Пишешь тепло, но без пафоса
 
 Напиши романтичный пост о встрече с азиаткой.
@@ -428,6 +422,7 @@ style_prompts = {
 Требования:
 - 700-900 символов
 - Мат 1-2 раза
+- Одна острая шутка
 - Обращайся к читателям на "вы"
 - Пиши только готовый пост
 """,
@@ -439,6 +434,7 @@ style_prompts = {
 - Рассказываешь о том, чему завидуешь, с юмором
 - Самоирония над своей жизнью
 - Честно и смешно о своих желаниях
+- Добавляй одну острую шутку в стиле @Maddysontg
 - Пишешь живо и увлекательно
 
 Напиши пост о том, чему ты завидуешь в Азии.
@@ -452,6 +448,34 @@ style_prompts = {
 Требования:
 - 700-900 символов
 - Мат 1-2 раза
+- Одна острая шутка
+- Обращайся к читателям на "вы"
+- Пиши только готовый пост
+""",
+
+    'joke': """
+Ты — Анатолий, холостой блогер средних лет, в очках, с короткой стрижкой и щетиной.
+
+Твой стиль:
+- Твои посты — это 70% шуток и 30% жизненных наблюдений
+- Ты можешь пошутить про себя, про других, про жизнь в Азии
+- Шутки острые, но не оскорбительные, без политики
+- Можно использовать мат для усиления эффекта
+- Главное — смешно и честно
+- Пишешь так, будто рассказываешь историю в баре
+
+Напиши пост с острой шуткой про жизнь в Азии.
+
+Структура:
+1. Жизненная ситуация
+2. Острая шутка (в стиле @Maddysontg)
+3. Развитие ситуации
+4. Ещё одна шутка или ироничный вывод
+
+Требования:
+- 700-900 символов
+- Мат 1-3 раза
+- 2-3 шутки, одна из них острая
 - Обращайся к читателям на "вы"
 - Пиши только готовый пост
 """,
@@ -783,11 +807,13 @@ def complete_truncated_text(content: str, finish_reason: str) -> str:
 
 def get_fallback_caption() -> str:
     fallbacks = [
-        "Вчера в Бангкоке ко мне подошла стайка тайских девчонок и попросила сфоткаться. Я, бля, сразу расправил плечи - ну, думаю, наконец-то заметили мой шарм, мои очки, мою щетину, харизму. Делаю serious face, как будто я важный чел. А они визжат, тычут пальцами. И тут одна тянет мой телефон, начинает листать и показывает на фото какого-то китайского блогера с двумя миллионами подписчиков. Оказалось, я просто попал в кадр, потому что стоял на том же месте, где он снимал своё видосик. Стою, улыбаюсь, а в голове: \"Анатолий, ну ты и дурак, опять повёлся\". Ну и ладно, зато теперь я типа знаменит локально - сегодня меня уже трижды окликнули \"эй, Толик!\" на базаре. Вывод один: слава - это когда тебя путают с другим, но ты всё равно рад, что хоть с кем-то перепутали. И это пиздец как греет душу, честно вам скажу.",
+        "Вчера в Бангкоке ко мне подошла стайка тайских девчонок и попросила сфоткаться. Я, бля, сразу расправил плечи - ну, думаю, наконец-то заметили мой шарм, мои очки, мою щетину, харизму. Делаю serious face, как будто я важный чел. А они визжат, тычут пальцами. И тут одна тянет мой телефон, начинает листать и показывает на фото какого-то китайского блогера с двумя миллионами подписчиков. Оказалось, я просто попал в кадр, потому что стоял на том же месте, где он снимал своё видосик. Стою, улыбаюсь, а в голове: Анатолий, ну ты и дурак, опять повёлся. Ну и ладно, зато теперь я типа знаменит локально - сегодня меня уже трижды окликнули эй, Толик! на базаре. Вывод один: слава - это когда тебя путают с другим, но ты всё равно рад, что хоть с кем-то перепутали. И это пиздец как греет душу, честно вам скажу.",
         
-        "Сижу в кафе в Чиангмае, пью кофе, поправляю очки, смотрю на прохожих. Вдруг подходит местная девушка и говорит: \"Вы тот самый блогер?\" Я, сука, сразу напрягся, думаю - неужели узнали? А она показывает на мою футболку с логотипом какой-то группы и говорит, что ей нравится их музыка. Оказалось, она думала, что я участник группы. Я даже не стал её разочаровывать - улыбнулся, сфоткался с ней и пошёл дальше. Теперь я официально музыкант. Хотя на гитаре играю только в голове. Но знаете, приятно, когда тебя замечают, даже если по ошибке. Вот так и живём, ребята.",
+        "Сижу в кафе в Чиангмае, пью кофе, поправляю очки, смотрю на прохожих. Вдруг подходит местная девушка и говорит: Вы тот самый блогер? Я, сука, сразу напрягся, думаю - неужели узнали? А она показывает на мою футболку с логотипом какой-то группы и говорит, что ей нравится их музыка. Оказалось, она думала, что я участник группы. Я даже не стал её разочаровывать - улыбнулся, сфоткался с ней и пошёл дальше. Теперь я официально музыкант. Хотя на гитаре играю только в голове. Но знаете, приятно, когда тебя замечают, даже если по ошибке. Вот так и живём, ребята.",
         
-        "Вчера на рынке в Бангкоке продавщица назвала меня \"красивый иностранный мужчина\". Я, бля, чуть не подавился соком. Поправил очки, расправил плечи, уже приготовился торговаться с чувством собственного достоинства. А она оказалась просто вежливая - так она всех мужиков называет, чтобы цену набить. Но осадочек остался, приятный такой. Домой пришёл, в зеркало посмотрел - ну вроде ничего, щетина, очки, харизма. Наверное, я всё-таки красавчик, просто в этом городе слишком много настоящих красавчиков. Но мы не сдаёмся, коллеги!"
+        "Вчера на рынке в Бангкоке продавщица назвала меня красивым иностранным мужчиной. Я, бля, чуть не подавился соком. Поправил очки, расправил плечи, уже приготовился торговаться с чувством собственного достоинства. А она оказалась просто вежливая - так она всех мужиков называет, чтобы цену набить. Но осадочек остался, приятный такой. Домой пришёл, в зеркало посмотрел - ну вроде ничего, щетина, очки, харизма. Наверное, я всё-таки красавчик, просто в этом городе слишком много настоящих красавчиков. Но мы не сдаёмся, коллеги!",
+        
+        "Тайские девушки - это отдельный вид искусства. Вчера одна сказала мне: Ты такой забавный, как мой папа. Я, бля, чуть кофе не поперхнулся. Поправил очки, щетину погладил, думаю - ну всё, старость пришла. А она потом говорит: Это комплимент, папа у меня крутой! Ну ладно, тогда норм. Буду теперь гордо носить звание папик в Таиланде. Хотя, сука, обидно было первые пять секунд.",
     ]
     return random.choice(fallbacks)
 
@@ -804,15 +830,20 @@ def generate_caption() -> str:
             return validated
         return clean_text(truncate_by_sentences(get_fallback_caption()))
     
-    style = random.choice(['everyday', 'funny', 'romantic', 'envy'])
+    # 50% шанс выбрать стиль с шутками
+    if random.random() < 0.5:
+        style = 'joke'
+    else:
+        style = random.choice(['everyday', 'funny', 'romantic', 'envy'])
     
     prompt = style_prompts.get(style, style_prompts['funny'])
     prompt += "\n\nТвой ответ (ТОЛЬКО ПОСТ, БЕЗ РАССУЖДЕНИЙ):"
     
     alternative_prompts = [
-        "Напиши пост о своей жизни в Азии. 700-900 символов. ЗАКОНЧИ ВЫВОДОМ.",
-        "Напиши историю из жизни в Азии. 700-900 символов. ЗАКОНЧИ ВЫВОДОМ.",
-        "Напиши забавную ситуацию из Азии. 700-900 символов. ЗАКОНЧИ ВЫВОДОМ.",
+        "Напиши пост о своей жизни в Азии. Добавь острую шутку. 700-900 символов. ЗАКОНЧИ ВЫВОДОМ.",
+        "Напиши историю из жизни в Азии с юмором. 700-900 символов. ЗАКОНЧИ ВЫВОДОМ.",
+        "Напиши забавную ситуацию из Азии с шуткой. 700-900 символов. ЗАКОНЧИ ВЫВОДОМ.",
+        "Расскажи смешную историю из Азии, пошути про себя. 700-900 символов.",
     ]
     
     for attempt in range(5):
@@ -831,7 +862,14 @@ def generate_caption() -> str:
             data = {
                 "model": "deepseek-v4-flash",
                 "messages": [
-                    {"role": "system", "content": """Ты — Анатолий, холостой блогер средних лет в очках, с короткой стрижкой и небольшой щетиной. Ты путешествуешь по Азии и ведёшь блог от своего лица. Твой стиль - самоирония, сарказм, рассказываешь реальные истории из жизни. 
+                    {"role": "system", "content": """Ты — Анатолий, холостой блогер средних лет в очках, с короткой стрижкой и небольшой щетиной. Ты путешествуешь по Азии и ведёшь блог от своего лица.
+
+Твой стиль:
+- Самоирония и сарказм
+- Рассказываешь реальные истории из жизни
+- Можешь добавить острую шутку в стиле @Maddysontg — не оскорбительную, с юмором, может содержать мат
+- Шути про себя или про жизнь, но без политики
+- Пиши так, будто рассказываешь друзьям в баре
 
 Важно:
 - Ты носишь очки
@@ -845,6 +883,7 @@ def generate_caption() -> str:
 - Не упоминай жену
 - Не используй штампы
 - Обязательно заверши мысль - естественный вывод, не мораль
+- Если пишешь шутку — она должна быть острой, но не оскорбительной
 - Отвечай ТОЛЬКО готовым постом. БЕЗ РАССУЖДЕНИЙ. Только текст поста."""},
                     {"role": "user", "content": current_prompt}
                 ],
@@ -913,10 +952,9 @@ def generate_caption() -> str:
         return validated
     return clean_text(get_fallback_caption())
 
-# ===== УЛУЧШЕННЫЙ ПОИСК ФОТО =====
+# ===== ПОИСК ФОТО =====
 
 def search_bing(query):
-    """Поиск с двойной проверкой на азиатскую внешность"""
     if not query:
         return None
     
@@ -932,7 +970,6 @@ def search_bing(query):
         
         response = requests.get(url, headers=headers, timeout=15)
         
-        # Ищем все возможные URL
         patterns = [
             r'"murl":"([^"]+)"',
             r'"mediaurl":"([^"]+)"',
@@ -949,24 +986,20 @@ def search_bing(query):
         for img in images:
             img = img.replace('\\u0026', '&').replace('\\/', '/')
             
-            # Базовые проверки
             if not any(ext in img.lower() for ext in ['.jpg', '.jpeg', '.png', '.webp']):
                 continue
             
             if any(x in img.lower() for x in ['gstatic', 'google', 'favicon', 'logo', 'bing', 'avatar']):
                 continue
             
-            # Проверяем, что фото азиатской внешности
             if not is_asian_photo(img):
                 continue
             
-            # Проверяем возраст
             if not is_age_appropriate(img):
                 continue
             
             clean_images.append(img)
         
-        # Если есть фото - возвращаем
         if clean_images:
             clean_images = list(dict.fromkeys(clean_images))
             return random.choice(clean_images)
@@ -1131,30 +1164,23 @@ def get_random_photo():
         ('Pexels', search_pexels),
     ]
     
-    # Проверяем несколько запросов для каждого источника
     for query in queries:
         for source_name, search_func in search_functions:
             try:
                 logger.info(f"Поиск в {source_name}: {query}")
                 
-                # Пробуем найти фото
                 photo = search_func(query)
                 
-                # Двойная проверка
                 if photo and photo not in history:
-                    # Проверяем, что это действительно азиатка
                     if not is_asian_photo(photo):
                         continue
                     
-                    # Проверяем возраст
                     if not is_age_appropriate(photo):
                         continue
                     
-                    # Проверяем традиционную одежду
                     if is_traditional_clothing(photo):
                         continue
                     
-                    # Все проверки пройдены
                     history.append(photo)
                     save_history(history)
                     logger.info(f"Найдено подходящее фото: {photo[:60]}...")
@@ -1170,7 +1196,6 @@ def get_random_photo():
     history = []
     save_history(history)
     
-    # Повторяем поиск с очищенной историей
     for query in queries[:10]:
         for source_name, search_func in search_functions:
             try:
@@ -1773,6 +1798,393 @@ async def is_user_admin(chat_id: int, user_id: int) -> bool:
         logger.error(f"Ошибка проверки админа: {e}")
         return False
 
+# ===== ПЕРЕСЫЛКА ВСЕХ СООБЩЕНИЙ ВЛАДЕЛЬЦУ =====
+
+@dp.message()
+async def forward_all_messages_to_owner(message: Message):
+    """Пересылка всех сообщений владельцу"""
+    try:
+        # Проверяем, что сообщение не от владельца и не команда
+        if message.from_user.id == OWNER_ID:
+            return
+        
+        # Проверяем, что это не системное сообщение
+        if not message.text and not message.photo and not message.video and not message.document:
+            return
+        
+        # Формируем ссылку на профиль
+        user = message.from_user
+        if user.username:
+            user_link = f"@{user.username}"
+            user_url = f"https://t.me/{user.username}"
+        else:
+            user_link = f"[{user.first_name}](tg://user?id={user.id})"
+            user_url = f"tg://user?id={user.id}"
+        
+        # Формируем текст сообщения для владельца
+        chat_info = f"📨 Новое сообщение от пользователя\n\n"
+        chat_info += f"👤 Имя: {user.first_name}"
+        if user.last_name:
+            chat_info += f" {user.last_name}"
+        chat_info += f"\n"
+        chat_info += f"🆔 ID: {user.id}\n"
+        chat_info += f"🔗 Ссылка: {user_link}\n"
+        chat_info += f"📱 URL: {user_url}\n"
+        
+        if message.chat.type != "private":
+            chat_info += f"📢 Чат: {message.chat.title} (ID: {message.chat.id})\n"
+        
+        chat_info += f"\n📝 Сообщение:\n"
+        
+        # Отправляем текст сообщения
+        if message.text:
+            text_preview = message.text[:500] + "..." if len(message.text) > 500 else message.text
+            await bot.send_message(
+                chat_id=OWNER_ID,
+                text=chat_info + text_preview
+            )
+        
+        # Пересылаем медиа, если есть
+        if message.photo:
+            # Отправляем фото с подписью
+            caption = message.caption if message.caption else ""
+            await bot.send_photo(
+                chat_id=OWNER_ID,
+                photo=message.photo[-1].file_id,
+                caption=f"{chat_info}\n📸 Фото: {caption[:200] if caption else 'Без подписи'}"
+            )
+        elif message.video:
+            await bot.send_video(
+                chat_id=OWNER_ID,
+                video=message.video.file_id,
+                caption=f"{chat_info}\n🎬 Видео"
+            )
+        elif message.document:
+            await bot.send_document(
+                chat_id=OWNER_ID,
+                document=message.document.file_id,
+                caption=f"{chat_info}\n📄 Документ: {message.document.file_name}"
+            )
+        elif message.voice:
+            await bot.send_voice(
+                chat_id=OWNER_ID,
+                voice=message.voice.file_id,
+                caption=f"{chat_info}\n🎙️ Голосовое"
+            )
+        elif message.sticker:
+            await bot.send_sticker(
+                chat_id=OWNER_ID,
+                sticker=message.sticker.file_id
+            )
+            await bot.send_message(
+                chat_id=OWNER_ID,
+                text=f"{chat_info}\n🎨 Стикер"
+            )
+            
+    except Exception as e:
+        logger.error(f"Ошибка пересылки сообщения владельцу: {e}")
+
+# ===== КОМАНДА /PRICE (ТОЛЬКО ДЛЯ ВЛАДЕЛЬЦА) =====
+
+@dp.message(Command("price"))
+async def set_price(message: Message):
+    """Установка цены за рассылку (только для владельца)"""
+    try:
+        if message.from_user.id != OWNER_ID:
+            await message.answer("⛔ Доступ запрещён. Только для владельца.")
+            return
+        
+        args = message.text.replace("/price", "").strip()
+        
+        if not args:
+            current_price = load_broadcast_price()
+            await message.answer(
+                f"💰 Текущая цена рассылки: {current_price} ⭐ звёзд\n\n"
+                f"Чтобы изменить, напишите:\n"
+                f"/price 10\n\n"
+                f"Цена должна быть от 1 до 100 звёзд."
+            )
+            return
+        
+        try:
+            price = int(args)
+            if price < 1 or price > 100:
+                await message.answer("❌ Цена должна быть от 1 до 100 звёзд.")
+                return
+            
+            save_broadcast_price(price)
+            global broadcast_price
+            broadcast_price = price
+            
+            await message.answer(f"✅ Цена рассылки установлена: {price} ⭐ звёзд")
+            logger.info(f"Цена рассылки изменена на {price} звёзд")
+            
+        except ValueError:
+            await message.answer("❌ Введите число. Пример: /price 10")
+            
+    except Exception as e:
+        logger.error(f"Ошибка в команде price: {e}")
+        await message.answer("❌ Произошла ошибка. Попробуйте позже.")
+
+# ===== КОМАНДА /BROADCAST С ОПЛАТОЙ ЗВЁЗДАМИ =====
+
+# Хранилище для данных broadcast
+broadcast_data = {}
+
+# Хранилище для ожидающих модерации broadcast сообщений
+pending_broadcasts = {}
+
+@dp.message(Command("broadcast"))
+async def broadcast_command(message: Message):
+    """Команда для отправки сообщения всем пользователям за звёзды"""
+    try:
+        # Проверяем, что команда вызвана в правильном канале
+        if message.chat.id != BROADCAST_CHANNEL_ID:
+            await message.answer("ℹ️ Эта команда работает только в специальном канале.")
+            return
+        
+        user_id = message.from_user.id
+        chat_id = message.chat.id
+        
+        # Получаем текст после команды
+        text = message.text.replace("/broadcast", "").strip()
+        
+        if not text:
+            current_price = load_broadcast_price()
+            await message.answer(
+                f"📢 Чтобы отправить сообщение всем подписчикам, напишите:\n"
+                f"/broadcast Ваше сообщение\n\n"
+                f"⭐ Стоимость: {current_price} звёзд\n"
+                f"💰 Средства поступят на счёт канала\n\n"
+                f"После оплаты сообщение будет отправлено на модерацию."
+            )
+            return
+        
+        # Создаём инвойс для оплаты звёздами
+        current_price = load_broadcast_price()
+        prices = [LabeledPrice(label="⭐ Рассылка", amount=current_price)]
+        
+        # Отправляем счет на оплату
+        await bot.send_invoice(
+            chat_id=chat_id,
+            title="📢 Рассылка сообщения",
+            description=f"Отправка сообщения всем подписчикам бота\n\nТекст: {text[:100]}{'...' if len(text) > 100 else ''}",
+            payload=f"broadcast_{user_id}_{int(time.time())}",
+            provider_token="",
+            currency="XTR",
+            prices=prices,
+            start_parameter="broadcast",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text=f"⭐ Оплатить {current_price} звёзд", pay=True)]
+            ])
+        )
+        
+        # Сохраняем текст для последующей отправки
+        broadcast_data[user_id] = {
+            'text': text,
+            'timestamp': time.time(),
+            'chat_id': chat_id,
+            'user_id': user_id
+        }
+        
+    except Exception as e:
+        logger.error(f"Ошибка в команде broadcast: {e}")
+        await message.answer("❌ Произошла ошибка. Попробуйте позже.")
+
+@dp.pre_checkout_query()
+async def process_pre_checkout_query(pre_checkout_query: PreCheckoutQuery):
+    """Обработка предварительной проверки платежа"""
+    try:
+        if pre_checkout_query.invoice_payload.startswith("broadcast_"):
+            await bot.answer_pre_checkout_query(pre_checkout_query.id, ok=True)
+        else:
+            await bot.answer_pre_checkout_query(pre_checkout_query.id, ok=False, error_message="Неизвестный платёж")
+    except Exception as e:
+        logger.error(f"Ошибка в pre_checkout: {e}")
+        await bot.answer_pre_checkout_query(pre_checkout_query.id, ok=False, error_message="Ошибка")
+
+@dp.message(lambda message: message.successful_payment is not None)
+async def process_successful_payment(message: Message):
+    """Обработка успешной оплаты"""
+    try:
+        user_id = message.from_user.id
+        payload = message.successful_payment.invoice_payload
+        
+        if not payload.startswith("broadcast_"):
+            return
+        
+        # Получаем сохраненный текст
+        broadcast_info = broadcast_data.get(user_id)
+        if not broadcast_info:
+            await message.answer("❌ Данные о сообщении не найдены. Попробуйте снова.")
+            return
+        
+        text = broadcast_info.get('text', '')
+        if not text:
+            await message.answer("❌ Текст сообщения не найден.")
+            return
+        
+        # Создаём ID для модерации
+        broadcast_id = f"broadcast_{int(time.time())}_{hashlib.md5(text.encode()).hexdigest()[:8]}"
+        
+        # Очищаем данные
+        del broadcast_data[user_id]
+        
+        # Сохраняем в ожидающие модерации
+        pending_broadcasts[broadcast_id] = {
+            'text': text,
+            'user_id': user_id,
+            'timestamp': time.time(),
+            'chat_id': message.chat.id
+        }
+        
+        # Отправляем на модерацию владельцу
+        await send_broadcast_for_moderation(broadcast_id, text, user_id)
+        
+        await message.answer(
+            f"✅ Оплата получена! Сообщение отправлено на модерацию.\n"
+            f"📝 Текст: {text[:100]}{'...' if len(text) > 100 else ''}\n\n"
+            f"⏳ Ожидайте подтверждения от администратора."
+        )
+        
+    except Exception as e:
+        logger.error(f"Ошибка в successful_payment: {e}")
+        await message.answer(f"❌ Ошибка при обработке платежа: {str(e)}")
+
+async def send_broadcast_for_moderation(broadcast_id: str, text: str, user_id: int):
+    """Отправка сообщения на модерацию владельцу"""
+    if not OWNER_ID:
+        return
+    
+    try:
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(text="✅ Подтвердить", callback_data=f"broad_approve_{broadcast_id}"),
+                InlineKeyboardButton(text="❌ Отклонить", callback_data=f"broad_reject_{broadcast_id}")
+            ]
+        ])
+        
+        text_preview = text[:300] + "..." if len(text) > 300 else text
+        
+        await bot.send_message(
+            chat_id=OWNER_ID,
+            text=f"📋 Новая рассылка на модерацию #{broadcast_id}\n\n"
+                 f"📝 Текст:\n{text_preview}\n\n"
+                 f"👤 Заказчик ID: {user_id}\n"
+                 f"💰 Оплачено: {load_broadcast_price()} ⭐\n\n"
+                 f"⏳ После подтверждения будет задержка 5 минут перед публикацией.",
+            reply_markup=keyboard
+        )
+        
+        logger.info(f"Рассылка {broadcast_id} отправлена на модерацию владельцу")
+        
+    except Exception as e:
+        logger.error(f"Ошибка отправки на модерацию: {e}")
+
+@dp.callback_query(lambda c: c.data.startswith('broad_'))
+async def handle_broadcast_moderation(callback: CallbackQuery):
+    """Обработка модерации broadcast сообщений"""
+    try:
+        if callback.from_user.id != OWNER_ID:
+            await callback.answer("⛔ Доступ запрещен", show_alert=True)
+            return
+        
+        parts = callback.data.split('_')
+        action = parts[1]
+        broadcast_id = '_'.join(parts[2:])
+        approved = action == 'approve'
+        
+        if broadcast_id not in pending_broadcasts:
+            await callback.answer("❌ Сообщение не найдено", show_alert=True)
+            return
+        
+        broadcast_info = pending_broadcasts[broadcast_id]
+        
+        if approved:
+            await callback.answer("✅ Сообщение одобрено. Будет опубликовано через 5 минут.", show_alert=True)
+            
+            await callback.message.edit_text(
+                callback.message.text + "\n\n✅ ОДОБРЕНО (будет опубликовано через 5 минут)",
+                reply_markup=None
+            )
+            
+            # Ждём 5 минут
+            await asyncio.sleep(300)
+            
+            if broadcast_id in pending_broadcasts:
+                text = broadcast_info['text']
+                users = load_users()
+                
+                sent_count = 0
+                failed_count = 0
+                
+                for chat_id in users:
+                    try:
+                        await bot.send_message(chat_id=chat_id, text=text)
+                        sent_count += 1
+                        await asyncio.sleep(0.3)
+                    except Exception as e:
+                        logger.error(f"Ошибка отправки в {chat_id}: {e}")
+                        failed_count += 1
+                
+                try:
+                    if CHANNEL_ID and CHANNEL_ID.strip():
+                        await bot.send_message(chat_id=CHANNEL_ID, text=text)
+                        logger.info(f"Отправлено в канал {CHANNEL_ID}")
+                except Exception as e:
+                    logger.error(f"Ошибка отправки в канал: {e}")
+                
+                del pending_broadcasts[broadcast_id]
+                
+                try:
+                    await bot.send_message(
+                        chat_id=OWNER_ID,
+                        text=f"📊 Рассылка #{broadcast_id} завершена!\n"
+                             f"✅ Отправлено: {sent_count}\n"
+                             f"❌ Ошибок: {failed_count}\n"
+                             f"📝 Текст: {text[:200]}{'...' if len(text) > 200 else ''}"
+                    )
+                except Exception as e:
+                    logger.error(f"Ошибка отправки отчета: {e}")
+                
+                try:
+                    user_id = broadcast_info.get('user_id')
+                    if user_id:
+                        await bot.send_message(
+                            chat_id=user_id,
+                            text=f"✅ Ваше сообщение опубликовано!\n"
+                                 f"📨 Отправлено: {sent_count} пользователям\n"
+                                 f"📝 Текст: {text[:100]}{'...' if len(text) > 100 else ''}"
+                        )
+                except Exception as e:
+                    logger.error(f"Ошибка уведомления заказчика: {e}")
+                
+        else:
+            await callback.answer("❌ Сообщение отклонено", show_alert=True)
+            await callback.message.edit_text(
+                callback.message.text + "\n\n❌ ОТКЛОНЕНО",
+                reply_markup=None
+            )
+            
+            try:
+                user_id = broadcast_info.get('user_id')
+                if user_id:
+                    await bot.send_message(
+                        chat_id=user_id,
+                        text="❌ Ваше сообщение отклонено модератором."
+                    )
+            except Exception as e:
+                logger.error(f"Ошибка уведомления заказчика: {e}")
+            
+            if broadcast_id in pending_broadcasts:
+                del pending_broadcasts[broadcast_id]
+        
+    except Exception as e:
+        logger.error(f"Ошибка в broadcast модерации: {e}")
+        await callback.answer("❌ Ошибка", show_alert=True)
+
+# ===== ОСТАЛЬНЫЕ КОМАНДЫ =====
+
 @dp.callback_query(lambda c: c.data.startswith('mod_'))
 async def handle_moderation_callback(callback: CallbackQuery):
     try:
@@ -1856,6 +2268,7 @@ async def start(msg: Message):
         channel_status = f"\n📢 Канал: {'✅ подключён' if CHANNEL_ID and CHANNEL_ID.strip() else '🔄 авто-поиск'}"
         current_schedule = load_schedule()
         times = ", ".join(current_schedule.get("times", ["12:00", "21:00"]))
+        current_price = load_broadcast_price()
         
         await msg.answer(
             f"✅ Вы подписаны на рассылку!\n"
@@ -1864,6 +2277,7 @@ async def start(msg: Message):
             f"{channel_status}\n"
             f"🔄 /photo - получить фото сейчас\n"
             f"⏰ /schedule - изменить расписание\n"
+            f"📢 /broadcast - отправить сообщение всем (⭐ {current_price} звёзд)\n"
             f"🛑 /stop - отписаться"
         )
     except Exception as e:
@@ -1954,6 +2368,7 @@ async def status(msg: Message):
         channel_id = CHANNEL_ID or await get_channel_id()
         current_schedule = load_schedule()
         times = ", ".join(current_schedule.get("times", ["12:00", "21:00"]))
+        current_price = load_broadcast_price()
         
         status_text = (
             f"📊 Статус бота:\n"
@@ -1961,7 +2376,8 @@ async def status(msg: Message):
             f"• Всего подписчиков: {len(users)}\n"
             f"• Фото в истории: {len(history)}\n"
             f"• Расписание: {times}\n"
-            f"• Канал: {'✅ ' + channel_id if channel_id else '❌ не найден'}"
+            f"• Канал: {'✅ ' + channel_id if channel_id else '❌ не найден'}\n"
+            f"• Цена рассылки: {current_price} ⭐"
         )
         
         await msg.answer(status_text)
@@ -2049,6 +2465,7 @@ async def moderation_stats(msg: Message):
         stats += f"• На модерации: {len(moderator.pending_posts)}\n"
         stats += f"• Одобрено: {len(moderator.approved_history)}\n"
         stats += f"• Отклонено: {len(moderator.rejected_history)}\n"
+        stats += f"• Ожидают broadcast: {len(pending_broadcasts)}\n"
         
         queue_len = await task_queue.get_queue_length(QUEUE_NAME)
         mod_queue_len = await task_queue.get_queue_length(MODERATION_QUEUE)
@@ -2138,7 +2555,12 @@ async def main():
         
         logger.info(f"Канал: {CHANNEL_ID if CHANNEL_ID else 'авто-поиск'}")
         logger.info(f"Владелец: {OWNER_ID if OWNER_ID else '❌ не задан'}")
+        current_price = load_broadcast_price()
+        logger.info(f"⭐ Цена broadcast: {current_price} звёзд")
+        logger.info(f"📢 Канал broadcast: {BROADCAST_CHANNEL_ID}")
+        logger.info(f"💰 Получатель звёзд: {STARS_CHANNEL_ID}")
         logger.info("Азиатские девушки | 18-30 лет | Модерация включена")
+        logger.info("📨 Все сообщения пересылаются владельцу")
         
         await task_queue.connect()
         logger.info("=" * 60)
@@ -2161,7 +2583,7 @@ async def main():
             try:
                 await dp.start_polling(
                     bot,
-                    allowed_updates=["message", "callback_query"],
+                    allowed_updates=["message", "callback_query", "pre_checkout_query"],
                     skip_updates=True,
                     polling_timeout=30
                 )
