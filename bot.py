@@ -2459,36 +2459,71 @@ async def broadcast_command(message: Message):
         
         prices = [LabeledPrice(label="⭐ Рассылка", amount=current_price)]
         
-        # ОТПРАВЛЯЕМ СЧЁТ С УКАЗАНИЕМ КАНАЛА ДЛЯ ПОСТУПЛЕНИЯ ЗВЁЗД
-        await bot.send_invoice(
-            chat_id=chat_id,  # ID пользователя (кому показывать счёт)
-            title="📢 Рассылка сообщения",
-            description=description[:255],
-            payload=f"broadcast_{user_id}_{int(time.time())}",
-            provider_token="",
-            currency="XTR",
-            prices=prices,
-            start_parameter="broadcast",
-            chat_id_for_stars=STARS_CHANNEL_ID,  # <-- ЗВЁЗДЫ ПОСТУПАЮТ СЮДА!
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text=f"⭐ Оплатить {current_price} звёзд", pay=True)]
-            ])
-        )
-        
-        # Сохраняем данные для отправки после оплаты
-        broadcast_data[user_id] = {
-            'text': text,
-            'has_media': has_media,
-            'media_type': media_type,
-            'media_file_id': media_file_id,
-            'timestamp': time.time(),
-            'chat_id': chat_id,
-            'user_id': user_id
-        }
-        
+        # ОТПРАВЛЯЕМ СЧЁТ С chat_id_for_stars
+        try:
+            await bot.send_invoice(
+                chat_id=chat_id,
+                title="📢 Рассылка сообщения",
+                description=description[:255],
+                payload=f"broadcast_{user_id}_{int(time.time())}",
+                provider_token="",
+                currency="XTR",
+                prices=prices,
+                start_parameter="broadcast",
+                chat_id_for_stars=STARS_CHANNEL_ID,
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text=f"⭐ Оплатить {current_price} звёзд", pay=True)]
+                ])
+            )
+            
+            # Сохраняем данные для отправки после оплаты
+            broadcast_data[user_id] = {
+                'text': text,
+                'has_media': has_media,
+                'media_type': media_type,
+                'media_file_id': media_file_id,
+                'timestamp': time.time(),
+                'chat_id': chat_id,
+                'user_id': user_id
+            }
+            
+            logger.info(f"Инвойс отправлен пользователю {user_id}, звёзды поступят в канал {STARS_CHANNEL_ID}")
+            
+        except TypeError as e:
+            # Если параметр не поддерживается
+            if "chat_id_for_stars" in str(e):
+                logger.warning("Параметр chat_id_for_stars не поддерживается, отправляем без него")
+                await bot.send_invoice(
+                    chat_id=chat_id,
+                    title="📢 Рассылка сообщения",
+                    description=description[:255],
+                    payload=f"broadcast_{user_id}_{int(time.time())}",
+                    provider_token="",
+                    currency="XTR",
+                    prices=prices,
+                    start_parameter="broadcast",
+                    reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                        [InlineKeyboardButton(text=f"⭐ Оплатить {current_price} звёзд", pay=True)]
+                    ])
+                )
+                
+                broadcast_data[user_id] = {
+                    'text': text,
+                    'has_media': has_media,
+                    'media_type': media_type,
+                    'media_file_id': media_file_id,
+                    'timestamp': time.time(),
+                    'chat_id': chat_id,
+                    'user_id': user_id
+                }
+                
+                await message.answer("⚠️ Звёзды поступят на баланс бота (перенос на канал вручную)")
+            else:
+                raise e
+                
     except Exception as e:
         logger.error(f"Ошибка в команде broadcast: {e}")
-        await message.answer("❌ Произошла ошибка. Попробуйте позже.")
+        await message.answer(f"❌ Произошла ошибка: {str(e)[:100]}")
 
 
 # ===== ОБРАБОТЧИК ОПЛАТЫ =====
