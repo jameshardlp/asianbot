@@ -173,72 +173,118 @@ CHILD_EXCLUDE_WORDS = [
     'child model', 'kid model', 'baby model', 'toddler girl', 'toddler boy',
 ]
 
-# ===== ПОИСКОВЫЕ ЗАПРОСЫ (улучшенные) =====
+# ===== ПОИСКОВЫЕ ЗАПРОСЫ (ЛЮБИТЕЛЬСКИЕ СЪЁМКИ В АЗИИ) =====
 SEARCH_QUERIES = [
-    "japanese girl casual selfie 20",
-    "japanese woman everyday life 20s",
-    "japanese girl instagram photo 20",
-    "japanese woman casual style 20",
-    "japanese girl natural portrait 20",
-    "japanese woman street style 20",
-    "japanese girl city selfie 20",
-    "japanese woman cafe selfie 20",
-    "japanese girl summer outfit 20",
-    "japanese woman modern style 20",
-    "japanese college girl 20",
-    "japanese university student 20",
-    "japanese girl 20s portrait",
-    "chinese girl casual selfie 20",
-    "chinese woman everyday life 20s",
-    "chinese girl instagram photo 20",
-    "chinese woman casual style 20",
-    "chinese girl natural portrait 20",
-    "chinese woman street style 20",
-    "chinese girl city selfie 20",
-    "chinese woman cafe selfie 20",
-    "chinese girl summer dress 20",
-    "chinese woman modern outfit 20",
-    "chinese college girl 20",
-    "chinese university student 20",
-    "korean girl casual selfie 20",
-    "korean woman everyday life 20s",
-    "korean girl instagram photo 20",
-    "korean woman casual style 20",
-    "korean girl natural portrait 20",
-    "korean woman street style 20",
-    "korean girl city selfie 20",
-    "korean woman cafe selfie 20",
-    "korean girl summer dress 20",
-    "korean woman modern style 20",
-    "korean college girl 20",
-    "korean university student 20",
-    "thai girl casual selfie 20",
-    "thai woman everyday life 20s",
-    "thai girl instagram photo 20",
-    "thai woman casual style 20",
-    "thai girl natural portrait 20",
-    "thai woman street style 20",
-    "thai girl city selfie 20",
-    "thai woman cafe selfie 20",
-    "thai girl summer outfit 20",
-    "thai woman modern dress 20",
-    "thai college girl 20",
-    "thai university student 20",
-    "asian girl 20 years old instagram",
-    "east asian woman 20s casual",
-    "southeast asian girl 20s photo",
-    "young asian woman 20s portrait",
-    "asian college girl 20",
-    "asian university student 20s",
-    "asian girl 20s fashion",
-    "asian woman 20s lifestyle",
+    # Япония - любительские
+    "japanese girl friend photo casual",
+    "japanese woman everyday life candid",
+    "japanese girl natural shot street",
+    "japanese woman friend taking picture",
+    "japanese girl candid moment cafe",
+    "japanese woman casual day out",
+    "japanese girl authentic daily life",
+    "japanese woman spontaneous photo",
+    "japanese girl real life snapshot",
+    "japanese woman friend photo outside",
+    
+    # Корея - любительские
+    "korean girl friend photo casual",
+    "korean woman everyday life candid",
+    "korean girl natural shot street",
+    "korean woman friend taking picture",
+    "korean girl candid moment cafe",
+    "korean woman casual day out",
+    "korean girl authentic daily life",
+    "korean woman spontaneous photo",
+    "korean girl real life snapshot",
+    "korean woman friend photo outside",
+    
+    # Китай - любительские
+    "chinese girl friend photo casual",
+    "chinese woman everyday life candid",
+    "chinese girl natural shot street",
+    "chinese woman friend taking picture",
+    "chinese girl candid moment cafe",
+    "chinese woman casual day out",
+    "chinese girl authentic daily life",
+    "chinese woman spontaneous photo",
+    "chinese girl real life snapshot",
+    "chinese woman friend photo outside",
+    
+    # Таиланд - любительские
+    "thai girl friend photo casual",
+    "thai woman everyday life candid",
+    "thai girl natural shot street",
+    "thai woman friend taking picture",
+    "thai girl candid moment cafe",
+    "thai woman casual day out",
+    "thai girl authentic daily life",
+    "thai woman spontaneous photo",
+    "thai girl real life snapshot",
+    "thai woman friend photo outside",
+    
+    # Вьетнам - любительские
+    "vietnamese girl friend photo casual",
+    "vietnamese woman everyday life candid",
+    "vietnamese girl natural shot street",
+    "vietnamese woman friend photo",
+    "vietnamese girl candid moment cafe",
+    "vietnamese woman casual day out",
+    
+    # Филиппины - любительские
+    "filipino girl friend photo casual",
+    "filipina woman everyday life candid",
+    "filipino girl natural shot street",
+    "filipina woman friend photo",
+    "filipino girl candid moment cafe",
+    
+    # Индонезия - любительские
+    "indonesian girl friend photo casual",
+    "indonesian woman everyday life candid",
+    "indonesian girl natural shot street",
+    "indonesian woman friend photo",
+    
+    # Общие - любительские
+    "asian girl friend photo outside",
+    "asian woman everyday life candid",
+    "asian girl natural shot street",
+    "asian woman friend taking picture",
+    "asian girl candid moment cafe",
+    "asian woman casual day out",
+    "asian girl authentic daily life",
+    "asian woman spontaneous photo",
+    "asian girl real life snapshot",
+    "asian woman friend photo casual",
+    
+    # Специфические запросы для естественных фото
+    "asian girl laughing with friend",
+    "asian woman talking to friend",
+    "asian girl walking with friend",
+    "asian woman sitting with friend",
+    "asian girl shopping with friend",
+    "asian woman eating with friend",
+    "asian girl coffee with friend",
+    "asian woman market with friend",
+    "asian girl street food friend",
+    "asian woman casual outfit friend",
+    
+    # Естественные моменты
+    "asian girl candid laugh",
+    "asian woman natural smile",
+    "asian girl genuine moment",
+    "asian woman carefree day",
+    "asian girl relaxed photo",
+    "asian woman happy moment",
+    "asian girl friend group photo",
+    "asian woman friend gathering",
 ]
 
 FITNESS_QUERIES = [
-    "japanese fitness girl 20s",
-    "korean gym girl 20s",
-    "chinese fitness woman 20s",
-    "thai sport girl 20s",
+    "japanese fitness girl friend photo",
+    "korean gym girl friend photo",
+    "chinese fitness woman friend photo",
+    "thai sport girl friend photo",
+    "asian girl gym with friend",
 ]
 
 # ===== УЛУЧШЕННАЯ ФИЛЬТРАЦИЯ =====
@@ -378,46 +424,72 @@ def is_photo_acceptable(url: str, additional_context: str = "") -> Tuple[bool, s
     
     return True, "OK"
 
-# ===== СТИЛИ ДЛЯ ГЕНЕРАЦИИ (БЕЗ УПОМИНАНИЯ ВНЕШНОСТИ) =====
+# ===== СТИЛИ ДЛЯ ГЕНЕРАЦИИ (ОБНОВЛЕННЫЕ) =====
 style_prompts = {
     'everyday': """
-Ты — Анатолий, холостой блогер средних лет, который много путешествует по Азии.
+Ты — Анатолий, холостой блогер средних лет, который много путешествует по Азии и заводит знакомства с местными девушками.
+
+ВАЖНО:
+- Ты НЕ переезжаешь из страны в страну чаще раза в неделю
+- Если вчера ты был в Бангкоке — сегодня ты там же
+- Переезд в другую страну происходит только через несколько дней для сравнения цен на жизнь
+- Ты редко акцентируешь внимание на том, где именно находишься
+- Ты описываешь как путешествия, так и семейную жизнь с азиатками (это не исключает друг друга)
+- У тебя НЕТ жены, но когда-то она была (НЕ упоминай когда именно и кто это был)
+- ИНОГДА (не часто) давай советы о выгодной жизни в Азии: где вкуснее еда, где дешевле жить
+- Советы должны выглядеть как "секретный разговор" с подписчиками
+- Чаще спрашивай у подписчиков в духе: "как там у вас, всё ещё дошираки доедаете?" (не буквально, но в таком жанре)
+- Каждый пост про разные события и ситуации
+- В одном посте может быть одна история или несколько (не обязательно)
+- Концентрируйся на чём-то конкретном
 
 Твой стиль:
-- Рассказываешь реальные истории, будто они произошли вчера или сегодня.
-- Всегда сначала действие, потом размышления.
-- Главный объект самоиронии — ты сам. Ты часто оказываешься в неловких ситуациях.
-- Юмор строится на иронии над собой и ситуациях, где ты выглядишь глупо.
-- Добавляй одну острую шутку — не оскорбительную, с юмором, может содержать мат. Шути про себя или про жизнь, но без политики.
-- Пишешь живым разговорным языком, будто рассказываешь историю друзьям.
+- Рассказываешь реальные истории, будто они произошли вчера или сегодня
+- Всегда сначала действие, потом размышления
+- Главный объект самоиронии — ты сам
+- Юмор строится на иронии над собой и неловких ситуациях
+- Добавляй одну острую шутку — не оскорбительную, с юмором, может содержать мат
+- Пишешь живым разговорным языком, как рассказываешь друзьям в баре
 
-Напиши пост про реальную ситуацию в Азии, где ты попал в неловкое положение.
+Напиши пост про реальную ситуацию из жизни в Азии (путешествия, знакомства, быт).
 
 Структура поста:
-1. Первое предложение - зацепка: конкретная ситуация
+1. Первое предложение — зацепка: конкретная ситуация
 2. Затем подробный рассказ с деталями
 3. Самоироничные размышления о себе
-4. Естественный вывод из истории
+4. Естественный вывод из истории (НЕ мораль)
 
 Требования:
 - 700-900 символов
 - Мат 1-2 раза (бля, сука, пиздец), только как эмоция
 - Одна острая шутка
 - Обращайся к читателям на "вы"
-- Не упоминай жену
-- Не используй штампы
+- НЕ упоминай жену (бывшую тоже)
+- НЕ используй штампы
+- НЕ акцентируй внимание на своём текущем местоположении
 - Пиши только готовый пост
 """,
 
     'funny': """
 Ты — Анатолий, холостой блогер средних лет.
 
+ВАЖНО:
+- Ты НЕ переезжаешь из страны в страну чаще раза в неделю
+- Если вчера ты был в Бангкоке — сегодня ты там же
+- Переезд в другую страну происходит только через несколько дней
+- Ты редко акцентируешь внимание на том, где именно находишься
+- Ты описываешь как путешествия, так и семейную жизнь с азиатками (это не исключает друг друга)
+- У тебя НЕТ жены, но когда-то она была (НЕ упоминай когда именно и кто это был)
+- ИНОГДА давай советы о жизни в Азии: где вкуснее еда, где дешевле жить (как секретный разговор)
+- Чаще спрашивай у подписчиков в духе: "как у вас дела?" или "что нового?"
+- Каждый пост про разные ситуации
+
 Твой стиль:
-- Рассказываешь смешные истории из жизни в Азии
+- Рассказываешь смешные истории из жизни в Азии (путешествия, знакомства, быт)
 - Главный объект шуток — ты сам и твои неловкие ситуации
 - Юмор самоироничный, без оскорблений других
 - Добавляй одну острую шутку
-- Пишешь живым языком, как рассказываешь друзьям
+- Пишешь живым языком
 
 Напиши смешной пост про свою жизнь в Азии.
 
@@ -438,6 +510,16 @@ style_prompts = {
     'romantic': """
 Ты — Анатолий, холостой блогер средних лет.
 
+ВАЖНО:
+- Ты НЕ переезжаешь из страны в страну чаще раза в неделю
+- Если вчера ты был в Бангкоке — сегодня ты там же
+- Переезд в другую страну происходит только через несколько дней
+- Ты редко акцентируешь внимание на том, где именно находишься
+- Ты описываешь как путешествия, так и семейную жизнь с азиатками (это не исключает друг друга)
+- У тебя НЕТ жены, но когда-то она была (НЕ упоминай когда именно и кто это был)
+- Каждый пост про разные события
+- В одном посте может быть одна история (концентрируйся на конкретном)
+
 Твой стиль:
 - Рассказываешь о своих чувствах с самоиронией
 - Немного романтики, но с юмором
@@ -445,7 +527,7 @@ style_prompts = {
 - Добавляй одну острую шутку (про себя, не про девушку)
 - Пишешь тепло, но без пафоса
 
-Напиши романтичный пост о встрече с азиаткой.
+Напиши романтичный пост о встрече с азиаткой во время путешествия.
 
 Структура:
 1. Неожиданная встреча
@@ -464,6 +546,16 @@ style_prompts = {
     'envy': """
 Ты — Анатолий, холостой блогер средних лет.
 
+ВАЖНО:
+- Ты НЕ переезжаешь из страны в страну чаще раза в неделю
+- Если вчера ты был в Бангкоке — сегодня ты там же
+- Переезд в другую страну происходит только через несколько дней
+- Ты редко акцентируешь внимание на том, где именно находишься
+- Ты описываешь как путешествия, так и семейную жизнь с азиатками (это не исключает друг друга)
+- У тебя НЕТ жены, но когда-то она была (НЕ упоминай когда именно и кто это был)
+- ИНОГДА давай советы о выгодной жизни в Азии (как секретный разговор)
+- Каждый пост про разные события
+
 Твой стиль:
 - Рассказываешь о том, чему завидуешь, с юмором
 - Самоирония над своей жизнью
@@ -471,7 +563,7 @@ style_prompts = {
 - Добавляй одну острую шутку
 - Пишешь живо и увлекательно
 
-Напиши пост о том, чему ты завидуешь в Азии.
+Напиши пост о том, чему ты завидуешь в Азии (местным жителям, их образу жизни, отношениям и т.д.).
 
 Структура:
 1. Что тебя поразило
@@ -490,6 +582,18 @@ style_prompts = {
     'joke': """
 Ты — Анатолий, холостой блогер средних лет.
 
+ВАЖНО:
+- Ты НЕ переезжаешь из страны в страну чаще раза в неделю
+- Если вчера ты был в Бангкоке — сегодня ты там же
+- Переезд в другую страну происходит только через несколько дней
+- Ты редко акцентируешь внимание на том, где именно находишься
+- Ты описываешь как путешествия, так и семейную жизнь с азиатками (это не исключает друг друга)
+- У тебя НЕТ жены, но когда-то она была (НЕ упоминай когда именно и кто это был)
+- ИНОГДА давай советы о жизни в Азии (как секретный разговор)
+- Чаще спрашивай у подписчиков в духе: "как у вас там?" или "что новенького?"
+- Каждый пост про разные события и ситуации
+- Могут быть разные истории в одном посте, но не обязательно
+
 Твой стиль:
 - Твои посты — это 70% шуток и 30% жизненных наблюдений
 - Ты можешь пошутить про себя, про других, про жизнь в Азии
@@ -498,7 +602,7 @@ style_prompts = {
 - Главное — смешно и честно
 - Пишешь так, будто рассказываешь историю в баре
 
-Напиши пост с острой шуткой про жизнь в Азии.
+Напиши пост с острой шуткой про жизнь в Азии (путешествия, знакомства, быт).
 
 Структура:
 1. Жизненная ситуация
@@ -916,7 +1020,7 @@ def generate_caption() -> str:
 - Отвечай ТОЛЬКО готовым постом. БЕЗ РАССУЖДЕНИЙ. Только текст поста."""},
                     {"role": "user", "content": current_prompt}
                 ],
-                "temperature": 1.2,
+                "temperature": 1.4,  # Установлена температура 1.4
                 "max_tokens": 1500,
             }
             
@@ -1025,6 +1129,10 @@ def search_bing(query):
             if is_child_photo(img):
                 continue
             
+            # Проверка на наличие мужчин (исключаем)
+            if re.search(r'\b(man|men|boy|male|guy|dude|brother|father|husband|boyfriend)\b', img.lower()):
+                continue
+            
             if not is_asian_photo(img):
                 continue
             
@@ -1074,8 +1182,9 @@ def search_google_direct(query):
                 if not any(x in img.lower() for x in ['gstatic', 'google', 'favicon', 'logo']):
                     if not img.startswith('data:'):
                         if not is_child_photo(img):
-                            if is_asian_photo(img) and is_age_appropriate(img):
-                                clean_images.append(img)
+                            if not re.search(r'\b(man|men|boy|male|guy|dude|brother|father|husband|boyfriend)\b', img.lower()):
+                                if is_asian_photo(img) and is_age_appropriate(img):
+                                    clean_images.append(img)
         
         clean_images = list(dict.fromkeys(clean_images))
         
@@ -1126,8 +1235,9 @@ def search_yandex(query):
                 if not any(x in img.lower() for x in ['gstatic', 'google', 'favicon', 'logo']):
                     if not img.startswith('data:'):
                         if not is_child_photo(img):
-                            if is_asian_photo(img) and is_age_appropriate(img):
-                                clean_images.append(img)
+                            if not re.search(r'\b(man|men|boy|male|guy|dude|brother|father|husband|boyfriend)\b', img.lower()):
+                                if is_asian_photo(img) and is_age_appropriate(img):
+                                    clean_images.append(img)
         
         clean_images = list(dict.fromkeys(clean_images))
         
@@ -1168,8 +1278,9 @@ def search_pexels(query):
                 for photo in photos:
                     url = photo["src"]["large"]
                     if not is_child_photo(url):
-                        if is_asian_photo(url) and is_age_appropriate(url):
-                            return url
+                        if not re.search(r'\b(man|men|boy|male|guy|dude|brother|father|husband|boyfriend)\b', url.lower()):
+                            if is_asian_photo(url) and is_age_appropriate(url):
+                                return url
         
         return None
         
@@ -1211,6 +1322,9 @@ def get_random_photo():
                     if is_child_photo(photo):
                         continue
                     
+                    if re.search(r'\b(man|men|boy|male|guy|dude|brother|father|husband|boyfriend)\b', photo.lower()):
+                        continue
+                    
                     if not is_asian_photo(photo):
                         continue
                     
@@ -1239,7 +1353,7 @@ def get_random_photo():
         for source_name, search_func in search_functions:
             try:
                 photo = search_func(query)
-                if photo and not is_child_photo(photo) and is_asian_photo(photo) and is_age_appropriate(photo):
+                if photo and not is_child_photo(photo) and not re.search(r'\b(man|men|boy|male|guy|dude|brother|father|husband|boyfriend)\b', photo.lower()) and is_asian_photo(photo) and is_age_appropriate(photo):
                     history.append(photo)
                     save_history(history)
                     logger.info(f"Найдено фото после очистки: {photo[:60]}...")
@@ -1497,6 +1611,10 @@ async def send_post(chat_id, photo_url=None, caption=None):
         
         if is_child_photo(photo_url):
             logger.warning(f"Фото содержит ребёнка: {photo_url[:60]}...")
+            return False
+        
+        if re.search(r'\b(man|men|boy|male|guy|dude|brother|father|husband|boyfriend)\b', photo_url.lower()):
+            logger.warning(f"Фото содержит мужчину: {photo_url[:60]}...")
             return False
         
         if not is_asian_photo(photo_url):
@@ -2672,6 +2790,8 @@ async def main():
         logger.info(f"💰 Получатель звёзд (канал): {STARS_CHANNEL_ID}")
         logger.info("Азиатские девушки | 18-30 лет | Модерация включена")
         logger.info("🚫 Детские фото исключены")
+        logger.info("🚫 Мужчины на фото исключены")
+        logger.info("📸 Только любительские съёмки в Азии")
         logger.info(f"📨 Сообщения владельцу отправляются с интервалом 1 минута")
         logger.info(f"📊 Посты в канал не чаще 1 раза в {MIN_POST_INTERVAL // 3600} часа (случайное время)")
         logger.info("📢 /broadcast - только в личных сообщениях")
