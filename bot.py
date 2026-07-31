@@ -142,16 +142,6 @@ ASIAN_NAMES = [
     'aom', 'joong', 'ki', 'hoon', 'jin', 'soo', 'young', 'sun',
 ]
 
-# СЛОВА ДЛЯ ПОИСКА ВЗРОСЛЫХ (18+)
-ADULT_KEYWORDS = [
-    'adult', 'mature', 'woman', 'lady', 'female adult',
-    '18', '19', '20', '21', '22', '23', '24', '25',
-    '18plus', '18+', 'eighteen', 'twenties', '20s',
-    'college', 'university', 'student', 'graduate',
-    'blogger', 'influencer', 'model', 'actress',
-    'instagram', 'tiktok', 'youtube',
-]
-
 # ТОЛЬКО КЛЮЧЕВЫЕ СЛОВА ДЛЯ ДЕТЕЙ (БЕЗ ЦИФР)
 CHILD_EXCLUDE_WORDS = [
     'child', 'children', 'kid', 'kids', 'baby', 'babies', 'toddler',
@@ -181,7 +171,6 @@ MEN_EXCLUDE_WORDS = [
     'guy friend', 'male friend', 'with man', 'with guy',
 ]
 
-# СЛОВА ДЛЯ ИСКЛЮЧЕНИЯ ПОЖИЛЫХ
 OLD_EXCLUDE_WORDS = [
     'old', 'elderly', 'senior', 'aged', 'aging',
     'grandma', 'grandmother', 'grandpa', 'grandfather',
@@ -420,25 +409,6 @@ def is_photo_valid(url: str) -> bool:
         return False
     return True
 
-def is_photo_acceptable(url: str, additional_context: str = "") -> Tuple[bool, str]:
-    if not url:
-        return False, "Пустой URL"
-    if is_child_photo(url):
-        return False, "Фото содержит ребёнка (строгий запрет)"
-    if has_man_in_photo(url):
-        return False, "Фото содержит мужчину"
-    if is_old_person(url):
-        return False, "Фото содержит пожилого человека"
-    if not is_asian_photo(url, additional_context):
-        return False, "Не азиатская внешность"
-    if not is_age_appropriate(url):
-        return False, "Возраст не 18+"
-    if is_traditional_clothing(url):
-        return False, "Традиционная одежда"
-    if is_erotic_content(url):
-        return False, "Эротическое содержание (запрещено)"
-    return True, "OK"
-
 # ===== ФУНКЦИИ ДЛЯ ПАМЯТИ =====
 
 def load_memory():
@@ -539,10 +509,6 @@ def get_fallback_caption() -> str:
         "Сегодня в спортзале в Паттайе ко мне подошла девушка и спросила, сколько раз в неделю я тренируюсь. Я такой гордый - думаю, заметила мои бицепсы! А она говорит: 'Просто вы выглядите так, будто только начали, я могу дать пару советов'.\n\nВот так, коллеги. Получаешь совет от 20-летней тайки, которая весит 50 кг, а в жиме лежит больше меня. Но я не обиделся - взял пару советов, и знаете, они реально работают. Иногда лучше учиться у тех, кто моложе, чем у тех, кто старше. Хотя обидно, что меня пережимает девушка на 20 кг легче. Но я переживу. Как-нибудь.",
         
         "Забавная история из Таиланда. Я решил научиться торговаться на рынке. Прихожу, вижу классную рубашку. Продавщица говорит - 500 бат. Я такой: 'Дорого, давай за 200'. Она улыбается: 'Для тебя - 450'. Торгуемся минут десять.\n\nВ итоге она говорит: 'Слушай, ты так смешно торгуешься, что я отдам за 300, только приходи ещё'. Я взял рубашку за 300, а потом пошёл и купил ещё три вещи у неё. Она меня развела, а я даже не против. В Азии это искусство, и я пока ещё ученик. Зато теперь у меня есть рубашка и знание, что я лох. Но счастливый лох.",
-        
-        "Вчера в баре в Пхукете разговорился с местным таксистом. Он говорит: 'Ты знаешь, почему тайцы всегда улыбаются?' Я говорю - потому что у вас рай? А он: 'Нет, потому что мы знаем, что завтра будет новый день, и всё повторится. Зачем портить себе настроение?'\n\nИ ведь правда. Мы, европейцы, вечно переживаем о том, что нельзя изменить. А они просто принимают жизнь. Может, нам тоже попробовать? Хотя нет, я лучше попереживаю, это уже привычка. Иначе я не буду чувствовать себя русским. Мы же должны страдать, это национальная идея.",
-        
-        "Сегодня утром в Бангкоке я чуть не попал под мотоцикл. Водитель на меня заорал на тайском, я ничего не понял, но по жестам догадался, что он меня не любит. А потом он остановился, улыбнулся и сказал: 'Извини, братан, сам не заметил'. И уехал.\n\nЯ стою и думаю - как можно на кого-то орать, а через секунду улыбаться? Это же надо уметь - включать доброту за секунду. В России если на тебя наорали, то будут стоять и дальше орать, пока не устанут. А тут - орут, а потом извиняются. Искусство жить, а не выживать. Мне бы так научиться.",
     ]
     
     available_fallbacks = []
@@ -955,15 +921,19 @@ def validate_caption(text: str, min_length: int = 500, max_length: int = 1023) -
     text = clean_text(text)
     if len(text) < 10:
         return '', 'Слишком короткий'
+    
     if len(text) > max_length:
         text = truncate_by_sentences(text, max_length)
         if not text:
             return '', 'Текст слишком длинный и не может быть обрезан'
+    
     if not text.endswith(('.', '!', '?')):
         text = ensure_ends_with_dot(text)
+    
     all_sentences = get_sentences(text)
     if not all_sentences:
         return '', 'Нет предложений'
+    
     last_sentence = all_sentences[-1].strip() if all_sentences else ''
     if last_sentence:
         if not last_sentence.endswith(('.', '!', '?')):
@@ -972,6 +942,7 @@ def validate_caption(text: str, min_length: int = 500, max_length: int = 1023) -
                 text = ensure_ends_with_dot(text)
             else:
                 return '', 'Последнее предложение не завершено'
+        
         word_count = len(last_sentence.split())
         if word_count < 5:
             if len(all_sentences) > 1:
@@ -979,15 +950,20 @@ def validate_caption(text: str, min_length: int = 500, max_length: int = 1023) -
                 text = ensure_ends_with_dot(text)
             else:
                 return '', f'Последнее предложение слишком короткое ({word_count} слов)'
+        
         if not is_sentence_complete(last_sentence):
             if len(all_sentences) > 1:
                 text = ' '.join(all_sentences[:-1]).strip()
                 text = ensure_ends_with_dot(text)
             else:
                 return '', 'Последнее предложение не завершено логически'
+    
     if min_length > 0 and len(text) < min_length:
         if len(all_sentences) < 2:
             return '', f'Слишком короткий ({len(text)} символов, нужно {min_length})'
+        if min_length > 200 and len(text) < 200:
+            return '', f'Слишком короткий ({len(text)} символов, нужно {min_length})'
+    
     return text, None
 
 def clean_text(text: str) -> str:
@@ -1120,20 +1096,34 @@ def generate_caption() -> str:
             return validated
         return clean_text(truncate_by_sentences(get_fallback_caption()))
     
-    rand = random.random()
-    if rand < 0.20:
+    length_choices = [
+        ('short', 200, 400),
+        ('short', 200, 400),
+        ('medium', 500, 700),
+        ('medium', 500, 700),
+        ('medium', 500, 700),
+        ('long', 850, 1023),
+        ('long', 850, 1023),
+    ]
+    
+    selected = random.choice(length_choices)
+    length_type, min_len, max_len = selected
+    
+    logger.info(f"Выбрана длина: {length_type.upper()} ({min_len}-{max_len} символов)")
+    
+    if length_type == 'short':
         style = 'short_joke'
-        logger.info("Выбран КОРОТКИЙ пост (шутка)")
-        min_len, max_len = 200, 400
-    elif rand < 0.40:
-        style = 'long'
-        logger.info("Выбран ДЛИННЫЙ пост")
-        min_len, max_len = 850, 1023
+        style_name = 'КОРОТКИЙ (шутка)'
+    elif length_type == 'long':
+        long_styles = ['long', 'long', 'everyday', 'joke']
+        style = random.choice(long_styles)
+        style_name = f'ДЛИННЫЙ (стиль: {style})'
     else:
-        weighted_styles = ['everyday', 'everyday', 'funny', 'romantic', 'envy', 'joke']
-        style = random.choice(weighted_styles)
-        logger.info(f"Выбран СРЕДНИЙ пост (стиль: {style})")
-        min_len, max_len = 500, 700
+        medium_styles = ['medium', 'everyday', 'funny', 'romantic', 'envy', 'joke']
+        style = random.choice(medium_styles)
+        style_name = f'СРЕДНИЙ (стиль: {style})'
+    
+    logger.info(f"Выбран стиль: {style_name}")
     
     prompt = style_prompts.get(style, style_prompts['medium'])
     prompt += "\n\nТвой ответ (ТОЛЬКО ПОСТ, БЕЗ РАССУЖДЕНИЙ):"
@@ -1164,7 +1154,7 @@ def generate_caption() -> str:
         logger.info("🔴 Добавлено упоминание Меддисона (редко)")
     
     alternative_prompts = {
-        'short_joke': [
+        'short': [
             "Напиши короткую саркастичную шутку про жизнь в Азии. 200-350 символов. БЕЗ АБЗАЦЕВ.",
             "Короткий саркастичный пост про Азию. 200-350 символов. БЕЗ АБЗАЦЕВ.",
             "Забавное наблюдение с самоиронией про жизнь в Азии. 200-350 символов. БЕЗ АБЗАЦЕВ.",
@@ -1181,6 +1171,13 @@ def generate_caption() -> str:
         ]
     }
     
+    if length_type == 'short':
+        alt_key = 'short'
+    elif length_type == 'long':
+        alt_key = 'long'
+    else:
+        alt_key = 'medium'
+    
     last_error = None
     
     for attempt in range(5):
@@ -1193,12 +1190,7 @@ def generate_caption() -> str:
             
             current_prompt = prompt
             if attempt > 0:
-                if style == 'short_joke':
-                    alt = random.choice(alternative_prompts['short_joke'])
-                elif style == 'long':
-                    alt = random.choice(alternative_prompts['long'])
-                else:
-                    alt = random.choice(alternative_prompts['medium'])
+                alt = random.choice(alternative_prompts[alt_key])
                 current_prompt = alt + "\n\nТвой ответ (ТОЛЬКО ПОСТ, БЕЗ РАССУЖДЕНИЙ):"
                 logger.info(f"Пробую альтернативный промпт (попытка {attempt+1}/5)...")
             
@@ -1268,25 +1260,59 @@ def generate_caption() -> str:
             
             caption = clean_text(caption)
             caption = format_text_with_paragraphs(caption, style)
-            caption = truncate_by_sentences(caption, max_length=1023)
             
-            if len(caption) < min_len:
-                logger.warning(f"Пост слишком короткий ({len(caption)} символов, нужно {min_len})")
-                last_error = f"Слишком короткий ({len(caption)}/{min_len})"
-                continue
+            if len(caption) > max_len:
+                caption = truncate_by_sentences(caption, max_length=max_len)
             
-            if len(caption) > max_len + 50:
-                logger.warning(f"Пост слишком длинный ({len(caption)} символов, нужно {max_len})")
-                last_error = f"Слишком длинный ({len(caption)}/{max_len})"
-                continue
+            actual_len = len(caption)
             
-            if style == 'short_joke':
-                validated, error = validate_caption(caption, min_length=100, max_length=400)
+            if length_type == 'short':
+                if actual_len < 100:
+                    logger.warning(f"Пост слишком короткий ({actual_len} символов, нужно 100+)")
+                    last_error = f"Слишком короткий ({actual_len}/100)"
+                    continue
+                if actual_len > 400:
+                    caption = truncate_by_sentences(caption, max_length=400)
+                    actual_len = len(caption)
+                    if actual_len > 400:
+                        logger.warning(f"Пост слишком длинный ({actual_len} символов, нужно до 400)")
+                        last_error = f"Слишком длинный ({actual_len}/400)"
+                        continue
+            elif length_type == 'long':
+                if actual_len < 700:
+                    logger.warning(f"Пост слишком короткий ({actual_len} символов, нужно 700+)")
+                    last_error = f"Слишком короткий ({actual_len}/700)"
+                    continue
+                if actual_len > 1023:
+                    caption = truncate_by_sentences(caption, max_length=1023)
+                    actual_len = len(caption)
+                    if actual_len > 1023:
+                        logger.warning(f"Пост слишком длинный ({actual_len} символов, нужно до 1023)")
+                        last_error = f"Слишком длинный ({actual_len}/1023)"
+                        continue
             else:
-                validated, error = validate_caption(caption, min_length=min_len, max_length=max_len)
+                if actual_len < 400:
+                    logger.warning(f"Пост слишком короткий ({actual_len} символов, нужно 400+)")
+                    last_error = f"Слишком короткий ({actual_len}/400)"
+                    continue
+                if actual_len > 750:
+                    caption = truncate_by_sentences(caption, max_length=750)
+                    actual_len = len(caption)
+                    if actual_len > 750:
+                        logger.warning(f"Пост слишком длинный ({actual_len} символов, нужно до 750)")
+                        last_error = f"Слишком длинный ({actual_len}/750)"
+                        continue
+            
+            if length_type == 'short':
+                validated, error = validate_caption(caption, min_length=100, max_length=400)
+            elif length_type == 'long':
+                validated, error = validate_caption(caption, min_length=700, max_length=1023)
+            else:
+                validated, error = validate_caption(caption, min_length=400, max_length=750)
             
             if validated:
-                logger.info(f"✅ Сгенерирован пост ({len(validated)} символов, тип: {style}, попытка {attempt+1})")
+                final_len = len(validated)
+                logger.info(f"✅ Сгенерирован пост ({final_len} символов, тип: {length_type.upper()}/{style}, попытка {attempt+1})")
                 add_to_last_posts(validated)
                 return validated
             else:
@@ -1305,8 +1331,11 @@ def generate_caption() -> str:
     caption = get_fallback_caption()
     caption = clean_text(caption)
     caption = format_text_with_paragraphs(caption, 'medium')
-    caption = truncate_by_sentences(caption, max_length=1023)
-    validated, error = validate_caption(caption, min_length=500, max_length=1023)
+    
+    if len(caption) > 1023:
+        caption = truncate_by_sentences(caption, max_length=1023)
+    
+    validated, error = validate_caption(caption, min_length=400, max_length=1023)
     
     if validated:
         logger.info(f"✅ Использован fallback ({len(validated)} символов)")
@@ -1770,14 +1799,14 @@ async def send_post(chat_id, photo_url=None, caption=None):
             caption = clean_text(caption)
             caption = format_text_with_paragraphs(caption, 'medium')
             caption = truncate_by_sentences(caption, max_length=1023)
-            validated, error = validate_caption(caption, min_length=500, max_length=1023)
+            validated, error = validate_caption(caption, min_length=400, max_length=1023)
             if validated:
                 caption = validated
             else:
                 caption = clean_text(get_fallback_caption())
                 caption = format_text_with_paragraphs(caption, 'medium')
                 caption = truncate_by_sentences(caption, max_length=1023)
-                validated, error = validate_caption(caption, min_length=500, max_length=1023)
+                validated, error = validate_caption(caption, min_length=400, max_length=1023)
                 if validated:
                     caption = validated
         
@@ -1950,59 +1979,83 @@ async def generate_and_queue_post(chat_id: str, user_id: int = 0, skip_moderatio
         logger.error(f"Ошибка генерации поста: {e}")
         return False
 
-async def send_to_all_users():
+async def auto_send_to_all_users():
+    """Автоматическая рассылка по расписанию"""
     try:
         users_list = load_users()
         if not users_list:
             logger.warning("Нет пользователей для отправки")
             return
-        logger.info(f"Добавление постов в очередь для {len(users_list)} пользователей...")
+        
+        logger.info(f"Авто-рассылка для {len(users_list)} пользователей...")
+        
         photo_url = await get_random_photo()
         if not photo_url:
             logger.error("Не удалось найти фото")
             return
+        
         caption = generate_caption()
         caption = clean_text(caption)
         caption = format_text_with_paragraphs(caption, 'medium')
         caption = truncate_by_sentences(caption, max_length=1023)
-        validated, error = validate_caption(caption, min_length=500, max_length=1023)
+        validated, error = validate_caption(caption, min_length=400, max_length=1023)
         if validated:
             caption = validated
         else:
             caption = clean_text(get_fallback_caption())
             caption = format_text_with_paragraphs(caption, 'medium')
             caption = truncate_by_sentences(caption, max_length=1023)
-            validated, error = validate_caption(caption, min_length=500, max_length=1023)
+            validated, error = validate_caption(caption, min_length=400, max_length=1023)
             if validated:
                 caption = validated
-        base_post_id = f"post_{int(time.time())}"
+        
+        if not caption or not photo_url:
+            logger.error("Не удалось сгенерировать пост")
+            return
+        
+        add_to_last_posts(caption)
+        
+        logger.info(f"✅ Сгенерирован пост для авто-рассылки ({len(caption)} символов)")
+        
+        sent_count = 0
+        failed_count = 0
+        
         for chat_id in users_list:
-            post_data = {
-                'id': f"{base_post_id}_{chat_id}",
-                'chat_id': chat_id,
-                'photo_url': photo_url,
-                'caption': caption,
-                'user_id': 0,
-                'timestamp': time.time(),
-                'needs_moderation': False
-            }
-            await task_queue.push(QUEUE_NAME, post_data)
+            try:
+                await bot.send_photo(
+                    chat_id=chat_id,
+                    photo=photo_url,
+                    caption=caption
+                )
+                sent_count += 1
+                await asyncio.sleep(0.1)
+            except Exception as e:
+                logger.error(f"Ошибка отправки в {chat_id}: {e}")
+                failed_count += 1
+                if "forbidden" in str(e).lower() or "chat not found" in str(e).lower():
+                    if str(chat_id) in [str(u) for u in users_list]:
+                        users_list.remove(str(chat_id))
+                        save_users(users_list)
+                        logger.info(f"Пользователь {chat_id} удалён из-за ошибки")
+        
         channel_id = CHANNEL_ID
         if not channel_id or not channel_id.strip():
             channel_id = await get_channel_id()
         if channel_id:
-            await task_queue.push(QUEUE_NAME, {
-                'id': f"{base_post_id}_channel",
-                'chat_id': channel_id,
-                'photo_url': photo_url,
-                'caption': caption,
-                'user_id': 0,
-                'timestamp': time.time(),
-                'needs_moderation': False
-            })
-        logger.info(f"{len(users_list)} задач добавлены в очередь")
+            try:
+                await bot.send_photo(
+                    chat_id=channel_id,
+                    photo=photo_url,
+                    caption=caption
+                )
+                logger.info(f"✅ Пост отправлен в канал {channel_id}")
+            except Exception as e:
+                logger.error(f"Ошибка отправки в канал {channel_id}: {e}")
+        
+        logger.info(f"📊 Авто-рассылка: отправлено {sent_count}, ошибок {failed_count}")
+        
     except Exception as e:
-        logger.error(f"Ошибка в send_to_all_users: {e}")
+        logger.error(f"Ошибка в auto_send_to_all_users: {e}")
 
 async def get_channel_id() -> Optional[str]:
     if CHANNEL_ID and CHANNEL_ID.strip():
@@ -2313,48 +2366,161 @@ async def check_channel(message: Message):
         logger.error(f"Ошибка проверки канала: {e}")
         await message.answer("❌ Произошла ошибка")
 
-# ===== ОСТАЛЬНЫЕ КОМАНДЫ =====
+# ===== КОМАНДА /PHOTO (только для себя) =====
 
-@dp.callback_query(lambda c: c.data and c.data.startswith('mod_'))
-async def handle_moderation_callback(callback: CallbackQuery):
+@dp.message(Command("photo"))
+async def photo(msg: Message):
     try:
-        if callback.from_user.id != OWNER_ID:
-            await callback.answer("⛔ Доступ запрещен", show_alert=True)
+        chat_id = msg.chat.id
+        user_id = msg.from_user.id
+        chat_type = msg.chat.type
+        
+        if chat_type == "channel":
+            await msg.answer("ℹ️ В канале отправка по команде не требуется.")
             return
-        parts = callback.data.split('_')
-        action = parts[1]
-        post_id = '_'.join(parts[2:])
-        approved = action == 'approve'
-        if post_id not in moderator.pending_posts:
-            await callback.answer("❌ Пост не найден", show_alert=True)
+        
+        if chat_type == "private":
+            if user_id not in ALLOWED_PHOTO_USERS:
+                await msg.answer("⛔ Команда /photo в личных сообщениях доступна только владельцу бота.")
+                return
+        
+        if chat_type in ["group", "supergroup"]:
+            if not await is_user_admin(chat_id, user_id):
+                await msg.reply("⛔ Только администраторы могут запрашивать фото.")
+                return
+        
+        if str(chat_id) not in [str(u) for u in users]:
+            await msg.answer("⚠️ Бот не активирован. Напишите /start")
             return
-        post = moderator.pending_posts[post_id]
-        if approved:
-            await moderator.manual_moderate(post_id, True, callback.from_user.id, "Одобрено владельцем")
-            await task_queue.push(QUEUE_NAME, {
-                'id': post_id,
-                'chat_id': post.chat_id,
-                'photo_url': post.photo_url,
-                'caption': post.caption,
-                'user_id': 0,
-                'timestamp': time.time(),
-                'needs_moderation': False
-            })
-            await callback.answer("✅ Пост одобрен и отправлен в очередь", show_alert=True)
-            await callback.message.edit_text(
-                callback.message.text + "\n\n✅ ОДОБРЕН",
-                reply_markup=None
-            )
-        else:
-            await moderator.manual_moderate(post_id, False, callback.from_user.id, "Отклонено владельцем")
-            await callback.answer("❌ Пост отклонен", show_alert=True)
-            await callback.message.edit_text(
-                callback.message.text + "\n\n❌ ОТКЛОНЕН",
-                reply_markup=None
-            )
+        
+        await generate_and_queue_post(str(chat_id), user_id, skip_moderation=True)
+        await msg.answer("✅ Пост добавлен в очередь отправки")
+        
     except Exception as e:
-        logger.error(f"Ошибка в callback модерации: {e}")
-        await callback.answer("❌ Ошибка", show_alert=True)
+        logger.error(f"Ошибка в команде photo: {e}")
+        await msg.answer("❌ Произошла ошибка. Попробуйте позже.")
+
+# ===== КОМАНДА /POST (для всех пользователей) =====
+
+@dp.message(Command("post"))
+async def post_to_all(msg: Message):
+    try:
+        if msg.from_user.id != OWNER_ID:
+            await msg.answer("⛔ Доступ запрещён. Только для владельца.")
+            return
+        
+        if msg.chat.type != "private":
+            await msg.answer("ℹ️ Эта команда работает только в личных сообщениях с ботом.")
+            return
+        
+        await msg.answer("⏳ Генерирую пост для всех подписчиков...")
+        
+        photo_url = await get_random_photo()
+        if not photo_url:
+            await msg.answer("❌ Не удалось найти фото")
+            return
+        
+        caption = generate_caption()
+        caption = clean_text(caption)
+        caption = format_text_with_paragraphs(caption, 'medium')
+        caption = truncate_by_sentences(caption, max_length=1023)
+        validated, error = validate_caption(caption, min_length=400, max_length=1023)
+        if validated:
+            caption = validated
+        else:
+            caption = clean_text(get_fallback_caption())
+            caption = format_text_with_paragraphs(caption, 'medium')
+            caption = truncate_by_sentences(caption, max_length=1023)
+            validated, error = validate_caption(caption, min_length=400, max_length=1023)
+            if validated:
+                caption = validated
+        
+        if not caption or not photo_url:
+            await msg.answer("❌ Не удалось сгенерировать пост")
+            return
+        
+        add_to_last_posts(caption)
+        
+        logger.info(f"✅ Сгенерирован пост для рассылки ({len(caption)} символов)")
+        
+        users_list = load_users()
+        if not users_list:
+            await msg.answer("⚠️ Нет подписчиков для рассылки")
+            return
+        
+        sent_count = 0
+        failed_count = 0
+        
+        status_msg = await msg.answer(f"📨 Начинаю рассылку {len(users_list)} пользователям...")
+        
+        for chat_id in users_list:
+            try:
+                await bot.send_photo(
+                    chat_id=chat_id,
+                    photo=photo_url,
+                    caption=caption
+                )
+                sent_count += 1
+                await asyncio.sleep(0.1)
+            except Exception as e:
+                logger.error(f"Ошибка отправки в {chat_id}: {e}")
+                failed_count += 1
+                if "forbidden" in str(e).lower() or "chat not found" in str(e).lower():
+                    if str(chat_id) in [str(u) for u in users_list]:
+                        users_list.remove(str(chat_id))
+                        save_users(users_list)
+                        logger.info(f"Пользователь {chat_id} удалён из-за ошибки")
+            
+            if (sent_count + failed_count) % 10 == 0:
+                try:
+                    await status_msg.edit_text(
+                        f"📨 Рассылка: {sent_count + failed_count}/{len(users_list)}\n"
+                        f"✅ Отправлено: {sent_count}\n"
+                        f"❌ Ошибок: {failed_count}"
+                    )
+                except:
+                    pass
+        
+        channel_id = CHANNEL_ID
+        if not channel_id or not channel_id.strip():
+            channel_id = await get_channel_id()
+        
+        channel_status = ""
+        if channel_id:
+            try:
+                await bot.send_photo(
+                    chat_id=channel_id,
+                    photo=photo_url,
+                    caption=caption
+                )
+                channel_status = f"\n📢 Канал: ✅ отправлено"
+                logger.info(f"✅ Пост отправлен в канал {channel_id}")
+            except Exception as e:
+                channel_status = f"\n📢 Канал: ❌ ошибка - {str(e)[:50]}"
+                logger.error(f"Ошибка отправки в канал {channel_id}: {e}")
+        else:
+            channel_status = "\n📢 Канал: ⚠️ не найден"
+        
+        await status_msg.edit_text(
+            f"✅ Рассылка завершена!\n"
+            f"📨 Всего: {len(users_list)}\n"
+            f"✅ Отправлено: {sent_count}\n"
+            f"❌ Ошибок: {failed_count}\n"
+            f"{channel_status}\n"
+            f"📝 Текст: {caption[:100]}{'...' if len(caption) > 100 else ''}"
+        )
+        
+    except Exception as e:
+        logger.error(f"Ошибка в команде post: {e}")
+        await msg.answer(f"❌ Произошла ошибка: {str(e)[:100]}")
+
+# ===== КОМАНДА /POSTALL (алиас для /post) =====
+
+@dp.message(Command("postall"))
+async def post_all_alias(msg: Message):
+    await post_to_all(msg)
+
+# ===== КОМАНДА /START =====
 
 @dp.message(Command("start"))
 async def start(msg: Message):
@@ -2386,54 +2552,24 @@ async def start(msg: Message):
         current_schedule = load_schedule()
         times = ", ".join(current_schedule.get("times", ["12:00", "21:00"]))
         current_price = load_broadcast_price()
+        
+        is_owner = (user_id == OWNER_ID)
+        owner_commands = ""
+        if is_owner:
+            owner_commands = f"\n\n👑 Команды владельца:\n📢 /post - отправить пост всем подписчикам\n📸 /photo - получить пост только себе"
+        
         await msg.answer(
             f"✅ Вы подписаны на рассылку!\n"
             f"📸 Уникальные посты про молодых азиаток (18-30 лет)\n"
             f"⏰ Расписание: {times}\n"
             f"{channel_status}\n"
-            f"🔄 /photo - получить фото сейчас\n"
-            f"⏰ /schedule - изменить расписание\n"
-            f"📢 /broadcast - отправить сообщение всем (⭐ {current_price} звёзд)\n"
-            f"🛑 /stop - отписаться"
+            f"🛑 /stop - отписаться{owner_commands}"
         )
     except Exception as e:
         logger.error(f"Ошибка в команде start: {e}")
         await msg.answer("❌ Произошла ошибка. Попробуйте позже.")
 
-@dp.message(Command("photo"))
-async def photo(msg: Message):
-    try:
-        chat_id = msg.chat.id
-        user_id = msg.from_user.id
-        chat_type = msg.chat.type
-        if chat_type == "channel":
-            await msg.answer("ℹ️ В канале отправка по команде не требуется.")
-            return
-        if chat_type == "private":
-            if user_id not in ALLOWED_PHOTO_USERS:
-                await msg.answer("⛔ Команда /photo в личных сообщениях доступна только владельцу бота.")
-                return
-        if not await check_user_can_use_command(msg):
-            await msg.reply("⛔ Только администраторы могут запрашивать фото.")
-            return
-        if str(chat_id) not in [str(u) for u in users]:
-            await msg.answer("⚠️ Бот не активирован. Напишите /start")
-            return
-        is_owner = (user_id in ALLOWED_PHOTO_USERS)
-        if is_owner:
-            await generate_and_queue_post(str(chat_id), user_id, skip_moderation=True)
-            channel_id = CHANNEL_ID
-            if not channel_id or not channel_id.strip():
-                channel_id = await get_channel_id()
-            if channel_id:
-                await generate_and_queue_post(str(channel_id), user_id, skip_moderation=True)
-                await msg.answer("✅ Посты добавлены в очередь")
-        else:
-            await generate_and_queue_post(str(chat_id), user_id, skip_moderation=True)
-            await msg.answer("✅ Пост добавлен в очередь")
-    except Exception as e:
-        logger.error(f"Ошибка в команде photo: {e}")
-        await msg.answer("❌ Произошла ошибка. Попробуйте позже.")
+# ===== КОМАНДА /STOP =====
 
 @dp.message(Command("stop"))
 async def stop(msg: Message):
@@ -2457,6 +2593,8 @@ async def stop(msg: Message):
     except Exception as e:
         logger.error(f"Ошибка в команде stop: {e}")
         await msg.answer("❌ Произошла ошибка. Попробуйте позже.")
+
+# ===== КОМАНДА /STATUS =====
 
 @dp.message(Command("status"))
 async def status(msg: Message):
@@ -2491,6 +2629,8 @@ async def status(msg: Message):
     except Exception as e:
         logger.error(f"Ошибка в команде status: {e}")
         await msg.answer("❌ Произошла ошибка. Попробуйте позже.")
+
+# ===== КОМАНДА /SCHEDULE =====
 
 @dp.message(Command("schedule"))
 async def schedule(msg: Message):
@@ -2535,6 +2675,8 @@ async def schedule(msg: Message):
         logger.error(f"Ошибка в команде schedule: {e}")
         await msg.answer("❌ Произошла ошибка. Попробуйте позже.")
 
+# ===== КОМАНДА /MODERATE =====
+
 @dp.message(Command("moderate"))
 async def moderate_pending(msg: Message):
     try:
@@ -2550,6 +2692,8 @@ async def moderate_pending(msg: Message):
     except Exception as e:
         logger.error(f"Ошибка в команде moderate: {e}")
         await msg.answer("❌ Произошла ошибка. Попробуйте позже.")
+
+# ===== КОМАНДА /MODERATION_STATS =====
 
 @dp.message(Command("moderation_stats"))
 async def moderation_stats(msg: Message):
@@ -2571,6 +2715,49 @@ async def moderation_stats(msg: Message):
     except Exception as e:
         logger.error(f"Ошибка в команде moderation_stats: {e}")
         await msg.answer("❌ Произошла ошибка. Попробуйте позже.")
+
+# ===== ОБРАБОТЧИК CALLBACK'ОВ МОДЕРАЦИИ =====
+
+@dp.callback_query(lambda c: c.data and c.data.startswith('mod_'))
+async def handle_moderation_callback(callback: CallbackQuery):
+    try:
+        if callback.from_user.id != OWNER_ID:
+            await callback.answer("⛔ Доступ запрещен", show_alert=True)
+            return
+        parts = callback.data.split('_')
+        action = parts[1]
+        post_id = '_'.join(parts[2:])
+        approved = action == 'approve'
+        if post_id not in moderator.pending_posts:
+            await callback.answer("❌ Пост не найден", show_alert=True)
+            return
+        post = moderator.pending_posts[post_id]
+        if approved:
+            await moderator.manual_moderate(post_id, True, callback.from_user.id, "Одобрено владельцем")
+            await task_queue.push(QUEUE_NAME, {
+                'id': post_id,
+                'chat_id': post.chat_id,
+                'photo_url': post.photo_url,
+                'caption': post.caption,
+                'user_id': 0,
+                'timestamp': time.time(),
+                'needs_moderation': False
+            })
+            await callback.answer("✅ Пост одобрен и отправлен в очередь", show_alert=True)
+            await callback.message.edit_text(
+                callback.message.text + "\n\n✅ ОДОБРЕН",
+                reply_markup=None
+            )
+        else:
+            await moderator.manual_moderate(post_id, False, callback.from_user.id, "Отклонено владельцем")
+            await callback.answer("❌ Пост отклонен", show_alert=True)
+            await callback.message.edit_text(
+                callback.message.text + "\n\n❌ ОТКЛОНЕН",
+                reply_markup=None
+            )
+    except Exception as e:
+        logger.error(f"Ошибка в callback модерации: {e}")
+        await callback.answer("❌ Ошибка", show_alert=True)
 
 # ===== ПЕРЕСЫЛКА ВСЕХ СООБЩЕНИЙ ВЛАДЕЛЬЦУ =====
 
@@ -2671,19 +2858,22 @@ async def scheduler():
                 logger.info(f"Следующая проверка через {wait_time // 60} минут")
                 await asyncio.sleep(wait_time)
                 continue
+            
             random_delay = random.randint(3600, 14400)
             post_time = datetime.now() + timedelta(seconds=random_delay)
             logger.info(f"Следующий пост запланирован на {post_time.strftime('%Y-%m-%d %H:%M:%S')} "
                        f"(через {random_delay // 3600} часов {random_delay % 3600 // 60} минут)")
             await asyncio.sleep(random_delay)
+            
             if time.time() - last_post_time < MIN_POST_INTERVAL:
                 logger.info("Пост уже был отправлен, пропускаем")
                 continue
+            
             if not is_sending:
                 is_sending = True
                 try:
                     logger.info("Отправка запланированного поста...")
-                    await send_to_all_users()
+                    await auto_send_to_all_users()
                     last_post_time = time.time()
                     logger.info(f"Пост отправлен! Следующий не ранее чем через {MIN_POST_INTERVAL // 3600} часов")
                 except Exception as e:
@@ -2722,7 +2912,8 @@ async def main():
         logger.info(f"📨 Сообщения владельцу отправляются с интервалом 1 минута")
         logger.info(f"📊 Посты в канал не чаще 1 раза в {MIN_POST_INTERVAL // 3600} часа (случайное время)")
         logger.info("📢 /broadcast - только в личных сообщениях")
-        logger.info("📸 /photo - в ЛС только для владельца и пользователя 1361723521")
+        logger.info("📸 /photo - только для владельца (в ЛС)")
+        logger.info("📢 /post - рассылка всем подписчикам (только владелец)")
         logger.info("💡 /check_channel - проверить права бота в канале для звёзд")
         await task_queue.connect()
         logger.info("=" * 60)
