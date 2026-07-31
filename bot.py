@@ -48,8 +48,11 @@ OWNER_ID = int(os.getenv("OWNER_ID", 0))
 # Разрешённые пользователи для команды /photo в ЛС
 ALLOWED_PHOTO_USERS = [OWNER_ID, 1361723521]
 
+# Разрешённые пользователи для команды /balance
+ALLOWED_BALANCE_USERS = [OWNER_ID, 1361723521]
+
 # Настройки для Stars
-STARS_CHANNEL_ID = -1003893727881
+STARS_CHANNEL_ID = -1003893727881  # ЗАМЕНИТЕ НА ВАШ ID КАНАЛА
 BROADCAST_PRICE_FILE = "broadcast_price.json"
 
 # Redis настройки
@@ -2246,9 +2249,9 @@ async def set_price(message: Message):
 @dp.message(Command("balance"))
 async def check_stars_balance(message: Message):
     try:
-        # Команда доступна только владельцу
-        if message.from_user.id != OWNER_ID:
-            await message.answer("⛔ Доступ запрещён. Только для владельца.")
+        # Команда доступна только владельцу и разрешённым пользователям
+        if message.from_user.id not in ALLOWED_BALANCE_USERS:
+            await message.answer("⛔ Доступ запрещён. Только для владельца и разрешённых пользователей.")
             return
         
         # Только в личных сообщениях
@@ -2259,15 +2262,43 @@ async def check_stars_balance(message: Message):
         await message.answer("⏳ Проверяю баланс звёзд...")
         
         try:
-            # Используем метод для получения баланса звёзд
-            balance = await bot.get_business_account_star_balance(chat_id=STARS_CHANNEL_ID)
-            await message.answer(
-                f"⭐ Баланс звёзд в канале {STARS_CHANNEL_ID}:\n\n"
-                f"💰 {balance} ⭐ звёзд\n\n"
-                f"💡 1 звезда = 1 цент (≈ 1 рубль)\n"
-                f"📊 Звёзды поступают за платные рассылки (/broadcast)"
-            )
-            logger.info(f"Владелец проверил баланс: {balance} звёзд")
+            # Прямой запрос к API Telegram
+            url = f"https://api.telegram.org/bot{BOT_TOKEN}/getBusinessAccountStarBalance"
+            params = {"chat_id": STARS_CHANNEL_ID}
+            
+            response = requests.get(url, params=params, timeout=10)
+            data = response.json()
+            
+            if data.get("ok"):
+                balance = data.get("result", 0)
+                
+                # Определяем, кто запросил баланс
+                user_id = message.from_user.id
+                if user_id == OWNER_ID:
+                    user_type = "👑 Владелец"
+                elif user_id == 1361723521:
+                    user_type = "⭐ Разрешённый пользователь"
+                else:
+                    user_type = "👤 Пользователь"
+                
+                await message.answer(
+                    f"⭐ Баланс звёзд в канале {STARS_CHANNEL_ID}:\n\n"
+                    f"💰 {balance} ⭐ звёзд\n\n"
+                    f"👤 Запросил: {user_type}\n"
+                    f"💡 1 звезда = 1 цент (≈ 1 рубль)\n"
+                    f"📊 Звёзды поступают за платные рассылки (/broadcast)"
+                )
+                logger.info(f"Пользователь {user_id} проверил баланс: {balance} звёзд")
+            else:
+                error = data.get("description", "Неизвестная ошибка")
+                await message.answer(
+                    f"❌ Ошибка: {error}\n\n"
+                    f"Возможные причины:\n"
+                    f"• Канал {STARS_CHANNEL_ID} не существует\n"
+                    f"• Бот не администратор канала\n"
+                    f"• У бота нет прав на просмотр баланса\n\n"
+                    f"Проверьте права бота в канале командой /check_channel"
+                )
         except Exception as e:
             logger.error(f"Ошибка получения баланса: {e}")
             await message.answer(
@@ -2281,6 +2312,48 @@ async def check_stars_balance(message: Message):
     except Exception as e:
         logger.error(f"Ошибка в команде balance: {e}")
         await message.answer("❌ Произошла ошибка. Попробуйте позже.")
+
+
+# ===== КОМАНДА /CHECK_CHANNEL =====
+
+@dp.message(Command("check_channel"))
+async def check_channel(message: Message):
+    try:
+        if message.from_user.id not in ALLOWED_BALANCE_USERS:
+            await message.answer("⛔ Доступ запрещён")
+            return
+        
+        try:
+            # Проверяем, существует ли канал
+            chat = await bot.get_chat(STARS_CHANNEL_ID)
+            
+            # Проверяем права бота
+            member = await bot.get_chat_member(STARS_CHANNEL_ID, bot.id)
+            
+            await message.answer(
+                f"📊 Информация о канале {STARS_CHANNEL_ID}:\n\n"
+                f"• Название: {chat.title}\n"
+                f"• ID: {chat.id}\n"
+                f"• Тип: {chat.type}\n"
+                f"• Username: @{chat.username if chat.username else 'нет'}\n\n"
+                f"👤 Статус бота: {member.status}\n"
+                f"✅ Может отправлять: {'да' if member.can_send_messages else 'нет'}\n"
+                f"✅ Может управлять: {'да' if member.can_manage_chat else 'нет'}\n"
+                f"✅ Может публиковать: {'да' if member.can_post_messages else 'нет'}\n\n"
+                f"Если статус не 'administrator' или 'creator',\n"
+                f"добавьте бота как администратора канала!"
+            )
+        except Exception as e:
+            await message.answer(
+                f"❌ Ошибка: {e}\n\n"
+                f"Проверьте:\n"
+                f"1. Правильный ли ID канала: {STARS_CHANNEL_ID}\n"
+                f"2. Бот добавлен в канал как администратор\n"
+                f"3. У бота есть права на просмотр"
+            )
+    except Exception as e:
+        logger.error(f"Ошибка проверки канала: {e}")
+        await message.answer(f"❌ Ошибка: {e}")
 
 
 # ===== КОМАНДА /BROADCAST (ОБНОВЛЁННАЯ) =====
@@ -2313,7 +2386,7 @@ async def broadcast_command(message: Message):
         if message.photo:
             has_media = True
             media_type = "photo"
-            media_file_id = message.photo[-1].file_id  # Берём самое большое фото
+            media_file_id = message.photo[-1].file_id
             text = message.caption or ""
         elif message.video:
             has_media = True
@@ -2325,7 +2398,7 @@ async def broadcast_command(message: Message):
             media_type = "document"
             media_file_id = message.document.file_id
             text = message.caption or ""
-        elif message.animation:  # GIF
+        elif message.animation:
             has_media = True
             media_type = "animation"
             media_file_id = message.animation.file_id
@@ -2340,7 +2413,7 @@ async def broadcast_command(message: Message):
             media_type = "voice"
             media_file_id = message.voice.file_id
             text = message.caption or ""
-        elif message.video_note:  # Кружок
+        elif message.video_note:
             has_media = True
             media_type = "video_note"
             media_file_id = message.video_note.file_id
@@ -2386,15 +2459,17 @@ async def broadcast_command(message: Message):
         
         prices = [LabeledPrice(label="⭐ Рассылка", amount=current_price)]
         
+        # ОТПРАВЛЯЕМ СЧЁТ С УКАЗАНИЕМ КАНАЛА ДЛЯ ПОСТУПЛЕНИЯ ЗВЁЗД
         await bot.send_invoice(
-            chat_id=chat_id,
+            chat_id=chat_id,  # ID пользователя (кому показывать счёт)
             title="📢 Рассылка сообщения",
-            description=description[:255],  # Telegram ограничение
+            description=description[:255],
             payload=f"broadcast_{user_id}_{int(time.time())}",
             provider_token="",
             currency="XTR",
             prices=prices,
             start_parameter="broadcast",
+            chat_id_for_stars=STARS_CHANNEL_ID,  # <-- ЗВЁЗДЫ ПОСТУПАЮТ СЮДА!
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text=f"⭐ Оплатить {current_price} звёзд", pay=True)]
             ])
@@ -2509,7 +2584,6 @@ async def send_broadcast_for_moderation(broadcast_id: str, broadcast_info: dict)
         
         # Отправляем превью владельцу
         if has_media and media_file_id:
-            # Отправляем медиа с превью
             if media_type == "photo":
                 await bot.send_photo(
                     chat_id=OWNER_ID,
@@ -2558,14 +2632,12 @@ async def send_broadcast_for_moderation(broadcast_id: str, broadcast_info: dict)
                     video_note=media_file_id,
                     reply_markup=keyboard
                 )
-                # Отправляем текст отдельно для видео-кружка
                 await bot.send_message(
                     chat_id=OWNER_ID,
                     text=preview_text,
                     reply_markup=keyboard
                 )
         else:
-            # Только текст
             await bot.send_message(
                 chat_id=OWNER_ID,
                 text=preview_text,
@@ -2617,7 +2689,6 @@ async def handle_broadcast_moderation(callback: CallbackQuery):
             for chat_id in users_list:
                 try:
                     if has_media and media_file_id:
-                        # Отправляем с медиа
                         if media_type == "photo":
                             await bot.send_photo(
                                 chat_id=chat_id,
@@ -2662,7 +2733,6 @@ async def handle_broadcast_moderation(callback: CallbackQuery):
                             if text:
                                 await bot.send_message(chat_id=chat_id, text=text)
                     else:
-                        # Только текст
                         if text:
                             await bot.send_message(chat_id=chat_id, text=text)
                     
@@ -2785,29 +2855,6 @@ async def handle_broadcast_moderation(callback: CallbackQuery):
         logger.error(f"Ошибка в broadcast модерации: {e}")
         await callback.answer("❌ Ошибка", show_alert=True)
 
-
-# ===== КОМАНДА /CHECK_CHANNEL =====
-
-@dp.message(Command("check_channel"))
-async def check_channel(message: Message):
-    try:
-        if message.from_user.id != OWNER_ID:
-            await message.answer("⛔ Доступ запрещён")
-            return
-        try:
-            chat_member = await bot.get_chat_member(STARS_CHANNEL_ID, bot.id)
-            status_text = f"📊 Статус бота в канале {STARS_CHANNEL_ID}:\n"
-            status_text += f"• Статус: {chat_member.status}\n"
-            status_text += f"• Может отправлять: {chat_member.can_send_messages}\n"
-            status_text += f"• Может управлять: {chat_member.can_manage_chat}\n"
-            status_text += f"• Может публиковать: {chat_member.can_post_messages}\n"
-            status_text += f"• Может управлять видеочатами: {chat_member.can_manage_video_chats}\n"
-            await message.answer(status_text)
-        except Exception as e:
-            await message.answer(f"❌ Ошибка: {e}\n\nУбедитесь, что бот добавлен в канал {STARS_CHANNEL_ID} как администратор.")
-    except Exception as e:
-        logger.error(f"Ошибка проверки канала: {e}")
-        await message.answer("❌ Произошла ошибка")
 
 # ===== КОМАНДА /PHOTO =====
 
@@ -3006,10 +3053,15 @@ async def start(msg: Message):
         times = ", ".join(current_schedule.get("times", ["12:00", "21:00"]))
         current_price = load_broadcast_price()
         
+        # Определяем доступные команды для пользователя
         is_owner = (user_id == OWNER_ID)
+        is_allowed = (user_id in ALLOWED_BALANCE_USERS)
+        
         owner_commands = ""
         if is_owner:
-            owner_commands = f"\n\n👑 Команды владельца:\n📢 /post - отправить пост всем подписчикам\n📸 /photo - получить пост только себе\n⭐ /balance - проверить баланс звёзд"
+            owner_commands = f"\n\n👑 Команды владельца:\n📢 /post - отправить пост всем подписчикам\n📸 /photo - получить пост только себе\n⭐ /balance - проверить баланс звёзд\n📊 /check_channel - проверить канал"
+        elif is_allowed:
+            owner_commands = f"\n\n⭐ Доступные команды:\n⭐ /balance - проверить баланс звёзд\n📊 /check_channel - проверить канал"
         
         await msg.answer(
             f"✅ Бот активирован!\n"
@@ -3371,8 +3423,8 @@ async def main():
         logger.info("📢 /broadcast - только в личных сообщениях (поддерживает фото, видео, документы, GIF)")
         logger.info("📸 /photo - только для владельца (в ЛС)")
         logger.info("📢 /post - рассылка всем подписчикам (только владелец)")
-        logger.info("⭐ /balance - проверить баланс звёзд (только владелец)")
-        logger.info("💡 /check_channel - проверить права бота в канале для звёзд")
+        logger.info("⭐ /balance - проверить баланс звёзд (только владелец и разрешённые)")
+        logger.info("📊 /check_channel - проверить права бота в канале для звёзд")
         await task_queue.connect()
         logger.info("=" * 60)
         gc.collect()
