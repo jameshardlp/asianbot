@@ -108,10 +108,11 @@ ASIAN_KEYWORDS = [
     'asian', 'japanese', 'korean', 'chinese', 'thai', 'vietnamese',
     'filipino', 'indonesian', 'malaysian', 'singaporean', 'taiwanese',
     'mongolian', 'burmese', 'cambodian', 'laotian', 'east asian',
-    'south east asian', 'oriental', 'asia girl', 'asia woman',
+    'south east asian', 'oriental', 'asia woman', 'asia model',
     'japan', 'korea', 'china', 'thailand', 'vietnam', 'philippines',
     'indonesia', 'malaysia', 'singapore', 'taiwan', 'mongolia',
     'myanmar', 'cambodia', 'laos', 'hong kong', 'macau',
+    'kpop', 'k-pop', 'kdrama', 'k-drama',
 ]
 
 NON_ASIAN_KEYWORDS = [
@@ -151,11 +152,20 @@ CHILD_EXCLUDE_WORDS = [
     'young boy', 'daughter', 'son', 'family', 'family photo',
     'childhood', 'baby girl', 'baby boy', 'newborn', 'cute baby',
     'child model', 'kid model', 'baby model', 'toddler girl', 'toddler boy',
-    'elementary', 'middle school', 'high school', 'school uniform',
     'pigtails', 'braces', 'childhood friend', 'young teen',
     'preteen', 'tween', 'grade school', 'primary school',
     'secondary school', 'kindergarten', 'nursery', 'playground',
     'childrens', 'kids', 'childish', 'infantile',
+    'schoolgirl', 'schoolboy',
+]
+
+# ИСКЛЮЧАЕМ СТУДЕНТОВ И УЧЕБНЫЕ ЗАВЕДЕНИЯ
+STUDENT_EXCLUDE_WORDS = [
+    'college', 'university', 'student', 'freshman', 'sophomore',
+    'junior', 'senior', 'graduate', 'campus', 'dormitory',
+    'school uniform', 'college student', 'university student',
+    'high school', 'middle school', 'elementary school',
+    'academy', 'institute', 'classroom', 'lecture',
 ]
 
 TRADITIONAL_EXCLUDE = [
@@ -178,76 +188,111 @@ OLD_EXCLUDE_WORDS = [
     'senior citizen', 'retired', 'elder',
 ]
 
-# ===== ПОИСКОВЫЕ ЗАПРОСЫ =====
+# ===== ПОИСКОВЫЕ ЗАПРОСЫ (ТОЛЬКО WOMAN, БЕЗ STUDENT/COLLEGE) =====
+
+# KPOP МОДЕЛИ (ВЫШЕ В СПИСКЕ - ЧАЩЕ ВСЕГО)
+KPOP_QUERIES = [
+    "kpop idol woman portrait casual",
+    "kpop female idol everyday photo",
+    "korean pop star woman casual",
+    "kpop woman idol street style",
+    "kpop female artist portrait",
+    "kpop woman singer casual outfit",
+    "kpop idol woman modern portrait",
+    "kpop female celebrity everyday",
+    "korean pop star woman fashion",
+    "kpop woman idol natural photo",
+    "kpop female idol casual selfie",
+    "kpop woman singer street fashion",
+    "kpop idol woman beautiful portrait",
+    "kpop female star everyday life",
+    "kpop woman artist casual style",
+]
+
+# ОСНОВНЫЕ ЗАПРОСЫ
 SEARCH_QUERIES = [
-    "asian instagram blogger selfie",
-    "asian tiktok girl portrait",
-    "korean influencer casual photo",
-    "japanese fashion blogger street",
-    "asian youtube creator portrait",
-    "thai instagram model casual",
-    "asian social media influencer selfie",
-    "korean lifestyle blogger photo",
-    "japanese vlogger portrait",
-    "asian blogger everyday outfit",
-    "asian woman portrait casual",
-    "asian woman natural photo",
-    "korean woman everyday life",
-    "japanese woman street style",
-    "asian woman coffee shop",
-    "asian woman outdoor portrait",
-    "asian woman friend photo",
-    "asian woman laughing portrait",
-    "asian woman natural smile",
-    "asian woman casual outfit",
-    "asian college student portrait",
-    "asian university student casual",
-    "korean college girl street",
-    "japanese university student photo",
-    "asian graduate student portrait",
-    "asian model casual portrait",
+    # KPOP (уже есть выше, дублируем для частоты)
+    "kpop idol woman portrait casual",
+    "kpop female idol everyday photo",
+    "kpop woman singer casual portrait",
+    "kpop idol woman street style",
+    
+    # Блогеры и модели
+    "asian woman blogger portrait casual",
+    "asian woman model everyday photo",
+    "korean woman influencer portrait",
+    "japanese woman model street style",
+    "asian woman fashion blogger casual",
+    "thai woman model everyday style",
+    "asian woman instagram model portrait",
+    "korean woman influencer lifestyle photo",
+    "asian woman content creator portrait",
+    "japanese woman fashion blogger style",
+    
+    # Обычные фото
+    "asian woman portrait casual style",
+    "asian woman everyday life photo",
+    "korean woman street style casual",
+    "japanese woman modern portrait",
+    "asian woman coffee shop portrait",
+    "asian woman outdoor lifestyle photo",
+    "asian woman friend casual photo",
+    "asian woman laughing happy portrait",
+    "asian woman natural smile photo",
+    "asian woman casual outfit style",
+    "asian woman daily life portrait",
+    "asian woman city street style",
+    
+    # Модели и актрисы
+    "asian model portrait casual",
     "asian actress everyday photo",
-    "korean model street style",
-    "japanese actress casual portrait",
-    "asian influencer instagram photo",
-    "asian tiktok star portrait",
-    "asian youtuber casual selfie",
-    "korean fashion blogger outfit",
-    "japanese lifestyle vlogger photo",
+    "korean model street style casual",
+    "japanese actress modern portrait",
+    "asian professional model casual",
+    
+    # Пляжные
+    "asian woman beach portrait casual",
+    "asian woman summer vacation photo",
+    "korean woman beach style portrait",
+    "japanese woman beach day casual",
+    "asian woman swimming pool portrait",
+    "asian woman beach walk casual",
+    "thai woman beach resort style",
+    "asian woman summer dress portrait",
+    "asian woman sea view casual",
 ]
 
+# ПЛЯЖНЫЕ ЗАПРОСЫ
 BEACH_QUERIES = [
-    "asian woman beach holiday casual",
-    "asian girl beach vacation photo",
-    "korean woman beach portrait",
-    "japanese woman beach day",
+    "asian woman beach portrait casual",
+    "asian woman summer vacation style",
+    "korean woman beach day casual",
+    "japanese woman beach outfit portrait",
     "asian woman swimming pool casual",
-    "asian woman beach walk",
-    "thai woman beach resort photo",
-    "asian woman summer vacation",
-    "asian girl poolside portrait",
-    "asian woman beach smiling",
-    "asian woman sea view portrait",
-    "asian woman beach dress",
-    "korean girl beach holiday",
-    "japanese woman summer trip",
-    "asian woman tropical vacation",
+    "asian woman beach walk summer",
+    "thai woman beach resort portrait",
+    "asian woman tropical vacation style",
+    "asian woman beach dress casual",
+    "korean woman summer holiday portrait",
+    "japanese woman sea view casual",
+    "asian woman ocean beach portrait",
 ]
 
+# БЛОГЕРЫ (ДОПОЛНИТЕЛЬНО)
 BLOGGER_QUERIES = [
-    "asian instagram model selfie",
-    "asian tiktoker portrait",
-    "korean influencer daily photo",
-    "japanese blogger street fashion",
-    "thai model casual portrait",
-    "asian content creator selfie",
-    "filipina instagram blogger",
-    "vietnamese fashion blogger",
-    "asian lifestyle influencer",
-    "korean beauty blogger portrait",
+    "asian woman blogger portrait casual",
+    "asian woman influencer everyday style",
+    "korean woman fashion blogger portrait",
+    "japanese woman lifestyle blogger photo",
+    "thai woman model casual portrait",
+    "asian woman content creator style",
+    "filipina woman blogger portrait",
+    "vietnamese woman fashion blogger",
+    "asian woman beauty blogger casual",
+    "korean woman instagram model portrait",
 ]
 
-# ===== ФУНКЦИИ ФИЛЬТРАЦИИ =====
+# ===== ФУНКЦИИ ФИЛЬТРАЦИИ (УСИЛЕННАЯ) =====
 
 def has_man_in_photo(url: str) -> bool:
     if not url:
@@ -267,27 +312,54 @@ def is_old_person(url: str) -> bool:
             return True
     return False
 
-def is_child_photo(url: str) -> bool:
+def is_student_photo(url: str) -> bool:
+    """Проверка на студентов и учебные заведения"""
     if not url:
         return False
     url_lower = url.lower()
-    for word in CHILD_EXCLUDE_WORDS:
+    for word in STUDENT_EXCLUDE_WORDS:
         if word in url_lower:
             return True
-    school_patterns = [
-        r'school\s*uniform',
-        r'kindergarten',
-        r'nursery',
-        r'playground',
-        r'elementary\s*school',
-        r'primary\s*school',
-        r'middle\s*school',
-        r'high\s*school',
-        r'grade\s*school',
-    ]
-    for pattern in school_patterns:
-        if re.search(pattern, url_lower, re.IGNORECASE):
+    return False
+
+def is_child_photo(url: str) -> bool:
+    """Строжайшая проверка на детей"""
+    if not url:
+        return False
+    url_lower = url.lower()
+    
+    # Блокируем любые упоминания girl (если нет явного age)
+    if 'girl' in url_lower:
+        age_indicators = ['18', '19', '20', '21', '22', '23', '24', '25', '26', '27', '28', '29', '30']
+        has_age = any(age in url_lower for age in age_indicators)
+        if not has_age:
+            logger.warning(f"⚠️ Блокировка: найдено 'girl' без возраста")
             return True
+    
+    # Блокируем все детские слова
+    for word in CHILD_EXCLUDE_WORDS:
+        if word in url_lower:
+            logger.warning(f"⚠️ Блокировка: детское слово '{word}'")
+            return True
+    
+    # Блокируем возраст 0-17
+    age_patterns = [
+        r'\b(0|1|2|3|4|5|6|7|8|9|10|11|12|13|14|15|16|17)\s*(years?|yo|y/o)\b',
+        r'\b(age|years?|yo|y/o)\s*(0|1|2|3|4|5|6|7|8|9|10|11|12|13|14|15|16|17)\b',
+        r'\b(teen|teenager|preteen|tween|minor|underage)\b',
+    ]
+    for pattern in age_patterns:
+        if re.search(pattern, url_lower, re.IGNORECASE):
+            logger.warning(f"⚠️ Блокировка: возраст 0-17")
+            return True
+    
+    # Блокируем "cute" + "girl" без возраста
+    if 'cute' in url_lower and 'girl' in url_lower:
+        age_indicators = ['18', '19', '20', '21', '22', '23', '24', '25']
+        if not any(age in url_lower for age in age_indicators):
+            logger.warning(f"⚠️ Блокировка: 'cute girl' без возраста")
+            return True
+    
     return False
 
 def is_asian_photo(url: str, additional_context: str = "") -> bool:
@@ -306,16 +378,17 @@ def is_asian_photo(url: str, additional_context: str = "") -> bool:
     for name in ASIAN_NAMES:
         if name in text_to_check:
             return True
+    
     asian_features = [
         'slender', 'petite', 'olive skin', 'dark hair', 'black hair',
         'straight hair', 'bangs', 'double eyelid', 'monolid',
-        'kawaii', 'cute', 'innocent', 'pure', 'delicate',
         'slender figure', 'small face', 'fair skin',
         'east asian', 'southeast asian',
     ]
     for feature in asian_features:
         if feature in text_to_check:
             return True
+    
     asian_domains = ['.jp', '.kr', '.cn', '.tw', '.hk', '.mo', '.sg', '.th', '.vn', '.ph', '.my', '.id']
     for domain in asian_domains:
         if domain in url.lower():
@@ -323,34 +396,31 @@ def is_asian_photo(url: str, additional_context: str = "") -> bool:
     return False
 
 def is_age_appropriate(url: str) -> bool:
+    """Проверка возраста 18+ (упрощённая)"""
     if not url:
         return False
     url_lower = url.lower()
+    
     if is_child_photo(url):
         return False
     if is_old_person(url):
         return False
-    adult_patterns = [
-        r'\b(18|19|20|21|22|23|24|25|26|27|28|29|30)\b',
-        r'\b(adult|mature|grown|18\+|18plus|eighteen|twenties|20s)\b',
-        r'\b(age|years?|yo|y/o)\s*(18|19|20|21|22|23|24|25)\b',
-        r'\b(18|19|20|21|22|23|24|25)\s*(years?|yo|y/o)\b',
-    ]
-    for pattern in adult_patterns:
-        if re.search(pattern, url_lower, re.IGNORECASE):
-            return True
+    if is_student_photo(url):
+        return False
+    
+    # Проверяем наличие взрослых слов
     adult_words = [
-        'woman', 'lady', 'female adult', 'young adult',
-        'college', 'university', 'student', 'graduate',
-        'blogger', 'influencer', 'model', 'actress',
-        'instagram', 'tiktok', 'youtube',
-        'beach', 'swimming', 'pool', 'vacation', 'holiday',
-        'summer', 'tropical', 'resort', 'sea', 'ocean',
+        'woman', 'lady', 'adult', 'mature',
+        'model', 'actress', 'blogger', 'influencer',
+        'instagram', 'tiktok', 'youtube', 'kpop',
+        'beach', 'summer', 'vacation', 'holiday',
+        'portrait', 'style', 'fashion', 'casual',
     ]
     for word in adult_words:
         if word in url_lower:
             return True
-    return True
+    
+    return False
 
 def is_traditional_clothing(url: str) -> bool:
     if not url:
@@ -370,43 +440,56 @@ def is_erotic_content(url: str) -> bool:
     erotic_words = [
         'naked', 'nude', 'nudity', 'porn', 'porno', 'xxx', 
         'sex', 'sexual', 'erotic', 'erotica', 'explicit',
-        'bdsm', 'fetish', 'lingerie', 'lingerie model',
-        'playboy', 'penthouse', 'onlyfans', 'adult content',
+        'bdsm', 'fetish', 'lingerie', 'playboy', 'penthouse',
+        'onlyfans', 'adult content',
     ]
     for word in erotic_words:
         if word in url_lower:
             return True
-    explicit_patterns = [
-        r'spread\s*legs',
-        r'open\s*legs',
-        r'bent\s*over',
-        r'doggy\s*style',
-        r'missionary',
-        r'suggestive\s*pose',
-        r'provocative',
-    ]
-    for pattern in explicit_patterns:
-        if re.search(pattern, url_lower, re.IGNORECASE):
-            return True
     return False
 
 def is_photo_valid(url: str) -> bool:
+    """Проверяет фото по всем критериям"""
     if not url:
         return False
+    
     if is_child_photo(url):
+        logger.warning(f"❌ ОТКЛОНЕНО: ребёнок")
         return False
+    
     if has_man_in_photo(url):
+        logger.warning(f"❌ ОТКЛОНЕНО: мужчина")
         return False
+    
     if is_old_person(url):
+        logger.warning(f"❌ ОТКЛОНЕНО: пожилой")
         return False
+    
+    if is_student_photo(url):
+        logger.warning(f"❌ ОТКЛОНЕНО: студент/учебное заведение")
+        return False
+    
     if not is_asian_photo(url):
+        logger.warning(f"❌ ОТКЛОНЕНО: не азиатка")
         return False
+    
     if not is_age_appropriate(url):
+        logger.warning(f"❌ ОТКЛОНЕНО: возраст не 18+")
         return False
+    
     if is_traditional_clothing(url):
+        logger.warning(f"❌ ОТКЛОНЕНО: традиционная одежда")
         return False
+    
     if is_erotic_content(url):
+        logger.warning(f"❌ ОТКЛОНЕНО: эротика")
         return False
+    
+    # Дополнительная проверка
+    if 'girl' in url.lower() and not re.search(r'\b(18|19|20|21|22|23|24|25)\b', url.lower()):
+        logger.warning(f"❌ ОТКЛОНЕНО: 'girl' без возраста")
+        return False
+    
     return True
 
 # ===== ФУНКЦИИ ДЛЯ ПАМЯТИ =====
@@ -460,7 +543,6 @@ def is_similar(text: str) -> bool:
     return False
 
 def format_text_with_paragraphs(text: str, style: str) -> str:
-    """Форматирует текст с абзацами в зависимости от стиля"""
     if not text:
         return text
     
@@ -505,10 +587,6 @@ def get_fallback_caption() -> str:
         "Сижу в кафе в Чиангмае, пью латте, смотрю на прохожих. Вдруг подходит местная девушка и говорит: 'Вы тот самый блогер?' Я сразу напрягся, думаю - неужели узнали? А она показывает на мою футболку с логотипом какой-то группы и говорит, что ей нравится их музыка.\n\nОказалось, она думала, что я участник группы. Я даже не стал её разочаровывать - улыбнулся, сфоткался с ней и пошёл дальше. Теперь я официально музыкант. Хотя на гитаре играю только в голове. Но знаете, приятно, когда тебя замечают, даже если по ошибке. Главное - выглядеть убедительно, а там и до настоящей славы недалеко. Или до позора. Но мы не выбираем, мы просто живём.",
         
         "Вчера решил попробовать местную уличную еду в Бангкоке. Продавец говорит: 'Очень острый!' Я такой - да ладно, я русский, меня не напугаешь. Через минуту я сидел с красным лицом, пил воду и молился всем богам.\n\nПродавец смеётся и говорит: 'Ты теперь настоящий таец!' А я думаю - ну нафиг такую национальность, я лучше буду русским с нормальным желудком. Но знаете, это был лучший том-ям в моей жизни. И самое смешное, что на следующий день я снова туда пришёл. Видимо, я мазохист. Или просто люблю острые ощущения. Или у меня проблемы с памятью. Вариантов много.",
-        
-        "Сегодня в спортзале в Паттайе ко мне подошла девушка и спросила, сколько раз в неделю я тренируюсь. Я такой гордый - думаю, заметила мои бицепсы! А она говорит: 'Просто вы выглядите так, будто только начали, я могу дать пару советов'.\n\nВот так, коллеги. Получаешь совет от 20-летней тайки, которая весит 50 кг, а в жиме лежит больше меня. Но я не обиделся - взял пару советов, и знаете, они реально работают. Иногда лучше учиться у тех, кто моложе, чем у тех, кто старше. Хотя обидно, что меня пережимает девушка на 20 кг легче. Но я переживу. Как-нибудь.",
-        
-        "Забавная история из Таиланда. Я решил научиться торговаться на рынке. Прихожу, вижу классную рубашку. Продавщица говорит - 500 бат. Я такой: 'Дорого, давай за 200'. Она улыбается: 'Для тебя - 450'. Торгуемся минут десять.\n\nВ итоге она говорит: 'Слушай, ты так смешно торгуешься, что я отдам за 300, только приходи ещё'. Я взял рубашку за 300, а потом пошёл и купил ещё три вещи у неё. Она меня развела, а я даже не против. В Азии это искусство, и я пока ещё ученик. Зато теперь у меня есть рубашка и знание, что я лох. Но счастливый лох.",
     ]
     
     available_fallbacks = []
@@ -539,6 +617,7 @@ style_prompts = {
 - Острая, саркастичная шутка про жизнь в Азии
 - Самоирония — шути в первую очередь над собой
 - Можно тонко подколоть Меддисона (Илью), но редко
+- Можно обсудить события у стримеров/блогеров, но РЕДКО
 - Без длинных историй, без воды
 - Одна острая шутка или забавное наблюдение
 - Можно спросить у подписчиков: "как у вас там?"
@@ -571,7 +650,7 @@ style_prompts = {
 - Не переезжаешь чаще раза в неделю
 - У тебя НЕТ жены
 - ИНОГДА давай саркастичные советы о жизни в Азии
-- РЕДКО можно упомянуть Меддисона (Илью), но только чтобы подшутить
+- РЕДКО можно упомянуть Меддисона (Илью) или обсудить стримеров/блогеров
 
 Твой стиль:
 - Рассказываешь реальную историю, где ты облажался
@@ -605,7 +684,7 @@ style_prompts = {
 - Не переезжаешь чаще раза в неделю
 - У тебя НЕТ жены
 - Можно дать саркастичный совет о жизни в Азии
-- РЕДКО можно упомянуть Меддисона (Илью)
+- РЕДКО можно упомянуть Меддисона (Илью) или обсудить стримеров/блогеров
 
 Твой стиль:
 - Детальный рассказ с сарказмом
@@ -640,6 +719,7 @@ style_prompts = {
 - У тебя НЕТ жены
 - Можно дать советы о выгодной жизни в Азии (с сарказмом)
 - Чаще спрашивай у подписчиков
+- РЕДКО можно обсудить стримеров или блогеров
 
 Твой стиль:
 - Рассказываешь реальные истории
@@ -672,13 +752,12 @@ style_prompts = {
 - Сарказм и самоирония
 - Не переезжаешь чаще раза в неделю
 - У тебя НЕТ жены
-- РЕДКО можно упомянуть Меддисона
+- РЕДКО можно упомянуть Меддисона или стримеров
 
 Твой стиль:
 - Рассказываешь смешные истории
 - Главный объект шуток — ты сам
-- Сарказм и самоирония
-- Пишешь живым языком
+- Сарказм и самоирония- Пишешь живым языком
 
 Структура:
 1. Необычная ситуация
@@ -768,7 +847,7 @@ style_prompts = {
 - Не переезжаешь чаще раза в неделю
 - У тебя НЕТ жены
 - Можно спросить у подписчиков
-- РЕДКО можно упомянуть Меддисона
+- РЕДКО можно упомянуть Меддисона или стримеров
 
 Твой стиль:
 - Острые шутки без оскорблений
@@ -1128,7 +1207,8 @@ def generate_caption() -> str:
     prompt = style_prompts.get(style, style_prompts['medium'])
     prompt += "\n\nТвой ответ (ТОЛЬКО ПОСТ, БЕЗ РАССУЖДЕНИЙ):"
     
-    mention_maddyson = random.random() < 0.05
+    # Редко добавляем упоминания (10% вероятность)
+    mention_topic = random.random() < 0.1
     
     system_content = """Ты — Анатолий, саркастичный и самоироничный холостой блогер средних лет. Ты путешествуешь по Азии.
 
@@ -1147,11 +1227,15 @@ def generate_caption() -> str:
 - Обязательно заверши мысль - естественный вывод, не мораль
 - Отвечай ТОЛЬКО готовым постом. БЕЗ РАССУЖДЕНИЙ."""
 
-    if mention_maddyson:
-        system_content += """
-        
-Редко можно упомянуть стримера Меддисона (Илью). Он живёт в США, раньше жил в России. Иногда можно подшутить над ним, но не зло. Ты его знаешь, но не друзья."""
-        logger.info("🔴 Добавлено упоминание Меддисона (редко)")
+    if mention_topic:
+        topics = [
+            "Можно обсудить текущие события у русскоязычных стримеров или блогеров (Меддисон, Mellstroy, 404, или других). Но не слишком углубляйся.",
+            "Можно упомянуть Меддисона (Илью) или других стримеров, но только кратко и с юмором.",
+            "Иногда можно пошутить про стримеров или блогеров, но не увлекайся.",
+            "Можно вспомнить какого-нибудь стримера или блогера, но мельком.",
+        ]
+        system_content += "\n\n" + random.choice(topics)
+        logger.info("🔴 Добавлено обсуждение стримеров/блогеров (редко)")
     
     alternative_prompts = {
         'short': [
@@ -1160,7 +1244,7 @@ def generate_caption() -> str:
             "Забавное наблюдение с самоиронией про жизнь в Азии. 200-350 символов. БЕЗ АБЗАЦЕВ.",
         ],
         'long': [
-            "Напиши длинный саркастичный пост с историей про жизнь в Азии. 850-1023 символов. РОВНО 3 АБЗАЦА (через пустую строку).",
+            "Напиши длинный саркастичный пост с историей про жизнь в Азии. 850-1023 символов. РОВНО 3 АБЗАЦА.",
             "Подробный саркастичный рассказ о жизни в Азии. 850-1023 символов. РОВНО 3 АБЗАЦА.",
             "Развёрнутая история из Азии с самоиронией. 850-1023 символов. РОВНО 3 АБЗАЦА.",
         ],
@@ -1492,6 +1576,36 @@ def search_pexels(query):
         logger.error(f"Ошибка Pexels: {e}")
         return None
 
+def search_pinterest(query):
+    """Поиск на Pinterest через прямой запрос"""
+    if not query:
+        return None
+    try:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.5",
+        }
+        encoded_query = quote(query)
+        url = f"https://www.pinterest.com/search/pins/?q={encoded_query}&rs=typed"
+        response = requests.get(url, headers=headers, timeout=15)
+        # Ищем изображения в HTML
+        pattern = r'"images":{"orig":{"url":"([^"]+)"'
+        images = re.findall(pattern, response.text)
+        clean_images = []
+        for img in images:
+            img = img.replace('\\u0026', '&')
+            if any(ext in img.lower() for ext in ['.jpg', '.jpeg', '.png', '.webp']):
+                if is_photo_valid(img):
+                    clean_images.append(img)
+        if clean_images:
+            clean_images = list(dict.fromkeys(clean_images))
+            return random.choice(clean_images)
+        return None
+    except Exception as e:
+        logger.error(f"Ошибка Pinterest: {e}")
+        return None
+
 # ===== АСИНХРОННАЯ ФУНКЦИЯ ПОЛУЧЕНИЯ ФОТО =====
 
 async def get_random_photo():
@@ -1502,12 +1616,18 @@ async def get_random_photo():
         history = []
         save_history(history)
     
-    queries = SEARCH_QUERIES.copy()
+    # Сначала KPOP запросы (высокий приоритет)
+    queries = KPOP_QUERIES.copy()
     
+    # Добавляем основные запросы
+    queries.extend(SEARCH_QUERIES.copy())
+    
+    # Добавляем пляжные запросы
     if random.random() < 0.2:
         queries.extend(BEACH_QUERIES)
         logger.info("Добавлены пляжные запросы")
     
+    # Добавляем запросы блогеров
     if random.random() < 0.3:
         queries.extend(BLOGGER_QUERIES)
         logger.info("Добавлены запросы блогеров")
@@ -1515,6 +1635,7 @@ async def get_random_photo():
     random.shuffle(queries)
     
     search_functions = [
+        ('Pinterest', search_pinterest),  # Pinterest в приоритете
         ('Bing', search_bing),
         ('Google', search_google_direct),
         ('Yandex', search_yandex),
@@ -1530,14 +1651,16 @@ async def get_random_photo():
                     if is_photo_valid(photo):
                         history.append(photo)
                         save_history(history)
-                        logger.info(f"Найдено подходящее фото: {photo[:60]}...")
+                        logger.info(f"✅ Найдено подходящее фото: {photo[:60]}...")
                         return photo
+                    else:
+                        logger.warning(f"❌ Фото не прошло проверку: {photo[:60]}...")
             except Exception as e:
                 logger.error(f"Ошибка в {source_name}: {e}")
                 continue
             await asyncio.sleep(0.3)
     
-    logger.warning("Не удалось найти новое фото, очищаю историю...")
+    logger.warning("⚠️ Не удалось найти новое фото, очищаю историю...")
     history = []
     save_history(history)
     
@@ -1548,12 +1671,12 @@ async def get_random_photo():
                 if photo and is_photo_valid(photo):
                     history.append(photo)
                     save_history(history)
-                    logger.info(f"Найдено фото после очистки: {photo[:60]}...")
+                    logger.info(f"✅ Найдено фото после очистки: {photo[:60]}...")
                     return photo
             except:
                 continue
     
-    logger.error("Не удалось найти подходящее фото!")
+    logger.error("❌ Не удалось найти подходящее фото!")
     return None
 
 # ===== ОЧЕРЕДЬ ЗАДАЧ =====
@@ -1665,7 +1788,8 @@ class ContentModerator:
         self.banned_words = [
             'naked', 'nude', 'explicit', 'porn', 'sex', 'fuck',
             'наркотики', 'оружие', 'насилие', 'убийство', 'экстремизм',
-            'child', 'children', 'kid', 'baby', 'teen', 'minor', 'underage'
+            'child', 'children', 'kid', 'baby', 'teen', 'minor', 'underage',
+            'college', 'university', 'student', 'school'
         ]
         self.suspicious_patterns = [
             r'https?://\S+\.(ru|su|cc|to|top|club|online|site|xyz|click|win|bid)',
@@ -1679,8 +1803,6 @@ class ContentModerator:
             
             for word in self.banned_words:
                 if word in text_lower or word in photo_lower:
-                    if word in ['child', 'children', 'kid', 'baby', 'teen', 'minor', 'underage']:
-                        return False, f"Обнаружено упоминание ребёнка: {word}"
                     return False, f"Обнаружено запрещенное слово: {word}"
             
             erotic_words = ['naked', 'nude', 'porn', 'xxx', 'erotic', 'explicit']
@@ -1980,7 +2102,6 @@ async def generate_and_queue_post(chat_id: str, user_id: int = 0, skip_moderatio
         return False
 
 async def auto_send_to_all_users():
-    """Автоматическая рассылка по расписанию"""
     try:
         users_list = load_users()
         if not users_list:
@@ -2366,7 +2487,7 @@ async def check_channel(message: Message):
         logger.error(f"Ошибка проверки канала: {e}")
         await message.answer("❌ Произошла ошибка")
 
-# ===== КОМАНДА /PHOTO (только для себя) =====
+# ===== КОМАНДА /PHOTO =====
 
 @dp.message(Command("photo"))
 async def photo(msg: Message):
@@ -2400,7 +2521,7 @@ async def photo(msg: Message):
         logger.error(f"Ошибка в команде photo: {e}")
         await msg.answer("❌ Произошла ошибка. Попробуйте позже.")
 
-# ===== КОМАНДА /POST (для всех пользователей) =====
+# ===== КОМАНДА /POST =====
 
 @dp.message(Command("post"))
 async def post_to_all(msg: Message):
@@ -2514,7 +2635,7 @@ async def post_to_all(msg: Message):
         logger.error(f"Ошибка в команде post: {e}")
         await msg.answer(f"❌ Произошла ошибка: {str(e)[:100]}")
 
-# ===== КОМАНДА /POSTALL (алиас для /post) =====
+# ===== КОМАНДА /POSTALL =====
 
 @dp.message(Command("postall"))
 async def post_all_alias(msg: Message):
@@ -2892,7 +3013,7 @@ async def main():
     try:
         logger.info("=" * 60)
         logger.info("Бот запущен с очередью и модерацией")
-        logger.info("Приоритет: Bing → Google → Yandex → Pexels")
+        logger.info("Приоритет: Pinterest → Bing → Google → Yandex → Pexels")
         logger.info(f"Подписчиков: {len(load_users())}")
         current_schedule = load_schedule()
         times = ", ".join(current_schedule.get("times", ["12:00", "21:00"]))
@@ -2903,12 +3024,14 @@ async def main():
         logger.info(f"⭐ Цена broadcast: {current_price} звёзд")
         logger.info(f"💰 Получатель звёзд (канал): {STARS_CHANNEL_ID}")
         logger.info("Азиатские девушки | 18-30 лет | Модерация включена")
-        logger.info("🚫 Детские фото СТРОГО запрещены (0-17 лет)")
+        logger.info("🚫 Детские фото СТРОГО запрещены")
+        logger.info("🚫 Студенты и учебные заведения исключены")
         logger.info("🚫 Мужчины на фото исключены")
         logger.info("🚫 Пожилые люди исключены")
+        logger.info("✅ KPOP модели в приоритете")
+        logger.info("✅ Pinterest в приоритете")
         logger.info("✅ Бикини разрешены (без эротики)")
         logger.info("✅ Пляжные фото разрешены")
-        logger.info("📸 Поиск среди блогеров и открытых источников")
         logger.info(f"📨 Сообщения владельцу отправляются с интервалом 1 минута")
         logger.info(f"📊 Посты в канал не чаще 1 раза в {MIN_POST_INTERVAL // 3600} часа (случайное время)")
         logger.info("📢 /broadcast - только в личных сообщениях")
