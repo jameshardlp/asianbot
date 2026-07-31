@@ -188,7 +188,7 @@ OLD_EXCLUDE_WORDS = [
     'senior citizen', 'retired', 'elder',
 ]
 
-# ===== ПОИСКОВЫЕ ЗАПРОСЫ (ТОЛЬКО WOMAN, БЕЗ STUDENT/COLLEGE) =====
+# ===== ПОИСКОВЫЕ ЗАПРОСЫ (ТОЛЬКО WOMAN/FEMALE, БЕЗ STUDENT/COLLEGE) =====
 
 # KPOP МОДЕЛИ (ВЫШЕ В СПИСКЕ - ЧАЩЕ ВСЕГО)
 KPOP_QUERIES = [
@@ -211,13 +211,10 @@ KPOP_QUERIES = [
 
 # ОСНОВНЫЕ ЗАПРОСЫ
 SEARCH_QUERIES = [
-    # KPOP (уже есть выше, дублируем для частоты)
     "kpop idol woman portrait casual",
     "kpop female idol everyday photo",
     "kpop woman singer casual portrait",
     "kpop idol woman street style",
-    
-    # Блогеры и модели
     "asian woman blogger portrait casual",
     "asian woman model everyday photo",
     "korean woman influencer portrait",
@@ -228,8 +225,6 @@ SEARCH_QUERIES = [
     "korean woman influencer lifestyle photo",
     "asian woman content creator portrait",
     "japanese woman fashion blogger style",
-    
-    # Обычные фото
     "asian woman portrait casual style",
     "asian woman everyday life photo",
     "korean woman street style casual",
@@ -242,15 +237,11 @@ SEARCH_QUERIES = [
     "asian woman casual outfit style",
     "asian woman daily life portrait",
     "asian woman city street style",
-    
-    # Модели и актрисы
     "asian model portrait casual",
     "asian actress everyday photo",
     "korean model street style casual",
     "japanese actress modern portrait",
     "asian professional model casual",
-    
-    # Пляжные
     "asian woman beach portrait casual",
     "asian woman summer vacation photo",
     "korean woman beach style portrait",
@@ -292,7 +283,7 @@ BLOGGER_QUERIES = [
     "korean woman instagram model portrait",
 ]
 
-# ===== ФУНКЦИИ ФИЛЬТРАЦИИ (УСИЛЕННАЯ) =====
+# ===== ФУНКЦИИ ФИЛЬТРАЦИИ (УПРОЩЁННАЯ) =====
 
 def has_man_in_photo(url: str) -> bool:
     if not url:
@@ -323,18 +314,10 @@ def is_student_photo(url: str) -> bool:
     return False
 
 def is_child_photo(url: str) -> bool:
-    """Строжайшая проверка на детей"""
+    """Проверка на детей - ТОЛЬКО ПО КЛЮЧЕВЫМ СЛОВАМ"""
     if not url:
         return False
     url_lower = url.lower()
-    
-    # Блокируем любые упоминания girl (если нет явного age)
-    if 'girl' in url_lower:
-        age_indicators = ['18', '19', '20', '21', '22', '23', '24', '25', '26', '27', '28', '29', '30']
-        has_age = any(age in url_lower for age in age_indicators)
-        if not has_age:
-            logger.warning(f"⚠️ Блокировка: найдено 'girl' без возраста")
-            return True
     
     # Блокируем все детские слова
     for word in CHILD_EXCLUDE_WORDS:
@@ -342,22 +325,33 @@ def is_child_photo(url: str) -> bool:
             logger.warning(f"⚠️ Блокировка: детское слово '{word}'")
             return True
     
-    # Блокируем возраст 0-17
+    # Проверяем возраст 0-17 (только когда это явно возраст)
     age_patterns = [
         r'\b(0|1|2|3|4|5|6|7|8|9|10|11|12|13|14|15|16|17)\s*(years?|yo|y/o)\b',
         r'\b(age|years?|yo|y/o)\s*(0|1|2|3|4|5|6|7|8|9|10|11|12|13|14|15|16|17)\b',
-        r'\b(teen|teenager|preteen|tween|minor|underage)\b',
+        r'\b(infant|toddler|child|kid|teen|teenager|preteen|tween|minor|underage)\b',
     ]
     for pattern in age_patterns:
         if re.search(pattern, url_lower, re.IGNORECASE):
             logger.warning(f"⚠️ Блокировка: возраст 0-17")
             return True
     
-    # Блокируем "cute" + "girl" без возраста
-    if 'cute' in url_lower and 'girl' in url_lower:
-        age_indicators = ['18', '19', '20', '21', '22', '23', '24', '25']
-        if not any(age in url_lower for age in age_indicators):
-            logger.warning(f"⚠️ Блокировка: 'cute girl' без возраста")
+    # Блокируем школьные слова
+    school_patterns = [
+        r'school\s*uniform',
+        r'kindergarten',
+        r'nursery',
+        r'playground',
+        r'elementary\s*school',
+        r'primary\s*school',
+        r'middle\s*school',
+        r'high\s*school',
+        r'grade\s*school',
+        r'high\s*school\s+student',
+    ]
+    for pattern in school_patterns:
+        if re.search(pattern, url_lower, re.IGNORECASE):
+            logger.warning(f"⚠️ Блокировка: школа/учебное заведение")
             return True
     
     return False
@@ -396,10 +390,9 @@ def is_asian_photo(url: str, additional_context: str = "") -> bool:
     return False
 
 def is_age_appropriate(url: str) -> bool:
-    """Проверка возраста 18+ (упрощённая)"""
+    """Проверка что это не ребёнок и не студент"""
     if not url:
         return False
-    url_lower = url.lower()
     
     if is_child_photo(url):
         return False
@@ -408,19 +401,15 @@ def is_age_appropriate(url: str) -> bool:
     if is_student_photo(url):
         return False
     
-    # Проверяем наличие взрослых слов
-    adult_words = [
-        'woman', 'lady', 'adult', 'mature',
-        'model', 'actress', 'blogger', 'influencer',
-        'instagram', 'tiktok', 'youtube', 'kpop',
-        'beach', 'summer', 'vacation', 'holiday',
-        'portrait', 'style', 'fashion', 'casual',
-    ]
-    for word in adult_words:
-        if word in url_lower:
-            return True
+    # Проверяем что есть слова woman или female (не girl без woman/female)
+    url_lower = url.lower()
+    if 'girl' in url_lower and 'woman' not in url_lower and 'female' not in url_lower:
+        # Проверяем есть ли возраст 18+ (только в этом случае пропускаем)
+        if not re.search(r'\b(18|19|20|21|22|23|24|25)\b', url_lower):
+            logger.warning(f"⚠️ 'girl' без 'woman'/'female' и без возраста 18+")
+            return False
     
-    return False
+    return True
 
 def is_traditional_clothing(url: str) -> bool:
     if not url:
@@ -474,7 +463,7 @@ def is_photo_valid(url: str) -> bool:
         return False
     
     if not is_age_appropriate(url):
-        logger.warning(f"❌ ОТКЛОНЕНО: возраст не 18+")
+        logger.warning(f"❌ ОТКЛОНЕНО: возраст не подходит")
         return False
     
     if is_traditional_clothing(url):
@@ -483,11 +472,6 @@ def is_photo_valid(url: str) -> bool:
     
     if is_erotic_content(url):
         logger.warning(f"❌ ОТКЛОНЕНО: эротика")
-        return False
-    
-    # Дополнительная проверка
-    if 'girl' in url.lower() and not re.search(r'\b(18|19|20|21|22|23|24|25)\b', url.lower()):
-        logger.warning(f"❌ ОТКЛОНЕНО: 'girl' без возраста")
         return False
     
     return True
@@ -757,7 +741,8 @@ style_prompts = {
 Твой стиль:
 - Рассказываешь смешные истории
 - Главный объект шуток — ты сам
-- Сарказм и самоирония- Пишешь живым языком
+- Сарказм и самоирония
+- Пишешь живым языком
 
 Структура:
 1. Необычная ситуация
@@ -1589,7 +1574,6 @@ def search_pinterest(query):
         encoded_query = quote(query)
         url = f"https://www.pinterest.com/search/pins/?q={encoded_query}&rs=typed"
         response = requests.get(url, headers=headers, timeout=15)
-        # Ищем изображения в HTML
         pattern = r'"images":{"orig":{"url":"([^"]+)"'
         images = re.findall(pattern, response.text)
         clean_images = []
@@ -1616,18 +1600,13 @@ async def get_random_photo():
         history = []
         save_history(history)
     
-    # Сначала KPOP запросы (высокий приоритет)
     queries = KPOP_QUERIES.copy()
-    
-    # Добавляем основные запросы
     queries.extend(SEARCH_QUERIES.copy())
     
-    # Добавляем пляжные запросы
     if random.random() < 0.2:
         queries.extend(BEACH_QUERIES)
         logger.info("Добавлены пляжные запросы")
     
-    # Добавляем запросы блогеров
     if random.random() < 0.3:
         queries.extend(BLOGGER_QUERIES)
         logger.info("Добавлены запросы блогеров")
@@ -1635,7 +1614,7 @@ async def get_random_photo():
     random.shuffle(queries)
     
     search_functions = [
-        ('Pinterest', search_pinterest),  # Pinterest в приоритете
+        ('Pinterest', search_pinterest),
         ('Bing', search_bing),
         ('Google', search_google_direct),
         ('Yandex', search_yandex),
@@ -1653,8 +1632,6 @@ async def get_random_photo():
                         save_history(history)
                         logger.info(f"✅ Найдено подходящее фото: {photo[:60]}...")
                         return photo
-                    else:
-                        logger.warning(f"❌ Фото не прошло проверку: {photo[:60]}...")
             except Exception as e:
                 logger.error(f"Ошибка в {source_name}: {e}")
                 continue
@@ -2263,8 +2240,52 @@ async def set_price(message: Message):
         logger.error(f"Ошибка в команде price: {e}")
         await message.answer("❌ Произошла ошибка. Попробуйте позже.")
 
-# ===== КОМАНДА /BROADCAST =====
 
+# ===== КОМАНДА /BALANCE =====
+
+@dp.message(Command("balance"))
+async def check_stars_balance(message: Message):
+    try:
+        # Команда доступна только владельцу
+        if message.from_user.id != OWNER_ID:
+            await message.answer("⛔ Доступ запрещён. Только для владельца.")
+            return
+        
+        # Только в личных сообщениях
+        if message.chat.type != "private":
+            await message.answer("ℹ️ Эта команда работает только в личных сообщениях с ботом.")
+            return
+        
+        await message.answer("⏳ Проверяю баланс звёзд...")
+        
+        try:
+            # Используем метод для получения баланса звёзд
+            balance = await bot.get_business_account_star_balance(chat_id=STARS_CHANNEL_ID)
+            await message.answer(
+                f"⭐ Баланс звёзд в канале {STARS_CHANNEL_ID}:\n\n"
+                f"💰 {balance} ⭐ звёзд\n\n"
+                f"💡 1 звезда = 1 цент (≈ 1 рубль)\n"
+                f"📊 Звёзды поступают за платные рассылки (/broadcast)"
+            )
+            logger.info(f"Владелец проверил баланс: {balance} звёзд")
+        except Exception as e:
+            logger.error(f"Ошибка получения баланса: {e}")
+            await message.answer(
+                f"❌ Не удалось получить баланс звёзд.\n\n"
+                f"Возможные причины:\n"
+                f"• Бот не является администратором канала {STARS_CHANNEL_ID}\n"
+                f"• Канал {STARS_CHANNEL_ID} не существует или недоступен\n"
+                f"• У бота нет прав на просмотр баланса\n\n"
+                f"Проверьте права бота в канале командой /check_channel"
+            )
+    except Exception as e:
+        logger.error(f"Ошибка в команде balance: {e}")
+        await message.answer("❌ Произошла ошибка. Попробуйте позже.")
+
+
+# ===== КОМАНДА /BROADCAST (ОБНОВЛЁННАЯ) =====
+
+# Хранилище для данных рассылки
 broadcast_data = {}
 pending_broadcasts = {}
 
@@ -2274,25 +2295,101 @@ async def broadcast_command(message: Message):
         if message.chat.type != "private":
             await message.answer("ℹ️ Эта команда работает только в личных сообщениях с ботом.")
             return
+        
         user_id = message.from_user.id
         chat_id = message.chat.id
-        text = message.text.replace("/broadcast", "").strip()
-        if not text:
+        
+        # Проверяем, есть ли вложение
+        has_media = False
+        media_type = None
+        media_file_id = None
+        text = ""
+        
+        # Проверяем текст
+        if message.text:
+            text = message.text.replace("/broadcast", "").strip()
+        
+        # Проверяем вложения
+        if message.photo:
+            has_media = True
+            media_type = "photo"
+            media_file_id = message.photo[-1].file_id  # Берём самое большое фото
+            text = message.caption or ""
+        elif message.video:
+            has_media = True
+            media_type = "video"
+            media_file_id = message.video.file_id
+            text = message.caption or ""
+        elif message.document:
+            has_media = True
+            media_type = "document"
+            media_file_id = message.document.file_id
+            text = message.caption or ""
+        elif message.animation:  # GIF
+            has_media = True
+            media_type = "animation"
+            media_file_id = message.animation.file_id
+            text = message.caption or ""
+        elif message.audio:
+            has_media = True
+            media_type = "audio"
+            media_file_id = message.audio.file_id
+            text = message.caption or ""
+        elif message.voice:
+            has_media = True
+            media_type = "voice"
+            media_file_id = message.voice.file_id
+            text = message.caption or ""
+        elif message.video_note:  # Кружок
+            has_media = True
+            media_type = "video_note"
+            media_file_id = message.video_note.file_id
+            text = message.caption or ""
+        
+        # Если нет ни текста, ни вложения
+        if not text and not has_media:
             current_price = load_broadcast_price()
             await message.answer(
-                f"📢 Чтобы отправить сообщение всем подписчикам, напишите:\n"
-                f"/broadcast Ваше сообщение\n\n"
+                f"📢 Чтобы отправить сообщение всем подписчикам, отправьте:\n"
+                f"• Текст: /broadcast Ваше сообщение\n"
+                f"• Фото: подпись к фото или без\n"
+                f"• Видео: подпись к видео или без\n"
+                f"• Документ: подпись к документу или без\n"
+                f"• GIF: подпись к GIF или без\n\n"
                 f"⭐ Стоимость: {current_price} звёзд\n"
                 f"💰 Средства поступят на канал\n\n"
                 f"После оплаты сообщение будет отправлено на модерацию."
             )
             return
+        
+        # Убираем команду из текста, если она есть
+        if text and text.startswith("/broadcast"):
+            text = text.replace("/broadcast", "").strip()
+        
         current_price = load_broadcast_price()
+        
+        # Создаём описание для счёта
+        description = "Отправка сообщения всем подписчикам бота"
+        if text:
+            description += f"\n\nТекст: {text[:100]}{'...' if len(text) > 100 else ''}"
+        if has_media:
+            media_names = {
+                "photo": "📸 Фото",
+                "video": "🎬 Видео",
+                "document": "📄 Документ",
+                "animation": "🎥 GIF",
+                "audio": "🎵 Аудио",
+                "voice": "🎤 Голосовое",
+                "video_note": "🔄 Видео-кружок"
+            }
+            description += f"\n{media_names.get(media_type, '📎 Медиафайл')}"
+        
         prices = [LabeledPrice(label="⭐ Рассылка", amount=current_price)]
+        
         await bot.send_invoice(
             chat_id=chat_id,
             title="📢 Рассылка сообщения",
-            description=f"Отправка сообщения всем подписчикам бота\n\nТекст: {text[:100]}{'...' if len(text) > 100 else ''}",
+            description=description[:255],  # Telegram ограничение
             payload=f"broadcast_{user_id}_{int(time.time())}",
             provider_token="",
             currency="XTR",
@@ -2302,26 +2399,24 @@ async def broadcast_command(message: Message):
                 [InlineKeyboardButton(text=f"⭐ Оплатить {current_price} звёзд", pay=True)]
             ])
         )
+        
+        # Сохраняем данные для отправки после оплаты
         broadcast_data[user_id] = {
             'text': text,
+            'has_media': has_media,
+            'media_type': media_type,
+            'media_file_id': media_file_id,
             'timestamp': time.time(),
             'chat_id': chat_id,
             'user_id': user_id
         }
+        
     except Exception as e:
         logger.error(f"Ошибка в команде broadcast: {e}")
         await message.answer("❌ Произошла ошибка. Попробуйте позже.")
 
-@dp.pre_checkout_query()
-async def process_pre_checkout_query(pre_checkout_query: PreCheckoutQuery):
-    try:
-        if pre_checkout_query.invoice_payload.startswith("broadcast_"):
-            await bot.answer_pre_checkout_query(pre_checkout_query.id, ok=True)
-        else:
-            await bot.answer_pre_checkout_query(pre_checkout_query.id, ok=False, error_message="Неизвестный платёж")
-    except Exception as e:
-        logger.error(f"Ошибка в pre_checkout: {e}")
-        await bot.answer_pre_checkout_query(pre_checkout_query.id, ok=False, error_message="Ошибка")
+
+# ===== ОБРАБОТЧИК ОПЛАТЫ =====
 
 @dp.message(lambda message: message.successful_payment is not None)
 async def process_successful_payment(message: Message):
@@ -2330,33 +2425,47 @@ async def process_successful_payment(message: Message):
         payload = message.successful_payment.invoice_payload
         if not payload.startswith("broadcast_"):
             return
+        
         broadcast_info = broadcast_data.get(user_id)
         if not broadcast_info:
             await message.answer("❌ Данные о сообщении не найдены. Попробуйте снова.")
             return
+        
         text = broadcast_info.get('text', '')
-        if not text:
-            await message.answer("❌ Текст сообщения не найден.")
-            return
-        broadcast_id = f"broadcast_{int(time.time())}_{hashlib.md5(text.encode()).hexdigest()[:8]}"
+        has_media = broadcast_info.get('has_media', False)
+        media_type = broadcast_info.get('media_type')
+        media_file_id = broadcast_info.get('media_file_id')
+        
+        broadcast_id = f"broadcast_{int(time.time())}_{hashlib.md5(str(broadcast_info).encode()).hexdigest()[:8]}"
         del broadcast_data[user_id]
+        
+        # Сохраняем данные о рассылке
         pending_broadcasts[broadcast_id] = {
             'text': text,
+            'has_media': has_media,
+            'media_type': media_type,
+            'media_file_id': media_file_id,
             'user_id': user_id,
             'timestamp': time.time(),
             'chat_id': message.chat.id
         }
-        await send_broadcast_for_moderation(broadcast_id, text, user_id)
+        
+        # Отправляем на модерацию
+        await send_broadcast_for_moderation(broadcast_id, broadcast_info)
         await message.answer(
             f"✅ Оплата получена! Сообщение отправлено на модерацию.\n"
-            f"📝 Текст: {text[:100]}{'...' if len(text) > 100 else ''}\n\n"
+            f"📝 Текст: {text[:100]}{'...' if len(text) > 100 else '' if text else 'Без текста'}\n"
+            f"{'📎 С медиафайлом' if has_media else ''}\n\n"
             f"⏳ Ожидайте подтверждения от администратора."
         )
     except Exception as e:
         logger.error(f"Ошибка в successful_payment: {e}")
         await message.answer(f"❌ Ошибка при обработке платежа: {str(e)}")
 
-async def send_broadcast_for_moderation(broadcast_id: str, text: str, user_id: int):
+
+# ===== ОТПРАВКА НА МОДЕРАЦИЮ =====
+
+async def send_broadcast_for_moderation(broadcast_id: str, broadcast_info: dict):
     if not OWNER_ID:
         return
     try:
@@ -2366,20 +2475,109 @@ async def send_broadcast_for_moderation(broadcast_id: str, text: str, user_id: i
                 InlineKeyboardButton(text="❌ Отклонить", callback_data=f"broad_reject_{broadcast_id}")
             ]
         ])
-        text_preview = text[:300] + "..." if len(text) > 300 else text
-        await bot.send_message(
-            chat_id=OWNER_ID,
-            text=f"📋 Новая рассылка на модерацию #{broadcast_id}\n\n"
-                 f"📝 Текст:\n{text_preview}\n\n"
-                 f"👤 Заказчик ID: {user_id}\n"
-                 f"💰 Оплачено: {load_broadcast_price()} ⭐\n"
-                 f"📤 Средства поступят на канал {STARS_CHANNEL_ID}\n\n"
-                 f"⏳ После подтверждения будет задержка 5 минут перед публикацией.",
-            reply_markup=keyboard
-        )
+        
+        text = broadcast_info.get('text', '')
+        has_media = broadcast_info.get('has_media', False)
+        media_type = broadcast_info.get('media_type')
+        media_file_id = broadcast_info.get('media_file_id')
+        user_id = broadcast_info.get('user_id')
+        
+        # Создаём превью сообщения
+        preview_text = f"📋 Новая рассылка на модерацию #{broadcast_id}\n\n"
+        preview_text += f"👤 Заказчик ID: {user_id}\n"
+        preview_text += f"💰 Оплачено: {load_broadcast_price()} ⭐\n"
+        preview_text += f"📤 Средства поступят на канал {STARS_CHANNEL_ID}\n"
+        
+        if text:
+            preview_text += f"\n📝 Текст:\n{text[:300]}{'...' if len(text) > 300 else ''}\n"
+        else:
+            preview_text += f"\n📝 Текст: (без текста)\n"
+        
+        if has_media:
+            media_names = {
+                "photo": "📸 Фото",
+                "video": "🎬 Видео",
+                "document": "📄 Документ",
+                "animation": "🎥 GIF",
+                "audio": "🎵 Аудио",
+                "voice": "🎤 Голосовое",
+                "video_note": "🔄 Видео-кружок"
+            }
+            preview_text += f"\n📎 {media_names.get(media_type, 'Медиафайл')} (будет отправлено)\n"
+        
+        preview_text += f"\n⏳ После подтверждения будет отправлено всем подписчикам."
+        
+        # Отправляем превью владельцу
+        if has_media and media_file_id:
+            # Отправляем медиа с превью
+            if media_type == "photo":
+                await bot.send_photo(
+                    chat_id=OWNER_ID,
+                    photo=media_file_id,
+                    caption=preview_text,
+                    reply_markup=keyboard
+                )
+            elif media_type == "video":
+                await bot.send_video(
+                    chat_id=OWNER_ID,
+                    video=media_file_id,
+                    caption=preview_text,
+                    reply_markup=keyboard
+                )
+            elif media_type == "document":
+                await bot.send_document(
+                    chat_id=OWNER_ID,
+                    document=media_file_id,
+                    caption=preview_text,
+                    reply_markup=keyboard
+                )
+            elif media_type == "animation":
+                await bot.send_animation(
+                    chat_id=OWNER_ID,
+                    animation=media_file_id,
+                    caption=preview_text,
+                    reply_markup=keyboard
+                )
+            elif media_type == "audio":
+                await bot.send_audio(
+                    chat_id=OWNER_ID,
+                    audio=media_file_id,
+                    caption=preview_text,
+                    reply_markup=keyboard
+                )
+            elif media_type == "voice":
+                await bot.send_voice(
+                    chat_id=OWNER_ID,
+                    voice=media_file_id,
+                    caption=preview_text,
+                    reply_markup=keyboard
+                )
+            elif media_type == "video_note":
+                await bot.send_video_note(
+                    chat_id=OWNER_ID,
+                    video_note=media_file_id,
+                    reply_markup=keyboard
+                )
+                # Отправляем текст отдельно для видео-кружка
+                await bot.send_message(
+                    chat_id=OWNER_ID,
+                    text=preview_text,
+                    reply_markup=keyboard
+                )
+        else:
+            # Только текст
+            await bot.send_message(
+                chat_id=OWNER_ID,
+                text=preview_text,
+                reply_markup=keyboard
+            )
+        
         logger.info(f"Рассылка {broadcast_id} отправлена на модерацию владельцу")
     except Exception as e:
         logger.error(f"Ошибка отправки на модерацию: {e}")
+
+
+# ===== ОБРАБОТЧИК МОДЕРАЦИИ РАССЫЛКИ =====
 
 @dp.callback_query(lambda c: c.data and c.data.startswith('broad_'))
 async def handle_broadcast_moderation(callback: CallbackQuery):
@@ -2387,62 +2585,185 @@ async def handle_broadcast_moderation(callback: CallbackQuery):
         if callback.from_user.id != OWNER_ID:
             await callback.answer("⛔ Доступ запрещен", show_alert=True)
             return
+        
         parts = callback.data.split('_')
         action = parts[1]
         broadcast_id = '_'.join(parts[2:])
         approved = action == 'approve'
+        
         if broadcast_id not in pending_broadcasts:
             await callback.answer("❌ Сообщение не найдено", show_alert=True)
             return
+        
         broadcast_info = pending_broadcasts[broadcast_id]
+        
         if approved:
-            await callback.answer("✅ Сообщение одобрено. Будет опубликовано через 5 минут.", show_alert=True)
+            await callback.answer("✅ Сообщение одобрено. Отправляется всем подписчикам...", show_alert=True)
             await callback.message.edit_text(
-                callback.message.text + "\n\n✅ ОДОБРЕНО (будет опубликовано через 5 минут)",
+                callback.message.text + "\n\n✅ ОДОБРЕНО (отправляется всем подписчикам)",
                 reply_markup=None
             )
-            await asyncio.sleep(300)
-            if broadcast_id in pending_broadcasts:
-                text = broadcast_info['text']
-                users_list = load_users()
-                sent_count = 0
-                failed_count = 0
-                for chat_id in users_list:
-                    try:
-                        await bot.send_message(chat_id=chat_id, text=text)
-                        sent_count += 1
-                        await asyncio.sleep(0.3)
-                    except Exception as e:
-                        logger.error(f"Ошибка отправки в {chat_id}: {e}")
-                        failed_count += 1
+            
+            text = broadcast_info.get('text', '')
+            has_media = broadcast_info.get('has_media', False)
+            media_type = broadcast_info.get('media_type')
+            media_file_id = broadcast_info.get('media_file_id')
+            users_list = load_users()
+            
+            sent_count = 0
+            failed_count = 0
+            
+            # Отправляем всем пользователям
+            for chat_id in users_list:
                 try:
-                    if CHANNEL_ID and CHANNEL_ID.strip():
-                        await bot.send_message(chat_id=CHANNEL_ID, text=text)
-                        logger.info(f"Отправлено в канал {CHANNEL_ID}")
+                    if has_media and media_file_id:
+                        # Отправляем с медиа
+                        if media_type == "photo":
+                            await bot.send_photo(
+                                chat_id=chat_id,
+                                photo=media_file_id,
+                                caption=text if text else None
+                            )
+                        elif media_type == "video":
+                            await bot.send_video(
+                                chat_id=chat_id,
+                                video=media_file_id,
+                                caption=text if text else None
+                            )
+                        elif media_type == "document":
+                            await bot.send_document(
+                                chat_id=chat_id,
+                                document=media_file_id,
+                                caption=text if text else None
+                            )
+                        elif media_type == "animation":
+                            await bot.send_animation(
+                                chat_id=chat_id,
+                                animation=media_file_id,
+                                caption=text if text else None
+                            )
+                        elif media_type == "audio":
+                            await bot.send_audio(
+                                chat_id=chat_id,
+                                audio=media_file_id,
+                                caption=text if text else None
+                            )
+                        elif media_type == "voice":
+                            await bot.send_voice(
+                                chat_id=chat_id,
+                                voice=media_file_id,
+                                caption=text if text else None
+                            )
+                        elif media_type == "video_note":
+                            await bot.send_video_note(
+                                chat_id=chat_id,
+                                video_note=media_file_id
+                            )
+                            if text:
+                                await bot.send_message(chat_id=chat_id, text=text)
+                    else:
+                        # Только текст
+                        if text:
+                            await bot.send_message(chat_id=chat_id, text=text)
+                    
+                    sent_count += 1
+                    await asyncio.sleep(0.1)
                 except Exception as e:
-                    logger.error(f"Ошибка отправки в канал: {e}")
-                del pending_broadcasts[broadcast_id]
-                try:
+                    logger.error(f"Ошибка отправки в {chat_id}: {e}")
+                    failed_count += 1
+                    if "forbidden" in str(e).lower() or "chat not found" in str(e).lower():
+                        if str(chat_id) in [str(u) for u in users_list]:
+                            users_list.remove(str(chat_id))
+                            save_users(users_list)
+                            logger.info(f"Пользователь {chat_id} удалён из-за ошибки")
+            
+            # Отправляем в канал (если указан)
+            try:
+                channel_id = CHANNEL_ID
+                if not channel_id or not channel_id.strip():
+                    channel_id = await get_channel_id()
+                if channel_id:
+                    if has_media and media_file_id:
+                        if media_type == "photo":
+                            await bot.send_photo(
+                                chat_id=channel_id,
+                                photo=media_file_id,
+                                caption=text if text else None
+                            )
+                        elif media_type == "video":
+                            await bot.send_video(
+                                chat_id=channel_id,
+                                video=media_file_id,
+                                caption=text if text else None
+                            )
+                        elif media_type == "document":
+                            await bot.send_document(
+                                chat_id=channel_id,
+                                document=media_file_id,
+                                caption=text if text else None
+                            )
+                        elif media_type == "animation":
+                            await bot.send_animation(
+                                chat_id=channel_id,
+                                animation=media_file_id,
+                                caption=text if text else None
+                            )
+                        elif media_type == "audio":
+                            await bot.send_audio(
+                                chat_id=channel_id,
+                                audio=media_file_id,
+                                caption=text if text else None
+                            )
+                        elif media_type == "voice":
+                            await bot.send_voice(
+                                chat_id=channel_id,
+                                voice=media_file_id,
+                                caption=text if text else None
+                            )
+                        elif media_type == "video_note":
+                            await bot.send_video_note(
+                                chat_id=channel_id,
+                                video_note=media_file_id
+                            )
+                            if text:
+                                await bot.send_message(chat_id=channel_id, text=text)
+                    else:
+                        if text:
+                            await bot.send_message(chat_id=channel_id, text=text)
+                    logger.info(f"✅ Отправлено в канал {channel_id}")
+            except Exception as e:
+                logger.error(f"Ошибка отправки в канал: {e}")
+            
+            # Удаляем из ожидающих
+            del pending_broadcasts[broadcast_id]
+            
+            # Отчёт владельцу
+            try:
+                await bot.send_message(
+                    chat_id=OWNER_ID,
+                    text=f"📊 Рассылка #{broadcast_id} завершена!\n"
+                         f"✅ Отправлено подписчикам: {sent_count}\n"
+                         f"❌ Ошибок: {failed_count}\n"
+                         f"📝 Текст: {text[:200]}{'...' if len(text) > 200 else '' if text else '(без текста)'}\n"
+                         f"{'📎 С медиафайлом' if has_media else ''}"
+                )
+            except Exception as e:
+                logger.error(f"Ошибка отправки отчета: {e}")
+            
+            # Уведомление заказчика
+            try:
+                user_id = broadcast_info.get('user_id')
+                if user_id:
                     await bot.send_message(
-                        chat_id=OWNER_ID,
-                        text=f"📊 Рассылка #{broadcast_id} завершена!\n"
-                             f"✅ Отправлено: {sent_count}\n"
-                             f"❌ Ошибок: {failed_count}\n"
-                             f"📝 Текст: {text[:200]}{'...' if len(text) > 200 else ''}"
+                        chat_id=user_id,
+                        text=f"✅ Ваше сообщение опубликовано!\n"
+                             f"📨 Отправлено: {sent_count} подписчикам\n"
+                             f"📝 Текст: {text[:100]}{'...' if len(text) > 100 else '' if text else '(без текста)'}\n"
+                             f"{'📎 С медиафайлом' if has_media else ''}"
                     )
-                except Exception as e:
-                    logger.error(f"Ошибка отправки отчета: {e}")
-                try:
-                    user_id = broadcast_info.get('user_id')
-                    if user_id:
-                        await bot.send_message(
-                            chat_id=user_id,
-                            text=f"✅ Ваше сообщение опубликовано!\n"
-                                 f"📨 Отправлено: {sent_count} пользователям\n"
-                                 f"📝 Текст: {text[:100]}{'...' if len(text) > 100 else ''}"
-                        )
-                except Exception as e:
-                    logger.error(f"Ошибка уведомления заказчика: {e}")
+            except Exception as e:
+                logger.error(f"Ошибка уведомления заказчика: {e}")
+                
         else:
             await callback.answer("❌ Сообщение отклонено", show_alert=True)
             await callback.message.edit_text(
@@ -2463,6 +2784,7 @@ async def handle_broadcast_moderation(callback: CallbackQuery):
     except Exception as e:
         logger.error(f"Ошибка в broadcast модерации: {e}")
         await callback.answer("❌ Ошибка", show_alert=True)
+
 
 # ===== КОМАНДА /CHECK_CHANNEL =====
 
@@ -2649,26 +2971,36 @@ async def start(msg: Message):
         chat_id = msg.chat.id
         user_id = msg.from_user.id
         chat_type = msg.chat.type
+        
         if chat_type == "channel":
             await msg.answer("ℹ️ Я работаю в канале автоматически, команды не требуются.")
             return
+        
         if not await check_user_can_use_command(msg):
             await msg.reply("⛔ Эта команда только для администраторов группы.")
             return
+        
         if chat_type in ["group", "supergroup"]:
             try:
                 chat_member = await bot.get_chat_member(chat_id, bot.id)
                 is_admin = chat_member.status in ["administrator", "creator"]
             except:
                 is_admin = False
+            
             if not is_admin:
                 await msg.answer("❌ Я должен быть администратором группы!")
                 return
-        if str(chat_id) not in [str(u) for u in users]:
-            users.append(str(chat_id))
+        
+        # Подписываем пользователя
+        chat_id_str = str(chat_id)
+        if chat_id_str not in [str(u) for u in users]:
+            users.append(chat_id_str)
             save_users(users)
-            logger.info(f"Добавлен пользователь: {chat_id}")
-        await generate_and_queue_post(str(chat_id), user_id, skip_moderation=True)
+            logger.info(f"✅ Добавлен пользователь: {chat_id}")
+        else:
+            logger.info(f"ℹ️ Пользователь {chat_id} уже подписан")
+        
+        # Информация о статусе
         channel_status = f"\n📢 Канал: {'✅ подключён' if CHANNEL_ID and CHANNEL_ID.strip() else '🔄 авто-поиск'}"
         current_schedule = load_schedule()
         times = ", ".join(current_schedule.get("times", ["12:00", "21:00"]))
@@ -2677,15 +3009,17 @@ async def start(msg: Message):
         is_owner = (user_id == OWNER_ID)
         owner_commands = ""
         if is_owner:
-            owner_commands = f"\n\n👑 Команды владельца:\n📢 /post - отправить пост всем подписчикам\n📸 /photo - получить пост только себе"
+            owner_commands = f"\n\n👑 Команды владельца:\n📢 /post - отправить пост всем подписчикам\n📸 /photo - получить пост только себе\n⭐ /balance - проверить баланс звёзд"
         
         await msg.answer(
-            f"✅ Вы подписаны на рассылку!\n"
-            f"📸 Уникальные посты про молодых азиаток (18-30 лет)\n"
+            f"✅ Бот активирован!\n"
+            f"📸 Уникальные посты про азиатских девушек\n"
             f"⏰ Расписание: {times}\n"
             f"{channel_status}\n"
+            f"🔄 /photo - получить пост прямо сейчас\n"
             f"🛑 /stop - отписаться{owner_commands}"
         )
+        
     except Exception as e:
         logger.error(f"Ошибка в команде start: {e}")
         await msg.answer("❌ Произошла ошибка. Попробуйте позже.")
@@ -3023,7 +3357,7 @@ async def main():
         current_price = load_broadcast_price()
         logger.info(f"⭐ Цена broadcast: {current_price} звёзд")
         logger.info(f"💰 Получатель звёзд (канал): {STARS_CHANNEL_ID}")
-        logger.info("Азиатские девушки | 18-30 лет | Модерация включена")
+        logger.info("Азиатские девушки | Модерация включена")
         logger.info("🚫 Детские фото СТРОГО запрещены")
         logger.info("🚫 Студенты и учебные заведения исключены")
         logger.info("🚫 Мужчины на фото исключены")
@@ -3034,9 +3368,10 @@ async def main():
         logger.info("✅ Пляжные фото разрешены")
         logger.info(f"📨 Сообщения владельцу отправляются с интервалом 1 минута")
         logger.info(f"📊 Посты в канал не чаще 1 раза в {MIN_POST_INTERVAL // 3600} часа (случайное время)")
-        logger.info("📢 /broadcast - только в личных сообщениях")
+        logger.info("📢 /broadcast - только в личных сообщениях (поддерживает фото, видео, документы, GIF)")
         logger.info("📸 /photo - только для владельца (в ЛС)")
         logger.info("📢 /post - рассылка всем подписчикам (только владелец)")
+        logger.info("⭐ /balance - проверить баланс звёзд (только владелец)")
         logger.info("💡 /check_channel - проверить права бота в канале для звёзд")
         await task_queue.connect()
         logger.info("=" * 60)
