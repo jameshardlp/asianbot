@@ -146,21 +146,18 @@ ASIAN_NAMES = [
     'aom', 'joong', 'ki', 'hoon', 'jin', 'soo', 'young', 'sun',
 ]
 
+# ТОЛЬКО 18+ (убраны все упоминания младше 18)
 AGE_POSITIVE_KEYWORDS = [
     '18', '19', '20', '21', '22', '23', '24', '25',
-    '26', '27', '28', '29', '30',
+    '26', '27', '28', '29', '30', '31', '32', '33', '34', '35',
     '18year', '19year', '20year', '21year', '22year',
     '18yo', '19yo', '20yo', '21yo', '22yo', '23yo',
-    '20s', 'twenties', 'young', 'college', 'university',
+    '20s', 'twenties', 'young adult', 'college', 'university',
     'student', 'freshman', 'sophomore', 'junior', 'senior',
+    'adult', 'mature young', 'woman', 'lady',
 ]
 
-TRADITIONAL_EXCLUDE = [
-    'kimono', 'hanbok', 'cheongsam', 'qi pao', 'sari', 'ao dai',
-    'traditional', 'folk costume', 'national dress', 'hanfu',
-    'mongolian traditional', 'tibetan traditional', 'uyghur traditional',
-]
-
+# РАСШИРЕННЫЙ СПИСОК ДЛЯ ФИЛЬТРАЦИИ ДЕТЕЙ (ОЧЕНЬ СТРОГИЙ)
 CHILD_EXCLUDE_WORDS = [
     'child', 'children', 'kid', 'kids', 'baby', 'babies', 'toddler',
     'infant', 'preschool', 'kindergarten', 'schoolgirl', 'schoolboy',
@@ -169,6 +166,19 @@ CHILD_EXCLUDE_WORDS = [
     'young boy', 'daughter', 'son', 'family', 'family photo',
     'childhood', 'baby girl', 'baby boy', 'newborn', 'cute baby',
     'child model', 'kid model', 'baby model', 'toddler girl', 'toddler boy',
+    'elementary', 'middle school', 'high school', 'school uniform',
+    'pigtails', 'braces', 'childhood friend', 'young teen',
+    'preteen', 'tween', 'grade school', 'primary school',
+    'secondary school', 'kindergarten', 'nursery', 'playground',
+    'childrens', 'kids', 'childish', 'infantile',
+    '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', 
+    '13', '14', '15', '16', '17', 'year old girl', 'year old boy',
+]
+
+TRADITIONAL_EXCLUDE = [
+    'kimono', 'hanbok', 'cheongsam', 'qi pao', 'sari', 'ao dai',
+    'traditional', 'folk costume', 'national dress', 'hanfu',
+    'mongolian traditional', 'tibetan traditional', 'uyghur traditional',
 ]
 
 MEN_EXCLUDE_WORDS = [
@@ -177,102 +187,108 @@ MEN_EXCLUDE_WORDS = [
     'bloke', 'chap', 'fellow', 'lad', 'young man',
 ]
 
-# ===== ПОИСКОВЫЕ ЗАПРОСЫ =====
+# ===== ПОИСКОВЫЕ ЗАПРОСЫ (ТОЛЬКО 18+) =====
 SEARCH_QUERIES = [
-    "japanese girl friend photo casual",
+    "japanese woman friend photo casual",
     "japanese woman everyday life candid",
-    "japanese girl natural shot street",
+    "japanese woman natural shot street",
     "japanese woman friend taking picture",
-    "japanese girl candid moment cafe",
+    "japanese woman candid moment cafe",
     "japanese woman casual day out",
-    "japanese girl authentic daily life",
+    "japanese woman authentic daily life",
     "japanese woman spontaneous photo",
-    "japanese girl real life snapshot",
+    "japanese woman real life snapshot",
     "japanese woman friend photo outside",
-    "korean girl friend photo casual",
+    "korean woman friend photo casual",
     "korean woman everyday life candid",
-    "korean girl natural shot street",
+    "korean woman natural shot street",
     "korean woman friend taking picture",
-    "korean girl candid moment cafe",
+    "korean woman candid moment cafe",
     "korean woman casual day out",
-    "korean girl authentic daily life",
+    "korean woman authentic daily life",
     "korean woman spontaneous photo",
-    "korean girl real life snapshot",
+    "korean woman real life snapshot",
     "korean woman friend photo outside",
-    "chinese girl friend photo casual",
+    "chinese woman friend photo casual",
     "chinese woman everyday life candid",
-    "chinese girl natural shot street",
+    "chinese woman natural shot street",
     "chinese woman friend taking picture",
-    "chinese girl candid moment cafe",
+    "chinese woman candid moment cafe",
     "chinese woman casual day out",
-    "chinese girl authentic daily life",
+    "chinese woman authentic daily life",
     "chinese woman spontaneous photo",
-    "chinese girl real life snapshot",
+    "chinese woman real life snapshot",
     "chinese woman friend photo outside",
-    "thai girl friend photo casual",
+    "thai woman friend photo casual",
     "thai woman everyday life candid",
-    "thai girl natural shot street",
+    "thai woman natural shot street",
     "thai woman friend taking picture",
-    "thai girl candid moment cafe",
+    "thai woman candid moment cafe",
     "thai woman casual day out",
-    "thai girl authentic daily life",
+    "thai woman authentic daily life",
     "thai woman spontaneous photo",
-    "thai girl real life snapshot",
+    "thai woman real life snapshot",
     "thai woman friend photo outside",
-    "vietnamese girl friend photo casual",
+    "vietnamese woman friend photo casual",
     "vietnamese woman everyday life candid",
-    "vietnamese girl natural shot street",
+    "vietnamese woman natural shot street",
     "vietnamese woman friend photo",
-    "vietnamese girl candid moment cafe",
+    "vietnamese woman candid moment cafe",
     "vietnamese woman casual day out",
-    "filipino girl friend photo casual",
+    "filipina woman friend photo casual",
     "filipina woman everyday life candid",
-    "filipino girl natural shot street",
+    "filipina woman natural shot street",
     "filipina woman friend photo",
-    "filipino girl candid moment cafe",
-    "indonesian girl friend photo casual",
+    "filipina woman candid moment cafe",
+    "indonesian woman friend photo casual",
     "indonesian woman everyday life candid",
-    "indonesian girl natural shot street",
+    "indonesian woman natural shot street",
     "indonesian woman friend photo",
-    "asian girl friend photo outside",
+    "asian woman friend photo outside",
     "asian woman everyday life candid",
-    "asian girl natural shot street",
+    "asian woman natural shot street",
     "asian woman friend taking picture",
-    "asian girl candid moment cafe",
+    "asian woman candid moment cafe",
     "asian woman casual day out",
-    "asian girl authentic daily life",
+    "asian woman authentic daily life",
     "asian woman spontaneous photo",
-    "asian girl real life snapshot",
+    "asian woman real life snapshot",
     "asian woman friend photo casual",
-    "asian girl laughing with friend",
+    "asian woman laughing with friend",
     "asian woman talking to friend",
-    "asian girl walking with friend",
+    "asian woman walking with friend",
     "asian woman sitting with friend",
-    "asian girl shopping with friend",
+    "asian woman shopping with friend",
     "asian woman eating with friend",
-    "asian girl coffee with friend",
+    "asian woman coffee with friend",
     "asian woman market with friend",
-    "asian girl street food friend",
+    "asian woman street food friend",
     "asian woman casual outfit friend",
-    "asian girl candid laugh",
+    "asian woman candid laugh",
     "asian woman natural smile",
-    "asian girl genuine moment",
+    "asian woman genuine moment",
     "asian woman carefree day",
-    "asian girl relaxed photo",
+    "asian woman relaxed photo",
     "asian woman happy moment",
-    "asian girl friend group photo",
+    "asian woman friend group photo",
     "asian woman friend gathering",
+    "asian woman portrait 20s",
+    "asian woman portrait 30s",
+    "adult asian woman everyday",
+    "mature asian woman casual",
+    "asian woman 20 years old",
+    "asian woman 30 years old",
 ]
 
 FITNESS_QUERIES = [
-    "japanese fitness girl friend photo",
-    "korean gym girl friend photo",
+    "japanese fitness woman friend photo",
+    "korean gym woman friend photo",
     "chinese fitness woman friend photo",
-    "thai sport girl friend photo",
-    "asian girl gym with friend",
+    "thai sport woman friend photo",
+    "asian woman gym with friend",
 ]
 
-# ===== ФУНКЦИИ ФИЛЬТРАЦИИ =====
+# ===== ФУНКЦИИ ФИЛЬТРАЦИИ (УСИЛЕННАЯ ФИЛЬТРАЦИЯ ДЕТЕЙ) =====
 
 def has_man_in_photo(url: str) -> bool:
     if not url:
@@ -284,20 +300,47 @@ def has_man_in_photo(url: str) -> bool:
     return False
 
 def is_child_photo(url: str) -> bool:
+    """Строгая проверка на наличие детей (ВОЗВРАЩАЕТ True если есть ребёнок)"""
     if not url:
         return False
     url_lower = url.lower()
+    
+    # Проверка по ключевым словам
     for word in CHILD_EXCLUDE_WORDS:
         if word in url_lower:
+            logger.warning(f"Обнаружено детское слово: {word} в URL")
             return True
-    child_age_patterns = [
+    
+    # Проверка возраста 17 и младше
+    age_patterns = [
         r'\b(0|1|2|3|4|5|6|7|8|9|10|11|12|13|14|15|16|17)\b',
-        r'\b(infant|toddler|child|kid|teen)\b',
+        r'\b(infant|toddler|child|kid|teen|preteen|tween)\b',
         r'\b(grade|class|school)\s+[1-9]\b',
+        r'\b(age|years?|yo|y/o)\s*(0|1|2|3|4|5|6|7|8|9|10|11|12|13|14|15|16|17)\b',
+        r'\b(0|1|2|3|4|5|6|7|8|9|10|11|12|13|14|15|16|17)\s*(years?|yo|y/o)\b',
     ]
-    for pattern in child_age_patterns:
+    for pattern in age_patterns:
         if re.search(pattern, url_lower, re.IGNORECASE):
+            logger.warning(f"Обнаружен возраст 0-17 в URL")
             return True
+    
+    # Проверка на школьную форму или детскую одежду
+    school_patterns = [
+        r'school\s*uniform',
+        r'high\s*school',
+        r'middle\s*school',
+        r'elementary\s*school',
+        r'primary\s*school',
+        r'secondary\s*school',
+        r'kindergarten',
+        r'nursery',
+        r'playground',
+    ]
+    for pattern in school_patterns:
+        if re.search(pattern, url_lower, re.IGNORECASE):
+            logger.warning(f"Обнаружена школа/детское учреждение в URL")
+            return True
+    
     return False
 
 def is_asian_photo(url: str, additional_context: str = "") -> bool:
@@ -341,21 +384,44 @@ def is_asian_photo(url: str, additional_context: str = "") -> bool:
     return False
 
 def is_age_appropriate(url: str) -> bool:
+    """Проверка что возраст 18+ (НЕ возвращает True для детей)"""
     if not url:
         return False
     url_lower = url.lower()
+    
+    # Сначала проверяем что это НЕ ребёнок
     if is_child_photo(url):
         return False
+    
+    # Проверяем наличие 18+
     for word in AGE_POSITIVE_KEYWORDS:
         if word in url_lower:
             return True
+    
+    # Проверяем явное упоминание adult/mature
+    if re.search(r'\b(adult|mature|18\+|18plus|eighteen)\b', url_lower, re.IGNORECASE):
+        return True
+    
+    # Проверяем возраст в формате "age 18+" и т.д.
+    age_patterns = [
+        r'\b(age|years?|yo|y/o)\s*(18|19|20|21|22|23|24|25|26|27|28|29|30|31|32|33|34|35)\b',
+        r'\b(18|19|20|21|22|23|24|25|26|27|28|29|30|31|32|33|34|35)\s*(years?|yo|y/o)\b',
+        r'\b18\+|18plus|eighteen\b',
+    ]
+    for pattern in age_patterns:
+        if re.search(pattern, url_lower, re.IGNORECASE):
+            return True
+    
+    # Если есть подозрительные слова о возрасте но нет 18+ - отклоняем
     if re.search(r'\b(age|years?|yo|y/o)\b', url_lower, re.IGNORECASE):
-        for word in AGE_POSITIVE_KEYWORDS:
-            if word in url_lower:
-                return True
         return False
+    
+    # Если есть слова mature/old - пропускаем (это взрослые)
     if 'mature' in url_lower or 'old' in url_lower or 'senior' in url_lower:
-        return False
+        return True
+    
+    # По умолчанию - если нет признаков ребёнка и есть азиатские признаки - пропускаем
+    # Но с осторожностью, лучше отклонить сомнительные
     return True
 
 def is_traditional_clothing(url: str) -> bool:
@@ -370,45 +436,78 @@ def is_traditional_clothing(url: str) -> bool:
     return False
 
 def is_photo_valid(url: str) -> bool:
-    """Проверяет фото по всем критериям"""
+    """Проверяет фото по всем критериям (ОЧЕНЬ СТРОГАЯ ПРОВЕРКА)"""
     if not url:
         return False
+    
+    # ПЕРВАЯ И САМАЯ ВАЖНАЯ ПРОВЕРКА - НЕТ ДЕТЕЙ!
     if is_child_photo(url):
+        logger.warning(f"Фото отклонено: содержит ребёнка - {url[:100]}")
         return False
+    
     if has_man_in_photo(url):
+        logger.warning(f"Фото отклонено: содержит мужчину")
         return False
+    
     if not is_asian_photo(url):
+        logger.warning(f"Фото отклонено: не азиатская внешность")
         return False
+    
     if not is_age_appropriate(url):
+        logger.warning(f"Фото отклонено: возраст не подходит (нужно 18+)")
         return False
+    
     if is_traditional_clothing(url):
+        logger.warning(f"Фото отклонено: традиционная одежда")
         return False
+    
     unwanted = ['naked', 'nude', 'porn', 'xxx', 'sex', 'erotic', 'bikini']
     for word in unwanted:
         if word in url.lower():
+            logger.warning(f"Фото отклонено: нежелательное содержание {word}")
             return False
+    
+    # Дополнительная проверка на детские лица
+    child_face_patterns = [
+        r'child\s*face', r'kid\s*face', r'young\s*face',
+        r'cute\s*girl', r'cute\s*boy', r'sweet\s*girl',
+        r'teen\s*girl', r'teen\s*boy',
+    ]
+    for pattern in child_face_patterns:
+        if re.search(pattern, url.lower(), re.IGNORECASE):
+            logger.warning(f"Фото отклонено: детское лицо - {pattern}")
+            return False
+    
     return True
 
 def is_photo_acceptable(url: str, additional_context: str = "") -> Tuple[bool, str]:
     if not url:
         return False, "Пустой URL"
+    
+    # Самая строгая проверка на детей
     if is_child_photo(url):
-        return False, "Фото содержит ребёнка"
+        return False, "Фото содержит ребёнка (строгий запрет)"
+    
     if has_man_in_photo(url):
         return False, "Фото содержит мужчину"
+    
     if not is_asian_photo(url, additional_context):
         return False, "Не азиатская внешность"
+    
     if not is_age_appropriate(url):
-        return False, "Возраст не подходит"
+        return False, "Возраст не 18+"
+    
     if is_traditional_clothing(url):
         return False, "Традиционная одежда"
+    
     unwanted = ['naked', 'nude', 'porn', 'xxx', 'sex', 'erotic', 'bikini']
     for word in unwanted:
         if word in url.lower():
             return False, f"Нежелательное содержание: {word}"
+    
     return True, "OK"
 
-# ===== СТИЛИ ДЛЯ ГЕНЕРАЦИИ =====
+# ===== СТИЛИ ДЛЯ ГЕНЕРАЦИИ (ТОЛЬКО @maddysontg) =====
 style_prompts = {
     'short_joke': """
 Ты — Анатолий, холостой блогер средних лет.
@@ -1171,7 +1270,7 @@ def search_bing(query):
             "Accept-Language": "en-US,en;q=0.5",
         }
         encoded_query = quote(query)
-        url = f"https://www.bing.com/images/search?q={encoded_query}&form=HDRSC3&first=1&count=35&safeSearch=moderate"
+        url = f"https://www.bing.com/images/search?q={encoded_query}&form=HDRSC3&first=1&count=35&safeSearch=strict"
         response = requests.get(url, headers=headers, timeout=15)
         patterns = [
             r'"murl":"([^"]+)"',
@@ -1473,7 +1572,8 @@ class ContentModerator:
         self.auto_approve_threshold = 0.85
         self.banned_words = [
             'naked', 'nude', 'explicit', 'porn', 'sex', 'fuck',
-            'наркотики', 'оружие', 'насилие', 'убийство', 'экстремизм'
+            'наркотики', 'оружие', 'насилие', 'убийство', 'экстремизм',
+            'child', 'children', 'kid', 'baby', 'teen', 'minor', 'underage'
         ]
         self.suspicious_patterns = [
             r'https?://\S+\.(ru|su|cc|to|top|club|online|site|xyz|click|win|bid)',
@@ -1484,19 +1584,32 @@ class ContentModerator:
         try:
             text_lower = post.caption.lower()
             photo_lower = post.photo_url.lower()
+            
+            # Строгая проверка на детей в тексте
             for word in self.banned_words:
                 if word in text_lower or word in photo_lower:
+                    if word in ['child', 'children', 'kid', 'baby', 'teen', 'minor', 'underage']:
+                        return False, f"Обнаружено упоминание ребёнка: {word}"
                     return False, f"Обнаружено запрещенное слово: {word}"
+            
+            # Проверка на возраст 18+ в тексте
+            if re.search(r'\b(17|16|15|14|13|12|11|10|9|8|7|6|5|4|3|2|1|0)\b', text_lower):
+                if not re.search(r'\b(18|19|20|21|22|23|24|25|26|27|28|29|30)\b', text_lower):
+                    return False, "Обнаружен возраст младше 18"
+            
             for pattern in self.suspicious_patterns:
                 if re.search(pattern, post.caption, re.IGNORECASE):
                     return False, "Обнаружена подозрительная ссылка"
+            
             if len(post.caption) < 100:
                 return False, "Слишком короткий текст"
             if len(post.caption) > 1024:
                 return False, "Превышен лимит символов"
+            
             caption_hash = hashlib.md5(post.caption.encode()).hexdigest()
             if caption_hash in [p.get('hash') for p in self.approved_history[-50:]]:
                 return False, "Похожий пост уже был опубликован"
+            
             quality_score = self._check_text_quality(post.caption)
             if quality_score >= self.auto_approve_threshold:
                 return True, "auto_approved"
@@ -2534,7 +2647,7 @@ async def main():
         logger.info(f"⭐ Цена broadcast: {current_price} звёзд")
         logger.info(f"💰 Получатель звёзд (канал): {STARS_CHANNEL_ID}")
         logger.info("Азиатские девушки | 18-30 лет | Модерация включена")
-        logger.info("🚫 Детские фото исключены")
+        logger.info("🚫 Детские фото СТРОГО запрещены (0-17 лет)")
         logger.info("🚫 Мужчины на фото исключены")
         logger.info("📸 Только любительские съёмки в Азии")
         logger.info(f"📨 Сообщения владельцу отправляются с интервалом 1 минута")
