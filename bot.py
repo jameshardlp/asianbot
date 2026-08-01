@@ -3168,7 +3168,8 @@ async def schedule(msg: Message):
                 continue
         if not new_times:
             await msg.answer("❌ Неверный формат. Используйте: /schedule 12:00, 21:00")
-            return        if len(new_times) > 4:
+            return
+        if len(new_times) > 4:
             await msg.answer("❌ Максимум 4 времени.")
             return
         schedule_data["times"] = new_times
