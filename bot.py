@@ -2385,6 +2385,53 @@ async def broadcast_command(message: Message):
 
 # ===== ОБРАБОТЧИКИ ОПЛАТЫ =====
 
+@dp.callback_query(lambda c: c.data and c.data.startswith('mod_'))
+async def handle_post_moderation(callback: CallbackQuery):
+    try:
+        if callback.from_user.id != OWNER_ID:
+            await callback.answer("⛔ Доступ запрещен", show_alert=True)
+            return
+        parts = callback.data.split('_', 2)
+        # ожидаем формат: mod_approve_<post_id> или mod_reject_<post_id>
+        if len(parts) < 3:
+            await callback.answer("❌ Неверный формат", show_alert=True)
+            return
+        action = parts[1]
+        post_id = parts[2]
+        approved = action == 'approve'
+
+        if post_id not in moderator.pending_posts:
+            await callback.answer("❌ Пост не найден или уже обработан", show_alert=True)
+            return
+
+        post = moderator.pending_posts[post_id]
+        ok = await moderator.manual_moderate(post_id, approved, callback.from_user.id)
+
+        if ok and approved:
+            await task_queue.push(QUEUE_NAME, {
+                'id': post_id,
+                'chat_id': post.chat_id,
+                'photo_url': post.photo_url,
+                'caption': post.caption,
+                'user_id': post.user_id,
+                'timestamp': post.timestamp,
+                'needs_moderation': False
+            })
+            del moderator.pending_posts[post_id]
+            await callback.answer("✅ Пост одобрен и поставлен в очередь")
+            if callback.message:
+                await callback.message.edit_reply_markup(reply_markup=None)
+        elif ok:
+            del moderator.pending_posts[post_id]
+            await callback.answer("❌ Пост отклонён")
+            if callback.message:
+                await callback.message.edit_reply_markup(reply_markup=None)
+        else:
+            await callback.answer("❌ Ошибка обработки", show_alert=True)
+    except Exception as e:
+        logger.error(f"Ошибка модерации поста: {e}")
+        await callback.answer("❌ Ошибка", show_alert=True)
+
 @dp.callback_query(lambda c: c.data and c.data.startswith('pay_stars_'))
 async def pay_with_stars(callback: CallbackQuery):
     try:
@@ -2421,7 +2468,6 @@ async def pay_with_stars(callback: CallbackQuery):
             currency="XTR",
             prices=prices,
             start_parameter="broadcast",
-            chat_id_for_payment=STARS_CHANNEL_ID,
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text=f"⭐ Оплатить {stars_price} звёзд", pay=True)]
             ])
