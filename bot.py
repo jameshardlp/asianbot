@@ -1,24 +1,18 @@
 import asyncio
 import os
-import random
 import sys
-import re
-import requests
+import hashlib
 import json
 import time
-import hashlib
 import base64
 from urllib.parse import urlencode
-from datetime import datetime
-from typing import Optional, Tuple, List, Dict, Any
 import logging
+import requests
 
-# Шифрование
-try:
-    from cryptography.fernet import Fernet
-    CRYPTO_AVAILABLE = True
-except ImportError:
-    CRYPTO_AVAILABLE = False
+from aiogram import Bot, Dispatcher, types
+from aiogram.filters import Command
+from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from aiohttp import web
 
 logging.basicConfig(
     level=logging.INFO,
@@ -26,22 +20,14 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-from aiogram import Bot, Dispatcher, types
-from aiogram.filters import Command
-from aiogram.types import (
-    Message, InlineKeyboardMarkup, InlineKeyboardButton,
-    CallbackQuery
-)
-from aiohttp import web
-
 # ===== КОНФИГУРАЦИЯ =====
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHANNEL_ID = os.getenv("CHANNEL_ID")
 OWNER_ID = int(os.getenv("OWNER_ID", 0))
 
 FREEKASSA_MERCHANT_ID = os.getenv("FREEKASSA_MERCHANT_ID", "")
-FREEKASSA_SECRET_KEY = os.getenv("FREEKASSA_SECRET_KEY", "")
-FREEKASSA_API_KEY = os.getenv("FREEKASSA_API_KEY", "")
+FREEKASSA_SECRET_KEY_S1 = os.getenv("FREEKASSA_SECRET_KEY_S1", "")  # S1 - 16 символов
+FREEKASSA_SECRET_KEY_S2 = os.getenv("FREEKASSA_SECRET_KEY_S2", "")  # S2 - 16 символов
 FREEKASSA_CURRENCY = os.getenv("FREEKASSA_CURRENCY", "RUB")
 FREEKASSA_WEBHOOK_URL = os.getenv("FREEKASSA_WEBHOOK_URL", "")
 
@@ -49,74 +35,15 @@ if not BOT_TOKEN:
     logger.error("BOT_TOKEN не задан")
     sys.exit(1)
 
-if not OWNER_ID:
-    logger.warning("OWNER_ID не задан")
-
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-# ===== ФАЙЛЫ ДЛЯ ХРАНЕНИЯ =====
-USERS_FILE = "users.json"
+# ===== ХРАНИЛИЩА =====
+broadcast_data = {}
+pending_broadcasts = {}
 BROADCAST_PRICE_FILE = "broadcast_price.json"
+USERS_FILE = "users.json"
 
-# ===== ШИФРОВАНИЕ =====
-ENCRYPTION_KEY = os.getenv("ENCRYPTION_KEY", "")
-if not ENCRYPTION_KEY and CRYPTO_AVAILABLE:
-    key = Fernet.generate_key()
-    ENCRYPTION_KEY = base64.urlsafe_b64encode(key).decode()
-    logger.warning(f"⚠️ Сгенерирован новый ключ шифрования: {ENCRYPTION_KEY}")
-    logger.warning("📌 Сохраните этот ключ в ENCRYPTION_KEY в переменных окружения!")
-
-if CRYPTO_AVAILABLE and ENCRYPTION_KEY:
-    try:
-        cipher = Fernet(ENCRYPTION_KEY.encode())
-    except Exception as e:
-        logger.error(f"Ошибка инициализации шифрования: {e}")
-        cipher = None
-else:
-    cipher = None
-
-def encrypt_broadcast_data(text: str, media_type: str = "", media_file_id: str = "") -> str:
-    """Шифрует данные рассылки"""
-    if not CRYPTO_AVAILABLE or not cipher:
-        return base64.urlsafe_b64encode(text.encode()).decode()
-    
-    try:
-        data = {
-            "text": text,
-            "media_type": media_type,
-            "media_file_id": media_file_id,
-            "timestamp": time.time()
-        }
-        json_str = json.dumps(data, ensure_ascii=False)
-        encrypted = cipher.encrypt(json_str.encode('utf-8'))
-        return base64.urlsafe_b64encode(encrypted).decode()
-    except Exception as e:
-        logger.error(f"Ошибка шифрования: {e}")
-        return base64.urlsafe_b64encode(text.encode()).decode()
-
-def decrypt_broadcast_data(encrypted_data: str) -> dict:
-    """Расшифровывает данные рассылки"""
-    if not CRYPTO_AVAILABLE or not cipher:
-        try:
-            text = base64.urlsafe_b64decode(encrypted_data.encode()).decode()
-            return {"text": text, "media_type": "", "media_file_id": ""}
-        except:
-            return {"text": encrypted_data, "media_type": "", "media_file_id": ""}
-    
-    try:
-        encrypted_bytes = base64.urlsafe_b64decode(encrypted_data.encode())
-        decrypted = cipher.decrypt(encrypted_bytes)
-        return json.loads(decrypted.decode('utf-8'))
-    except Exception as e:
-        logger.error(f"Ошибка расшифровки: {e}")
-        try:
-            text = base64.urlsafe_b64decode(encrypted_data.encode()).decode()
-            return {"text": text, "media_type": "", "media_file_id": ""}
-        except:
-            return {"text": encrypted_data, "media_type": "", "media_file_id": ""}
-
-# ===== РАБОТА С ЦЕНОЙ =====
 def load_broadcast_price() -> int:
     try:
         with open(BROADCAST_PRICE_FILE, "r") as f:
@@ -135,25 +62,25 @@ def save_broadcast_price(price: int):
 
 broadcast_price = load_broadcast_price()
 
-# ===== ХРАНИЛИЩА ДАННЫХ =====
-broadcast_data = {}
-pending_broadcasts = {}
-
-# ===== FREEKASSA - ИСПРАВЛЕННАЯ ПОДПИСЬ =====
-def generate_freekassa_signature(merchant_id: str, amount: str, secret_key: str, order_id: str) -> str:
+# ===== FREEKASSA - ПРАВИЛЬНАЯ ПОДПИСЬ =====
+def generate_freekassa_signature(merchant_id: str, amount: str, order_id: str) -> str:
     """
     Генерация подписи для FreeKassa
-    ПОРЯДОК: merchant_id:amount:secret_key:order_id
-    Пример: 312:100:SECRET_KEY:order_123
+    ПОРЯДОК: merchant_id:amount:S1:order_id
+    S1 - это ваш секретный ключ (16 символов)
     """
-    sign_str = f"{merchant_id}:{amount}:{secret_key}:{order_id}"
+    sign_str = f"{merchant_id}:{amount}:{FREEKASSA_SECRET_KEY_S1}:{order_id}"
     logger.info(f"🔑 Строка для подписи: {sign_str}")
     signature = hashlib.md5(sign_str.encode()).hexdigest()
     logger.info(f"🔑 Подпись (MD5): {signature}")
     return signature
 
-def verify_freekassa_signature(data: dict, secret_key: str) -> bool:
-    """Проверка подписи от FreeKassa для webhook"""
+def verify_freekassa_webhook_signature(data: dict) -> bool:
+    """
+    Проверка подписи от FreeKassa для webhook
+    Использует S2 (второй ключ, 16 символов)
+    ПОРЯДОК: merchant_id:amount:S2:order_id
+    """
     required_fields = ['MERCHANT_ID', 'AMOUNT', 'MERCHANT_ORDER_ID', 'SIGN']
     for field in required_fields:
         if field not in data:
@@ -165,37 +92,33 @@ def verify_freekassa_signature(data: dict, secret_key: str) -> bool:
     order_id = str(data.get('MERCHANT_ORDER_ID'))
     sign = str(data.get('SIGN'))
     
-    sign_str = f"{merchant_id}:{amount}:{secret_key}:{order_id}"
+    # Для webhook используется S2
+    sign_str = f"{merchant_id}:{amount}:{FREEKASSA_SECRET_KEY_S2}:{order_id}"
     expected_sign = hashlib.md5(sign_str.encode()).hexdigest()
     
-    logger.info(f"🔑 Проверка подписи: {sign} == {expected_sign}")
+    logger.info(f"🔑 Проверка webhook: {sign} == {expected_sign}")
     return sign == expected_sign
 
 def create_freekassa_payment_link(amount: float, order_id: str, description: str = "") -> str:
     """
-    Создание ПРАВИЛЬНОЙ ссылки для оплаты через FreeKassa
-    Формат: https://pay.fk.money/?m=ID&oa=SUM&currency=RUB&o=ORDER&s=SIGN
+    Создание ссылки для оплаты через FreeKassa
     """
-    if not FREEKASSA_MERCHANT_ID or not FREEKASSA_SECRET_KEY:
+    if not FREEKASSA_MERCHANT_ID or not FREEKASSA_SECRET_KEY_S1:
         logger.error("❌ FreeKassa не настроен")
         return ""
     
-    # ✅ ВСЕ ДАННЫЕ ПРИВОДИМ К СТРОКАМ
     merchant_id = str(FREEKASSA_MERCHANT_ID)
     amount_int = int(amount)
     amount_str = str(amount_int)
-    secret_key = str(FREEKASSA_SECRET_KEY)
     order_id_str = str(order_id)
     
-    # ✅ Генерируем подпись
+    # ✅ Генерируем подпись с S1
     signature = generate_freekassa_signature(
         merchant_id,
         amount_str,
-        secret_key,
         order_id_str
     )
     
-    # ✅ Параметры для ссылки
     params = {
         "m": merchant_id,
         "oa": amount_str,
@@ -210,14 +133,13 @@ def create_freekassa_payment_link(amount: float, order_id: str, description: str
     query_string = urlencode(params)
     link = f"https://pay.fk.money/?{query_string}"
     
-    # Логируем для отладки
     logger.info("=" * 60)
-    logger.info("🔗 СГЕНЕРИРОВАННАЯ ССЫЛКА:")
+    logger.info("🔗 ССЫЛКА ДЛЯ ОПЛАТЫ:")
     logger.info(link)
-    logger.info("📋 ПАРАМЕТРЫ:")
+    logger.info("📋 ПРОВЕРКА ПОДПИСИ:")
     logger.info(f"Merchant ID: {merchant_id}")
     logger.info(f"Сумма: {amount_str}")
-    logger.info(f"Валюта: {FREEKASSA_CURRENCY}")
+    logger.info(f"S1: {FREEKASSA_SECRET_KEY_S1} (16 символов)")
     logger.info(f"Order ID: {order_id_str}")
     logger.info(f"Подпись: {signature}")
     logger.info("=" * 60)
@@ -248,7 +170,6 @@ async def check_freekassa_payment_status(order_id: str) -> Optional[dict]:
         logger.error(f"Ошибка проверки статуса: {e}")
         return None
 
-# ===== РАБОТА С ФАЙЛАМИ =====
 def load_users():
     try:
         with open(USERS_FILE, "r") as f:
@@ -263,68 +184,22 @@ def save_users(users_list):
     except Exception as e:
         logger.error(f"Ошибка сохранения пользователей: {e}")
 
-# ===== ГЕНЕРАЦИЯ ТЕКСТОВ =====
-def get_fallback_caption() -> str:
-    all_fallbacks = [
-        "Сижу в кафе в Бангкоке, пью кофе, смотрю на прохожих. И вдруг понимаю — я уже полгода здесь, а всё ещё удивляюсь, как тайцы умудряются улыбаться даже в пробках.",
-        "Вчера я решил, что пора завязывать с дошираками и начать готовить сам. Купил овощи, рис, приправы. Стою на кухне, смотрю на всё это богатство и понимаю — я даже не знаю, с чего начать.",
-        "Сегодня утром я чуть не опоздал на встречу. Выхожу из дома, а мой мотоцикл не заводится. Я начинаю паниковать, дёргать ручки, пинать колёса.",
-    ]
-    return random.choice(all_fallbacks)
-
-async def generate_caption(style: str) -> str:
-    """Генерация текста через DeepSeek (опционально)"""
-    if not DEEPSEEK_API_KEY:
-        return get_fallback_caption()
-    
-    try:
-        headers = {
-            "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
-            "Content-Type": "application/json"
-        }
-        
-        data = {
-            "model": "deepseek-chat",
-            "messages": [
-                {"role": "system", "content": "Ты — генератор текстов для постов в Telegram."},
-                {"role": "user", "content": f"Создай пост в стиле {style}"}
-            ],
-            "temperature": 0.9,
-            "max_tokens": 500
-        }
-        
-        response = requests.post(
-            "https://api.deepseek.com/v1/chat/completions",
-            headers=headers,
-            json=data,
-            timeout=30
-        )
-        
-        if response.status_code == 200:
-            result = response.json()
-            caption = result["choices"][0]["message"]["content"].strip()
-            if caption and len(caption) > 20:
-                return caption
-    except Exception as e:
-        logger.error(f"Ошибка генерации: {e}")
-    
-    return get_fallback_caption()
-
-# ===== КОМАНДЫ БОТА =====
+# ===== КОМАНДА /BROADCAST =====
 @dp.message(Command("broadcast"))
 async def broadcast_command(message: Message):
     try:
         if message.chat.type != "private":
-            await message.answer("ℹ️ Эта команда работает только в личных сообщениях с ботом.")
+            await message.answer("ℹ️ Эта команда работает только в личных сообщениях.")
             return
         
         user_id = message.from_user.id
         
-        if not FREEKASSA_MERCHANT_ID or not FREEKASSA_SECRET_KEY:
+        if not FREEKASSA_MERCHANT_ID or not FREEKASSA_SECRET_KEY_S1:
             await message.answer(
-                "❌ Платёжная система не настроена.\n"
-                "Администратор должен настроить FreeKassa в переменных окружения:\n"
-                "FREEKASSA_MERCHANT_ID, FREEKASSA_SECRET_KEY"
+                "❌ FreeKassa не настроен.\n"
+                "Установите переменные:\n"
+                "FREEKASSA_MERCHANT_ID\n"
+                "FREEKASSA_SECRET_KEY_S1 (S1 - 16 символов)"
             )
             return
         
@@ -344,37 +219,19 @@ async def broadcast_command(message: Message):
             media_type = "video"
             media_file_id = message.video.file_id
             text = message.caption or ""
-        elif message.document:
-            has_media = True
-            media_type = "document"
-            media_file_id = message.document.file_id
-            text = message.caption or ""
-        elif message.animation:
-            has_media = True
-            media_type = "animation"
-            media_file_id = message.animation.file_id
-            text = message.caption or ""
         
         if not text and not has_media:
-            current_price = load_broadcast_price()
             await message.answer(
                 f"📢 Использование: /broadcast Ваше сообщение\n\n"
-                f"💰 Стоимость: {current_price} {FREEKASSA_CURRENCY}\n"
-                f"💳 Оплата через FreeKassa\n\n"
-                f"📌 Можно прикрепить фото, видео, GIF или документ"
+                f"💰 Стоимость: {load_broadcast_price()} {FREEKASSA_CURRENCY}\n"
+                f"💳 Оплата через FreeKassa"
             )
             return
         
         current_price = load_broadcast_price()
         order_id = f"broadcast_{user_id}_{int(time.time())}"
         
-        # Шифруем данные
-        encrypted_text = encrypt_broadcast_data(
-            text=text,
-            media_type=media_type or "",
-            media_file_id=media_file_id or ""
-        )
-        
+        # Сохраняем данные
         broadcast_data[user_id] = {
             'text': text,
             'has_media': has_media,
@@ -384,11 +241,10 @@ async def broadcast_command(message: Message):
             'chat_id': message.chat.id,
             'user_id': user_id,
             'order_id': order_id,
-            'price': current_price,
-            'encrypted_data': encrypted_text
+            'price': current_price
         }
         
-        # ✅ Генерируем ссылку с ПРАВИЛЬНОЙ подписью
+        # ✅ Генерируем ссылку с S1
         payment_url = create_freekassa_payment_link(
             current_price, 
             order_id,
@@ -396,7 +252,7 @@ async def broadcast_command(message: Message):
         )
         
         if not payment_url:
-            await message.answer("❌ Ошибка генерации ссылки. Проверьте настройки FreeKassa.")
+            await message.answer("❌ Ошибка генерации ссылки.")
             return
         
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -411,10 +267,9 @@ async def broadcast_command(message: Message):
         ])
         
         await message.answer(
-            f"📢 Для отправки рассылки необходимо оплатить {current_price} {FREEKASSA_CURRENCY}.\n\n"
+            f"📢 Для отправки рассылки оплатите {current_price} {FREEKASSA_CURRENCY}.\n\n"
             f"📝 Текст: {text[:100]}{'...' if len(text) > 100 else ''}\n"
             f"{'📎 С медиафайлом' if has_media else ''}\n\n"
-            f"🔐 Данные зашифрованы и защищены.\n"
             f"💳 Нажмите кнопку ниже для оплаты.",
             reply_markup=keyboard
         )
@@ -425,337 +280,7 @@ async def broadcast_command(message: Message):
         logger.error(f"Ошибка: {e}", exc_info=True)
         await message.answer(f"❌ Ошибка: {str(e)[:100]}")
 
-@dp.callback_query(lambda c: c.data and c.data.startswith('check_payment_'))
-async def check_payment(callback: CallbackQuery):
-    try:
-        order_id = callback.data.replace('check_payment_', '')
-        user_id = callback.from_user.id
-        
-        if user_id not in broadcast_data:
-            await callback.answer("❌ Данные о заказе не найдены", show_alert=True)
-            return
-        
-        broadcast_info = broadcast_data[user_id]
-        if broadcast_info.get('order_id') != order_id:
-            await callback.answer("❌ Неверный заказ", show_alert=True)
-            return
-        
-        await callback.answer("⏳ Проверяю статус платежа...")
-        
-        payment_status = await check_freekassa_payment_status(order_id)
-        
-        if payment_status:
-            if payment_status.get('status') == 'paid':
-                await process_broadcast_payment(callback, user_id, broadcast_info)
-            else:
-                await callback.message.answer(
-                    "❌ Платёж ещё не оплачен.\n"
-                    "Оплатите счёт и нажмите 'Проверить оплату' снова.\n"
-                    "Если оплатили, подождите 1-2 минуты."
-                )
-        else:
-            await callback.message.answer(
-                "⚠️ Не удалось проверить статус платежа.\n"
-                "Попробуйте ещё раз через несколько минут.\n"
-                "Если ошибка повторяется, свяжитесь с администратором."
-            )
-        
-    except Exception as e:
-        logger.error(f"Ошибка проверки платежа: {e}")
-        await callback.answer("❌ Ошибка при проверке", show_alert=True)
-
-async def process_broadcast_payment(callback: CallbackQuery, user_id: int, broadcast_info: dict):
-    try:
-        text = broadcast_info.get('text', '')
-        has_media = broadcast_info.get('has_media', False)
-        media_type = broadcast_info.get('media_type')
-        media_file_id = broadcast_info.get('media_file_id')
-        
-        broadcast_id = f"broadcast_{int(time.time())}_{hashlib.md5(str(broadcast_info).encode()).hexdigest()[:8]}"
-        
-        pending_broadcasts[broadcast_id] = {
-            'text': text,
-            'has_media': has_media,
-            'media_type': media_type,
-            'media_file_id': media_file_id,
-            'user_id': user_id,
-            'timestamp': time.time(),
-            'chat_id': broadcast_info.get('chat_id'),
-            'price': broadcast_info.get('price', broadcast_price)
-        }
-        
-        del broadcast_data[user_id]
-        
-        await send_broadcast_for_moderation(broadcast_id, pending_broadcasts[broadcast_id])
-        
-        await callback.message.edit_text(
-            f"✅ Оплата подтверждена! Сообщение отправлено на модерацию.\n"
-            f"📝 Текст: {text[:100]}{'...' if len(text) > 100 else ''}\n"
-            f"{'📎 С медиафайлом' if has_media else ''}\n\n"
-            f"⏳ Ожидайте подтверждения от администратора."
-        )
-        await callback.answer("✅ Оплата подтверждена!", show_alert=True)
-        
-    except Exception as e:
-        logger.error(f"Ошибка обработки оплаты: {e}")
-        await callback.message.answer(f"❌ Ошибка: {str(e)[:100]}")
-        await callback.answer("❌ Ошибка", show_alert=True)
-
-async def send_broadcast_for_moderation(broadcast_id: str, broadcast_info: dict):
-    if not OWNER_ID:
-        return
-    try:
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [
-                InlineKeyboardButton(text="✅ Подтвердить", callback_data=f"broad_approve_{broadcast_id}"),
-                InlineKeyboardButton(text="❌ Отклонить", callback_data=f"broad_reject_{broadcast_id}")
-            ]
-        ])
-        
-        text = broadcast_info.get('text', '')
-        has_media = broadcast_info.get('has_media', False)
-        media_type = broadcast_info.get('media_type')
-        media_file_id = broadcast_info.get('media_file_id')
-        user_id = broadcast_info.get('user_id')
-        
-        preview_text = f"📋 Новая рассылка на модерацию #{broadcast_id}\n\n"
-        preview_text += f"👤 Заказчик ID: {user_id}\n"
-        preview_text += f"💰 Оплачено: {broadcast_info.get('price', broadcast_price)} {FREEKASSA_CURRENCY}\n"
-        
-        if text:
-            preview_text += f"\n📝 Текст:\n{text[:300]}{'...' if len(text) > 300 else ''}\n"
-        else:
-            preview_text += f"\n📝 Текст: (без текста)\n"
-        
-        if has_media:
-            media_names = {
-                "photo": "📸 Фото",
-                "video": "🎬 Видео",
-                "document": "📄 Документ",
-                "animation": "🎥 GIF"
-            }
-            preview_text += f"\n📎 {media_names.get(media_type, 'Медиафайл')} (будет отправлено)\n"
-        
-        preview_text += f"\n⏳ После подтверждения будет отправлено всем подписчикам."
-        
-        if has_media and media_file_id:
-            if media_type == "photo":
-                await bot.send_photo(
-                    chat_id=OWNER_ID,
-                    photo=media_file_id,
-                    caption=preview_text,
-                    reply_markup=keyboard
-                )
-            elif media_type == "video":
-                await bot.send_video(
-                    chat_id=OWNER_ID,
-                    video=media_file_id,
-                    caption=preview_text,
-                    reply_markup=keyboard
-                )
-            elif media_type == "document":
-                await bot.send_document(
-                    chat_id=OWNER_ID,
-                    document=media_file_id,
-                    caption=preview_text,
-                    reply_markup=keyboard
-                )
-            elif media_type == "animation":
-                await bot.send_animation(
-                    chat_id=OWNER_ID,
-                    animation=media_file_id,
-                    caption=preview_text,
-                    reply_markup=keyboard
-                )
-        else:
-            await bot.send_message(
-                chat_id=OWNER_ID,
-                text=preview_text,
-                reply_markup=keyboard
-            )
-        
-        logger.info(f"Рассылка {broadcast_id} отправлена на модерацию")
-    except Exception as e:
-        logger.error(f"Ошибка отправки на модерацию: {e}")
-
-@dp.callback_query(lambda c: c.data and c.data.startswith('broad_'))
-async def handle_broadcast_moderation(callback: CallbackQuery):
-    try:
-        if callback.from_user.id != OWNER_ID:
-            await callback.answer("⛔ Доступ запрещен", show_alert=True)
-            return
-        
-        parts = callback.data.split('_')
-        action = parts[1]
-        broadcast_id = '_'.join(parts[2:])
-        approved = action == 'approve'
-        
-        if broadcast_id not in pending_broadcasts:
-            await callback.answer("❌ Сообщение не найдено", show_alert=True)
-            return
-        
-        broadcast_info = pending_broadcasts[broadcast_id]
-        
-        if approved:
-            await callback.answer("✅ Сообщение одобрено", show_alert=True)
-            await callback.message.edit_text(
-                callback.message.text + "\n\n✅ ОДОБРЕНО",
-                reply_markup=None
-            )
-            
-            text = broadcast_info.get('text', '')
-            has_media = broadcast_info.get('has_media', False)
-            media_type = broadcast_info.get('media_type')
-            media_file_id = broadcast_info.get('media_file_id')
-            users_list = load_users()
-            
-            sent_count = 0
-            failed_count = 0
-            
-            # Отправка подписчикам
-            for chat_id in users_list:
-                try:
-                    if has_media and media_file_id:
-                        if media_type == "photo":
-                            await bot.send_photo(
-                                chat_id=chat_id,
-                                photo=media_file_id,
-                                caption=text if text else None
-                            )
-                        elif media_type == "video":
-                            await bot.send_video(
-                                chat_id=chat_id,
-                                video=media_file_id,
-                                caption=text if text else None
-                            )
-                        elif media_type == "document":
-                            await bot.send_document(
-                                chat_id=chat_id,
-                                document=media_file_id,
-                                caption=text if text else None
-                            )
-                        elif media_type == "animation":
-                            await bot.send_animation(
-                                chat_id=chat_id,
-                                animation=media_file_id,
-                                caption=text if text else None
-                            )
-                    else:
-                        if text:
-                            await bot.send_message(chat_id=chat_id, text=text)
-                    
-                    sent_count += 1
-                    await asyncio.sleep(0.1)
-                except Exception as e:
-                    logger.error(f"Ошибка отправки в {chat_id}: {e}")
-                    failed_count += 1
-                    if "forbidden" in str(e).lower() or "chat not found" in str(e).lower():
-                        if str(chat_id) in [str(u) for u in users_list]:
-                            users_list.remove(str(chat_id))
-                            save_users(users_list)
-            
-            # Отправка в канал
-            try:
-                channel_id = CHANNEL_ID
-                if channel_id:
-                    if has_media and media_file_id:
-                        if media_type == "photo":
-                            await bot.send_photo(
-                                chat_id=channel_id,
-                                photo=media_file_id,
-                                caption=text if text else None
-                            )
-                        elif media_type == "video":
-                            await bot.send_video(
-                                chat_id=channel_id,
-                                video=media_file_id,
-                                caption=text if text else None
-                            )
-                        elif media_type == "document":
-                            await bot.send_document(
-                                chat_id=channel_id,
-                                document=media_file_id,
-                                caption=text if text else None
-                            )
-                        elif media_type == "animation":
-                            await bot.send_animation(
-                                chat_id=channel_id,
-                                animation=media_file_id,
-                                caption=text if text else None
-                            )
-                    else:
-                        if text:
-                            await bot.send_message(chat_id=channel_id, text=text)
-                    logger.info(f"✅ Отправлено в канал {channel_id}")
-            except Exception as e:
-                logger.error(f"Ошибка отправки в канал: {e}")
-            
-            del pending_broadcasts[broadcast_id]
-            
-            # Уведомление заказчику
-            try:
-                user_id = broadcast_info.get('user_id')
-                if user_id:
-                    await bot.send_message(
-                        chat_id=user_id,
-                        text=f"✅ Ваше сообщение опубликовано!\n"
-                             f"📨 Отправлено: {sent_count} подписчикам\n"
-                             f"❌ Ошибок: {failed_count}"
-                    )
-            except Exception as e:
-                logger.error(f"Ошибка уведомления заказчика: {e}")
-                
-        else:
-            await callback.answer("❌ Сообщение отклонено", show_alert=True)
-            await callback.message.edit_text(
-                callback.message.text + "\n\n❌ ОТКЛОНЕНО",
-                reply_markup=None
-            )
-            try:
-                user_id = broadcast_info.get('user_id')
-                if user_id:
-                    await bot.send_message(
-                        chat_id=user_id,
-                        text="❌ Ваше сообщение отклонено модератором."
-                    )
-            except Exception as e:
-                logger.error(f"Ошибка уведомления заказчика: {e}")
-            if broadcast_id in pending_broadcasts:
-                del pending_broadcasts[broadcast_id]
-    except Exception as e:
-        logger.error(f"Ошибка в broadcast модерации: {e}")
-        await callback.answer("❌ Ошибка", show_alert=True)
-
-@dp.message(Command("price"))
-async def set_price(message: Message):
-    try:
-        if message.from_user.id != OWNER_ID:
-            await message.answer("⛔ Доступ запрещён. Только для владельца.")
-            return
-        args = message.text.replace("/price", "").strip()
-        if not args:
-            current_price = load_broadcast_price()
-            await message.answer(
-                f"💰 Текущая цена рассылки: {current_price} {FREEKASSA_CURRENCY}\n\n"
-                f"Изменить: /price 100\n"
-                f"Цена от 10 до 10000."
-            )
-            return
-        try:
-            price = int(args)
-            if price < 10 or price > 10000:
-                await message.answer("❌ Цена должна быть от 10 до 10000.")
-                return
-            save_broadcast_price(price)
-            global broadcast_price
-            broadcast_price = price
-            await message.answer(f"✅ Цена рассылки установлена: {price} {FREEKASSA_CURRENCY}")
-        except ValueError:
-            await message.answer("❌ Введите число. Пример: /price 100")
-    except Exception as e:
-        logger.error(f"Ошибка: {e}")
-        await message.answer("❌ Произошла ошибка")
-
+# ===== ТЕСТОВАЯ КОМАНДА =====
 @dp.message(Command("testfreekassa"))
 async def test_freekassa(message: Message):
     """Тестовая команда для диагностики FreeKassa"""
@@ -764,55 +289,42 @@ async def test_freekassa(message: Message):
         return
     
     merchant = FREEKASSA_MERCHANT_ID
-    secret = FREEKASSA_SECRET_KEY
+    s1 = FREEKASSA_SECRET_KEY_S1
+    s2 = FREEKASSA_SECRET_KEY_S2
     
-    if not merchant or not secret:
+    if not merchant or not s1:
         await message.answer("❌ FreeKassa не настроен!\n\n"
                             "Установите:\n"
                             "FREEKASSA_MERCHANT_ID\n"
-                            "FREEKASSA_SECRET_KEY")
+                            "FREEKASSA_SECRET_KEY_S1 (S1 - 16 символов)")
         return
     
     test_amount = 100
     test_order = f"test_{int(time.time())}"
     
-    # ✅ Генерируем подпись ПРАВИЛЬНО
-    sign_str = f"{merchant}:{test_amount}:{secret}:{test_order}"
+    # ✅ Генерируем подпись с S1
+    sign_str = f"{merchant}:{test_amount}:{s1}:{test_order}"
     signature = hashlib.md5(sign_str.encode()).hexdigest()
     
     # ✅ Формируем ссылку
     link = f"https://pay.fk.money/?m={merchant}&oa={test_amount}&currency={FREEKASSA_CURRENCY}&o={test_order}&s={signature}"
     
-    await message.answer(
+    response = (
         f"🧪 **ТЕСТ FREEKASSA**\n\n"
         f"📋 Merchant ID: `{merchant}`\n"
-        f"🔑 Secret Key: `{secret[:5]}...{secret[-5:]}`\n"
+        f"🔑 S1 (для ссылки): `{s1}` (16 символов)\n"
+        f"🔑 S2 (для webhook): `{s2 if s2 else '❌ не задан'}` (16 символов)\n"
         f"💰 Сумма: `{test_amount}`\n"
         f"🆔 Order ID: `{test_order}`\n\n"
-        f"🔑 **Проверка подписи:**\n"
-        f"Строка: `{sign_str}`\n"
-        f"MD5: `{signature}`\n\n"
-        f"🔗 **Ссылка для проверки:**\n"
-        f"`{link}`\n\n"
-        f"📌 Откройте ссылку в браузере",
-        parse_mode="Markdown"
+        f"🔑 **Строка подписи (S1):**\n`{sign_str}`\n"
+        f"🔑 **MD5:** `{signature}`\n\n"
+        f"🔗 **Ссылка для проверки:**\n`{link}`\n\n"
+        f"📌 Откройте ссылку в браузере"
     )
+    
+    await message.answer(response, parse_mode="Markdown")
 
-@dp.message(Command("start"))
-async def start_command(message: Message):
-    await message.answer(
-        "🤖 **Бот для платных рассылок**\n\n"
-        "📢 **Команды:**\n"
-        "• `/broadcast` — создать платную рассылку\n"
-        "• `/price` — установить цену (только владелец)\n"
-        "• `/testfreekassa` — тест FreeKassa (только владелец)\n"
-        "• `/start` — это сообщение\n\n"
-        "💰 Для отправки сообщения подписчикам нужно оплатить через FreeKassa.\n"
-        "После оплаты сообщение уходит на модерацию владельцу.",
-        parse_mode="Markdown"
-    )
-
-# ===== WEBHOOK =====
+# ===== WEBHOOK (использует S2) =====
 async def freekassa_webhook(request):
     try:
         data = await request.post()
@@ -820,22 +332,18 @@ async def freekassa_webhook(request):
         
         logger.info(f"📩 Получен webhook: {data}")
         
-        # Проверка подписи
-        if not verify_freekassa_signature(data, FREEKASSA_SECRET_KEY):
+        # ✅ Проверяем подпись с S2
+        if not verify_freekassa_webhook_signature(data):
             logger.warning("❌ Неверная подпись в webhook")
             return web.Response(text="Invalid signature", status=400)
         
         order_id = data.get('MERCHANT_ORDER_ID')
         status = data.get('STATUS')
-        amount = data.get('AMOUNT')
-        
-        logger.info(f"📋 Order: {order_id}, Status: {status}, Amount: {amount}")
         
         if status == 'SUCCESS':
-            # Обработка успешного платежа
             for uid, info in broadcast_data.items():
                 if info.get('order_id') == order_id:
-                    logger.info(f"✅ Платёж {order_id} подтверждён для пользователя {uid}")
+                    logger.info(f"✅ Платёж {order_id} подтверждён")
                     try:
                         await bot.send_message(
                             chat_id=uid,
@@ -857,21 +365,9 @@ async def main():
         logger.info("=" * 60)
         logger.info("🤖 БОТ ЗАПУЩЕН")
         logger.info(f"💰 Цена: {load_broadcast_price()} {FREEKASSA_CURRENCY}")
-        logger.info(f"💳 Merchant ID: {FREEKASSA_MERCHANT_ID if FREEKASSA_MERCHANT_ID else '❌ не задан'}")
-        logger.info(f"🔐 Шифрование: {'✅ включено' if CRYPTO_AVAILABLE and cipher else '❌ выключено'}")
-        logger.info(f"👤 Владелец: {OWNER_ID}")
-        
-        # Запуск webhook сервера
-        if FREEKASSA_WEBHOOK_URL:
-            app = web.Application()
-            app.router.add_post('/freekassa/webhook', freekassa_webhook)
-            runner = web.AppRunner(app)
-            await runner.setup()
-            site = web.TCPSite(runner, '0.0.0.0', 8080)
-            await site.start()
-            logger.info(f"🌐 Webhook запущен на порту 8080")
-            logger.info(f"📌 URL: {FREEKASSA_WEBHOOK_URL}/freekassa/webhook")
-        
+        logger.info(f"💳 Merchant ID: {FREEKASSA_MERCHANT_ID}")
+        logger.info(f"🔑 S1: {FREEKASSA_SECRET_KEY_S1} (16 символов)")
+        logger.info(f"🔑 S2: {FREEKASSA_SECRET_KEY_S2 if FREEKASSA_SECRET_KEY_S2 else '❌ не задан'}")
         logger.info("=" * 60)
         
         await bot.delete_webhook(drop_pending_updates=True)
@@ -885,15 +381,13 @@ async def main():
         
     except Exception as e:
         logger.error(f"❌ Критическая ошибка: {e}")
-        import traceback
-        traceback.print_exc()
         sys.exit(1)
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        logger.info("🛑 Бот остановлен пользователем")
+        logger.info("🛑 Бот остановлен")
     except Exception as e:
         logger.error(f"❌ Фатальная ошибка: {e}")
         sys.exit(1)
