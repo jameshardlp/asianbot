@@ -100,7 +100,7 @@ broadcast_price = load_broadcast_price()
 
 # ===== FREEKASSA =====
 def generate_freekassa_signature(merchant_id: str, amount: str, order_id: str) -> str:
-    """Генерация подписи с валютой"""
+    """Генерация подписи с валютой (использует S1)"""
     sign_str = f"{merchant_id}:{amount}:{FREEKASSA_SECRET_KEY_S1}:{FREEKASSA_CURRENCY}:{order_id}"
     logger.info(f"🔑 Строка для подписи: {sign_str}")
     signature = hashlib.md5(sign_str.encode()).hexdigest()
@@ -108,7 +108,7 @@ def generate_freekassa_signature(merchant_id: str, amount: str, order_id: str) -
     return signature
 
 def verify_freekassa_webhook_signature(data: dict) -> bool:
-    """Проверка подписи webhook с S2"""
+    """Проверка подписи webhook (использует S2)"""
     required_fields = ['MERCHANT_ID', 'AMOUNT', 'MERCHANT_ORDER_ID', 'SIGN']
     for field in required_fields:
         if field not in data:
@@ -127,11 +127,14 @@ def verify_freekassa_webhook_signature(data: dict) -> bool:
 def create_freekassa_payment_link(amount: float, order_id: str, description: str = "") -> str:
     """
     Создание ссылки для оплаты через FreeKassa
-    ✅ После оплаты перенаправляет в t.me/asianpicbot
+    ✅ После оплаты перенаправляет на страницы /success или /fail
     """
     if not FREEKASSA_MERCHANT_ID or not FREEKASSA_SECRET_KEY_S1:
         logger.error("❌ FreeKassa не настроен")
         return ""
+    
+    # Базовый URL вашего приложения на Railway
+    base_url = "https://asianbot-production.up.railway.app"
     
     merchant_id = str(FREEKASSA_MERCHANT_ID)
     amount_int = int(amount)
@@ -151,9 +154,9 @@ def create_freekassa_payment_link(amount: float, order_id: str, description: str
         "currency": FREEKASSA_CURRENCY,
         "o": order_id_str,
         "s": signature,
-        # ✅ Перенаправление в бота
-        "us": BOT_LINK,
-        "uf": BOT_LINK,
+        # ✅ Теперь указываем ссылки на наши страницы
+        "us": f"{base_url}/success",  # После успешной оплаты
+        "uf": f"{base_url}/fail",     # После неудачной оплаты
     }
     
     if description:
@@ -165,7 +168,7 @@ def create_freekassa_payment_link(amount: float, order_id: str, description: str
     logger.info("=" * 60)
     logger.info("🔗 ССЫЛКА ДЛЯ ОПЛАТЫ:")
     logger.info(link)
-    logger.info(f"🔄 После оплаты пользователь перейдёт в: {BOT_LINK}")
+    logger.info(f"🔄 После оплаты пользователь перейдёт на: {base_url}/success или {base_url}/fail")
     logger.info("=" * 60)
     
     return link
@@ -192,6 +195,167 @@ async def check_freekassa_payment_status(order_id: str) -> Optional[dict]:
     except Exception as e:
         logger.error(f"Ошибка проверки статуса: {e}")
         return None
+
+# ===== СТРАНИЦЫ ДЛЯ ПОЛЬЗОВАТЕЛЯ =====
+async def success_page(request):
+    """Страница успешной оплаты"""
+    html = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Оплата прошла успешно</title>
+        <style>
+            body {
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+                text-align: center;
+                padding: 50px 20px;
+                background: #f0f4f8;
+                margin: 0;
+                min-height: 100vh;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+            }
+            .container {
+                max-width: 500px;
+                margin: 0 auto;
+                background: white;
+                padding: 40px 30px;
+                border-radius: 16px;
+                box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+            }
+            .icon {
+                font-size: 64px;
+                margin-bottom: 16px;
+            }
+            h1 {
+                color: #1a73e8;
+                font-size: 28px;
+                margin: 0 0 12px 0;
+            }
+            p {
+                color: #5f6368;
+                font-size: 16px;
+                line-height: 1.6;
+                margin: 8px 0;
+            }
+            .btn {
+                display: inline-block;
+                padding: 14px 32px;
+                background: #1a73e8;
+                color: white !important;
+                text-decoration: none;
+                border-radius: 8px;
+                margin-top: 24px;
+                font-weight: 600;
+                transition: background 0.2s;
+                border: none;
+                cursor: pointer;
+            }
+            .btn:hover {
+                background: #1557b0;
+            }
+            .btn:active {
+                transform: scale(0.98);
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="icon">✅</div>
+            <h1>Оплата прошла успешно!</h1>
+            <p>Ваш пост будет опубликован после проверки администратором.</p>
+            <p>Вы получите уведомление в Telegram.</p>
+            <a href="https://t.me/asianpicbot" class="btn">Вернуться в бота</a>
+        </div>
+    </body>
+    </html>
+    """
+    return web.Response(text=html, content_type='text/html')
+
+async def fail_page(request):
+    """Страница неудачной оплаты"""
+    html = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Оплата не прошла</title>
+        <style>
+            body {
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+                text-align: center;
+                padding: 50px 20px;
+                background: #fef3f2;
+                margin: 0;
+                min-height: 100vh;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+            }
+            .container {
+                max-width: 500px;
+                margin: 0 auto;
+                background: white;
+                padding: 40px 30px;
+                border-radius: 16px;
+                box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+            }
+            .icon {
+                font-size: 64px;
+                margin-bottom: 16px;
+            }
+            h1 {
+                color: #d93025;
+                font-size: 28px;
+                margin: 0 0 12px 0;
+            }
+            p {
+                color: #5f6368;
+                font-size: 16px;
+                line-height: 1.6;
+                margin: 8px 0;
+            }
+            .btn {
+                display: inline-block;
+                padding: 14px 32px;
+                background: #1a73e8;
+                color: white !important;
+                text-decoration: none;
+                border-radius: 8px;
+                margin-top: 24px;
+                font-weight: 600;
+                transition: background 0.2s;
+                border: none;
+                cursor: pointer;
+            }
+            .btn:hover {
+                background: #1557b0;
+            }
+            .btn:active {
+                transform: scale(0.98);
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="icon">❌</div>
+            <h1>Оплата не прошла</h1>
+            <p>Платёж был отменён или произошла ошибка.</p>
+            <p>Попробуйте ещё раз или выберите другой способ оплаты.</p>
+            <a href="https://t.me/asianpicbot" class="btn">Вернуться в бота</a>
+        </div>
+    </body>
+    </html>
+    """
+    return web.Response(text=html, content_type='text/html')
+
+async def health_check(request):
+    """Проверка работоспособности бота"""
+    return web.Response(text="Bot is running! ✅")
 
 # ===== КОМАНДА /BROADCAST =====
 @dp.message(Command("broadcast"))
@@ -245,8 +409,7 @@ async def broadcast_command(message: Message):
                 f"📢 Использование: /broadcast Ваше сообщение\n\n"
                 f"💰 Стоимость: {current_price} {FREEKASSA_CURRENCY}\n"
                 f"💳 Оплата через FreeKassa\n\n"
-                f"📌 Можно прикрепить фото, видео, GIF или документ\n"
-                f"🔄 После оплаты вы вернётесь в бота"
+                f"📌 Можно прикрепить фото, видео, GIF или документ"
             )
             return
         
@@ -265,7 +428,7 @@ async def broadcast_command(message: Message):
             'price': current_price
         }
         
-        # ✅ Создаем ссылку с перенаправлением в бота
+        # ✅ Создаем ссылку с перенаправлением на /success и /fail
         payment_url = create_freekassa_payment_link(
             current_price, 
             order_id,
@@ -284,10 +447,6 @@ async def broadcast_command(message: Message):
             [InlineKeyboardButton(
                 text="✅ Проверить оплату",
                 callback_data=f"check_payment_{order_id}"
-            )],
-            [InlineKeyboardButton(
-                text="🤖 Перейти в бота",
-                url=BOT_LINK
             )]
         ])
         
@@ -295,8 +454,7 @@ async def broadcast_command(message: Message):
             f"📢 Для отправки рассылки оплатите {current_price} {FREEKASSA_CURRENCY}.\n\n"
             f"📝 Текст: {text[:100]}{'...' if len(text) > 100 else ''}\n"
             f"{'📎 С медиафайлом' if has_media else ''}\n\n"
-            f"💳 Нажмите кнопку ниже для оплаты.\n"
-            f"🔄 После оплаты вы вернётесь в бота.",
+            f"💳 Нажмите кнопку ниже для оплаты.",
             reply_markup=keyboard
         )
         
@@ -370,8 +528,7 @@ async def process_broadcast_payment(callback: CallbackQuery, user_id: int, broad
             f"📝 Текст: {text[:100]}{'...' if len(text) > 100 else ''}\n"
             f"{'📎 С медиафайлом' if has_media else ''}\n\n"
             f"⏳ Сообщение отправлено на модерацию владельцу.\n"
-            f"📬 После одобрения оно будет отправлено всем подписчикам.\n"
-            f"🔄 Вы будете перенаправлены в бота."
+            f"📬 После одобрения оно будет отправлено всем подписчикам."
         )
         await callback.answer("✅ Оплата подтверждена!", show_alert=True)
         
@@ -634,8 +791,8 @@ async def test_freekassa(message: Message):
     sign_str = f"{merchant}:{test_amount}:{s1}:{currency}:{test_order}"
     signature = hashlib.md5(sign_str.encode()).hexdigest()
     
-    # ✅ Ссылка с перенаправлением в бота
-    link = f"https://pay.fk.money/?m={merchant}&oa={test_amount}&currency={currency}&o={test_order}&s={signature}&us={BOT_LINK}&uf={BOT_LINK}"
+    base_url = "https://asianbot-production.up.railway.app"
+    link = f"https://pay.fk.money/?m={merchant}&oa={test_amount}&currency={currency}&o={test_order}&s={signature}&us={base_url}/success&uf={base_url}/fail"
     
     await message.answer(
         f"🧪 **ТЕСТ FREEKASSA**\n\n"
@@ -648,7 +805,7 @@ async def test_freekassa(message: Message):
         f"🔑 Строка: `{sign_str}`\n"
         f"🔑 MD5: `{signature}`\n\n"
         f"🔗 **Ссылка для проверки:**\n`{link}`\n\n"
-        f"🔄 После оплаты вы вернётесь в: {BOT_LINK}",
+        f"🔄 После оплаты вы попадёте на страницу успеха или неудачи",
         parse_mode="Markdown"
     )
 
@@ -737,7 +894,6 @@ async def start_command(message: Message):
         "• `/users` — список активных пользователей\n"
         "• `/cleanup` — удалить пользователей с истекшим сроком\n\n"
         "💰 После оплаты вы будете добавлены в базу на 24 часа.\n"
-        "🔄 После оплаты вы вернётесь в бота.\n"
         "📬 После рассылки вы будете автоматически удалены.",
         parse_mode="Markdown"
     )
@@ -810,7 +966,7 @@ async def main():
         logger.info(f"🔑 S1: {FREEKASSA_SECRET_KEY_S1}")
         logger.info(f"🔑 S2: {FREEKASSA_SECRET_KEY_S2}")
         logger.info(f"🤖 Бот: {BOT_LINK}")
-        logger.info("🔄 После оплаты пользователь вернётся в бота")
+        logger.info("🔄 После оплаты пользователь увидит страницу успеха/неудачи")
         
         # Запускаем фоновую очистку
         asyncio.create_task(cleanup_task())
@@ -824,11 +980,10 @@ async def main():
         # ✅ Создаем приложение для webhook
         app = web.Application()
         
-        # ✅ ОБЯЗАТЕЛЬНО: добавляем health-check для корневого пути
-        async def health_check(request):
-            return web.Response(text="Bot is running! ✅")
-        
-        app.router.add_get("/", health_check)  # <-- ЭТО РЕШАЕТ ПРОБЛЕМУ 502
+        # ✅ Добавляем все маршруты
+        app.router.add_get("/", health_check)
+        app.router.add_get("/success", success_page)
+        app.router.add_get("/fail", fail_page)
         app.router.add_post('/freekassa/webhook', freekassa_webhook)
         
         # ✅ Запускаем сервер
@@ -837,6 +992,8 @@ async def main():
         site = web.TCPSite(runner, '0.0.0.0', port)
         await site.start()
         logger.info(f"🌐 Webhook сервер запущен на порту {port}")
+        logger.info(f"📌 Страница успеха: https://asianbot-production.up.railway.app/success")
+        logger.info(f"📌 Страница неудачи: https://asianbot-production.up.railway.app/fail")
         
         # ✅ Запускаем бота в режиме polling
         await bot.delete_webhook(drop_pending_updates=True)
