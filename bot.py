@@ -8,7 +8,7 @@ import base64
 from urllib.parse import urlencode
 import logging
 import requests
-from typing import Optional, Dict, Any, List, Tuple  # ✅ ДОБАВЛЕН ИМПОРТ
+from typing import Optional, Dict, Any, List, Tuple
 
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
@@ -27,9 +27,9 @@ CHANNEL_ID = os.getenv("CHANNEL_ID")
 OWNER_ID = int(os.getenv("OWNER_ID", 0))
 
 FREEKASSA_MERCHANT_ID = os.getenv("FREEKASSA_MERCHANT_ID", "")
-FREEKASSA_SECRET_KEY_S1 = os.getenv("FREEKASSA_SECRET_KEY_S1", "")  # S1 - 16 символов
-FREEKASSA_SECRET_KEY_S2 = os.getenv("FREEKASSA_SECRET_KEY_S2", "")  # S2 - 16 символов
-FREEKASSA_API_KEY = os.getenv("FREEKASSA_API_KEY", "")  # ✅ ДОБАВЛЕНО
+FREEKASSA_SECRET_KEY_S1 = os.getenv("FREEKASSA_SECRET_KEY_S1", "")  # S1 - 15 символов
+FREEKASSA_SECRET_KEY_S2 = os.getenv("FREEKASSA_SECRET_KEY_S2", "")  # S2 - 15 символов
+FREEKASSA_API_KEY = os.getenv("FREEKASSA_API_KEY", "")
 FREEKASSA_CURRENCY = os.getenv("FREEKASSA_CURRENCY", "RUB")
 FREEKASSA_WEBHOOK_URL = os.getenv("FREEKASSA_WEBHOOK_URL", "")
 
@@ -64,7 +64,7 @@ def save_broadcast_price(price: int):
 
 broadcast_price = load_broadcast_price()
 
-# ===== FREEKASSA - ПРАВИЛЬНАЯ ПОДПИСЬ =====
+# ===== FREEKASSA =====
 def generate_freekassa_signature(merchant_id: str, amount: str, order_id: str) -> str:
     """
     Генерация подписи для FreeKassa
@@ -134,6 +134,12 @@ def create_freekassa_payment_link(amount: float, order_id: str, description: str
     logger.info("=" * 60)
     logger.info("🔗 ССЫЛКА ДЛЯ ОПЛАТЫ:")
     logger.info(link)
+    logger.info("📋 ПРОВЕРКА ПОДПИСИ:")
+    logger.info(f"Merchant ID: {merchant_id}")
+    logger.info(f"Сумма: {amount_str}")
+    logger.info(f"S1: {FREEKASSA_SECRET_KEY_S1} ({len(FREEKASSA_SECRET_KEY_S1)} символов)")
+    logger.info(f"Order ID: {order_id_str}")
+    logger.info(f"Подпись: {signature}")
     logger.info("=" * 60)
     
     return link
@@ -191,7 +197,7 @@ async def broadcast_command(message: Message):
                 "❌ FreeKassa не настроен.\n"
                 "Установите переменные:\n"
                 "FREEKASSA_MERCHANT_ID\n"
-                "FREEKASSA_SECRET_KEY_S1 (S1 - 16 символов)"
+                "FREEKASSA_SECRET_KEY_S1 (S1)"
             )
             return
         
@@ -280,7 +286,6 @@ async def broadcast_command(message: Message):
         logger.error(f"Ошибка: {e}", exc_info=True)
         await message.answer(f"❌ Ошибка: {str(e)[:100]}")
 
-# ===== ПРОВЕРКА ОПЛАТЫ =====
 @dp.callback_query(lambda c: c.data and c.data.startswith('check_payment_'))
 async def check_payment(callback: CallbackQuery):
     try:
@@ -467,7 +472,6 @@ async def handle_broadcast_moderation(callback: CallbackQuery):
                     logger.error(f"Ошибка отправки в {chat_id}: {e}")
                     failed_count += 1
             
-            # Отправка в канал
             try:
                 channel_id = CHANNEL_ID
                 if channel_id:
@@ -498,8 +502,7 @@ async def handle_broadcast_moderation(callback: CallbackQuery):
                 if user_id:
                     await bot.send_message(
                         chat_id=user_id,
-                        text=f"✅ Ваше сообщение опубликовано!\n"
-                             f"📨 Отправлено: {sent_count} подписчикам"
+                        text=f"✅ Ваше сообщение опубликовано!\n📨 Отправлено: {sent_count} подписчикам"
                     )
             except Exception as e:
                 logger.error(f"Ошибка уведомления заказчика: {e}")
@@ -534,19 +537,24 @@ async def test_freekassa(message: Message):
     test_amount = 100
     test_order = f"test_{int(time.time())}"
     
+    # Генерируем подпись с S1
     sign_str = f"{merchant}:{test_amount}:{s1}:{test_order}"
     signature = hashlib.md5(sign_str.encode()).hexdigest()
+    
+    # Формируем ссылку
     link = f"https://pay.fk.money/?m={merchant}&oa={test_amount}&currency={FREEKASSA_CURRENCY}&o={test_order}&s={signature}"
     
     await message.answer(
         f"🧪 **ТЕСТ FREEKASSA**\n\n"
         f"📋 Merchant ID: `{merchant}`\n"
-        f"🔑 S1: `{s1}`\n"
+        f"🔑 S1: `{s1}` ({len(s1)} символов)\n"
+        f"🔑 S2: `{s2}` ({len(s2)} символов)\n"
         f"💰 Сумма: `{test_amount}`\n"
         f"🆔 Order: `{test_order}`\n\n"
-        f"🔑 Строка: `{sign_str}`\n"
+        f"🔑 Строка подписи:\n`{sign_str}`\n"
         f"🔑 MD5: `{signature}`\n\n"
-        f"🔗 Ссылка:\n`{link}`",
+        f"🔗 **Ссылка для проверки:**\n`{link}`\n\n"
+        f"📌 Откройте ссылку в браузере",
         parse_mode="Markdown"
     )
 
@@ -603,7 +611,8 @@ async def main():
         logger.info("🤖 БОТ ЗАПУЩЕН")
         logger.info(f"💰 Цена: {load_broadcast_price()} {FREEKASSA_CURRENCY}")
         logger.info(f"💳 Merchant ID: {FREEKASSA_MERCHANT_ID}")
-        logger.info(f"🔑 S1: {FREEKASSA_SECRET_KEY_S1}")
+        logger.info(f"🔑 S1: {FREEKASSA_SECRET_KEY_S1} ({len(FREEKASSA_SECRET_KEY_S1)} символов)")
+        logger.info(f"🔑 S2: {FREEKASSA_SECRET_KEY_S2} ({len(FREEKASSA_SECRET_KEY_S2)} символов)")
         logger.info("=" * 60)
         
         await bot.delete_webhook(drop_pending_updates=True)
