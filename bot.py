@@ -59,28 +59,12 @@ FREEKASSA_API_KEY = os.getenv("FREEKASSA_API_KEY", "")
 FREEKASSA_CURRENCY = os.getenv("FREEKASSA_CURRENCY", "RUB")
 FREEKASSA_WEBHOOK_URL = os.getenv("FREEKASSA_WEBHOOK_URL", "")
 
-ALLOWED_PHOTO_USERS = [OWNER_ID, 1361723521]
-ALLOWED_BALANCE_USERS = [OWNER_ID, 1361723521]
-STARS_CHANNEL_ID = -1003893727881
-
-REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
-REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
-REDIS_DB = int(os.getenv("REDIS_DB", 0))
-REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", None)
-REDIS_URL = os.getenv("REDIS_URL", None)
-
-QUEUE_NAME = "post_queue"
-MODERATION_QUEUE = "moderation_queue"
-
 if not BOT_TOKEN:
     logger.error("BOT_TOKEN не задан")
     sys.exit(1)
 
 if not OWNER_ID:
     logger.warning("OWNER_ID не задан")
-
-if not DEEPSEEK_API_KEY:
-    logger.warning("DEEPSEEK_API_KEY не задан")
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
@@ -110,7 +94,7 @@ else:
     cipher = None
 
 def encrypt_broadcast_data(text: str, media_type: str = "", media_file_id: str = "") -> str:
-    """Шифрует данные рассылки в строку для передачи в URL"""
+    """Шифрует данные рассылки"""
     if not CRYPTO_AVAILABLE or not cipher:
         return base64.urlsafe_b64encode(text.encode()).decode()
     
@@ -172,14 +156,17 @@ broadcast_price = load_broadcast_price()
 broadcast_data = {}
 pending_broadcasts = {}
 
-# ===== FREEKASSA =====
+# ===== FREEKASSA - ИСПРАВЛЕННАЯ ВЕРСИЯ (ТОЛЬКО ОБЯЗАТЕЛЬНЫЕ ПАРАМЕТРЫ) =====
 def generate_freekassa_signature(merchant_id: str, order_id: str, amount: str, secret_key: str) -> str:
-    """Генерация подписи для FreeKassa"""
+    """
+    Генерация подписи для FreeKassa
+    ПОРЯДОК: merchant_id:amount:secret_key:order_id
+    """
     sign_str = f"{merchant_id}:{amount}:{secret_key}:{order_id}"
     return hashlib.md5(sign_str.encode()).hexdigest()
 
 def verify_freekassa_signature(data: dict, secret_key: str) -> bool:
-    """Проверка подписи от FreeKassa"""
+    """Проверка подписи от FreeKassa для webhook"""
     required_fields = ['MERCHANT_ID', 'AMOUNT', 'MERCHANT_ORDER_ID', 'SIGN']
     for field in required_fields:
         if field not in data:
@@ -195,43 +182,38 @@ def verify_freekassa_signature(data: dict, secret_key: str) -> bool:
     
     return sign == expected_sign
 
-def create_freekassa_payment_link(amount: float, order_id: str, description: str = "", encrypted_data: str = "") -> str:
-    """Создание правильной ссылки для оплаты через FreeKassa"""
+def create_freekassa_payment_link(amount: float, order_id: str, description: str = "") -> str:
+    """
+    Создание МИНИМАЛЬНОЙ правильной ссылки для оплаты через FreeKassa
+    Только обязательные параметры: m, oa, currency, o, s
+    """
     if not FREEKASSA_MERCHANT_ID or not FREEKASSA_SECRET_KEY:
         logger.error("FreeKassa не настроен")
         return ""
     
-    # Шифруем описание, если переданы данные
-    if encrypted_data:
-        description = encrypt_broadcast_data(
-            text=description,
-            media_type="",
-            media_file_id=""
-        )
+    # Сумма должна быть целым числом
+    amount_int = int(amount)
     
-    # Ограничиваем длину описания
-    if description and len(description) > 255:
-        description = description[:255]
+    # Формируем подпись
+    signature = generate_freekassa_signature(
+        FREEKASSA_MERCHANT_ID,
+        order_id,
+        str(amount_int),
+        FREEKASSA_SECRET_KEY
+    )
     
-    # ✅ ПРАВИЛЬНЫЕ ПАРАМЕТРЫ (как в примере)
+    # ✅ ТОЛЬКО ОБЯЗАТЕЛЬНЫЕ ПАРАМЕТРЫ
     params = {
         "m": FREEKASSA_MERCHANT_ID,      # ID мерчанта
-        "oa": str(amount),                # Сумма
-        "o": order_id,                    # ID заказа
-        "i": "",                          # Обязательный пустой параметр
+        "oa": str(amount_int),            # Сумма (целое число)
         "currency": FREEKASSA_CURRENCY,   # Валюта
-        "pay": "PAY",                     # ✅ Обязательный параметр!
-        "s": generate_freekassa_signature(
-            FREEKASSA_MERCHANT_ID, 
-            order_id, 
-            str(amount), 
-            FREEKASSA_SECRET_KEY
-        )
+        "o": order_id,                    # ID заказа
+        "s": signature,                   # Подпись
     }
     
-    # Добавляем описание, если есть
+    # Опционально: добавляем описание (необязательно)
     if description:
-        params["description"] = description
+        params["description"] = description[:255]
     
     query_string = urlencode(params)
     
@@ -263,50 +245,6 @@ async def check_freekassa_payment_status(order_id: str) -> Optional[dict]:
         return None
 
 # ===== РАБОТА С ФАЙЛАМИ =====
-def load_memory():
-    try:
-        with open(MEMORY_FILE, "r") as f:
-            data = json.load(f)
-            return data.get("last_posts", [])
-    except:
-        return []
-
-def save_memory(last_posts_list):
-    try:
-        to_save = last_posts_list[-50:] if len(last_posts_list) > 50 else last_posts_list
-        with open(MEMORY_FILE, "w") as f:
-            json.dump({"last_posts": to_save}, f)
-        return True
-    except Exception as e:
-        logger.error(f"Ошибка сохранения памяти: {e}")
-        return False
-
-last_posts = load_memory()
-used_fallbacks = []
-
-def add_to_last_posts(text: str):
-    global last_posts, used_fallbacks
-    if not text or len(text) < 10:
-        return
-    key = text[:100]
-    if key in last_posts:
-        return
-    last_posts.append(key)
-    if len(last_posts) > 50:
-        last_posts.pop(0)
-    save_memory(last_posts)
-
-def is_similar(text: str) -> bool:
-    global last_posts
-    if not text:
-        return False
-    key = text[:150]
-    for post in last_posts:
-        same_chars = sum(1 for a, b in zip(key, post) if a == b)
-        if len(key) > 10 and same_chars / len(key) > 0.65:
-            return True
-    return False
-
 def load_users():
     try:
         with open(USERS_FILE, "r") as f:
@@ -362,89 +300,19 @@ def save_schedule(schedule_data):
 schedule_data = load_schedule()
 
 # ===== ГЕНЕРАЦИЯ ТЕКСТОВ =====
-style_prompts = {
-    'short_joke': """
-Ты — Анатолий, холостой мужчина средних лет, который живёт в Азии. Ты обычный парень с циничным, саркастичным чувством юмора, уставший от финансового кризиса и человеческой глупости. Твои посты должны быть провокационными, заставлять думать и вызывать эмоции.
-
-КЛЮЧЕВЫЕ ОСОБЕННОСТИ:
-- Пост должен быть похож на мысли человека, который устал от инфляции, цен на бензин и тупых решений властей.
-- Используй современный сленг: кринж, хайп, флекс, база, не смешно, рофл, хейт, краш, буллинг, чилл, вайб, скиллы, бабки, бомбит.
-- Немного мата для передачи эмоций: блять, нахер, пиздец, жесть.
-- Добавь случайную мысль, возникшую в голове — она должна быть неожиданной и провокационной.
-
-ФОРМАТ:
-- Один абзац (без пустых строк между предложениями).
-- Длина: 200-400 символов.
-- Яркое, запоминающееся начало.
-- Жёсткий, но ироничный вывод.
-""",
-
-    'medium': """
-Ты — Анатолий, холостой мужчина средних лет, который живёт в Азии. Ты рассказываешь истории из жизни, но с острым, циничным подтекстом. Ты не просто рассказчик, ты — наблюдатель, который видит абсурд в повседневности.
-
-КЛЮЧЕВЫЕ ОСОБЕННОСТИ:
-- Используй иронию и сарказм как главные инструменты.
-- Покажи своё отношение к происходящему — оно должно быть негативным или скептическим.
-- Добавь элемент неожиданности или абсурда.
-- Сленг и лёгкий мат для эмоциональной окраски.
-
-ФОРМАТ:
-- 2 абзаца.
-- Длина: 400-700 символов.
-- Первый абзац — завязка, второй — неожиданный поворот или жёсткий вывод.
-""",
-
-    'long': """
-Ты — Анатолий, холостой мужчина средних лет, который живёт в Азии. Ты устал, ты зол на мир, но ты всё ещё способен смеяться над этим. Твои длинные посты — это как мини-эссе о том, как всё вокруг идёт не по плану и как это забавно на самом деле.
-
-КЛЮЧЕВЫЕ ОСОБЕННОСТИ:
-- Полноценная история с деталями, но каждый абзац должен содержать саркастичный комментарий.
-- Покажи, как ты пытаешься что-то сделать, но всё идёт не так, и ты находишь в этом абсурдную красоту.
-- Используй сленг и мат, чтобы подчеркнуть эмоциональное состояние.
-- Обязательно добавь случайную философскую мысль в конце — она должна быть смешной и циничной.
-
-ФОРМАТ:
-- 3 абзаца.
-- Длина: 700-1000 символов.
-- Первый абзац — ситуация. Второй — развитие и раздражение. Третий — вывод или ирония судьбы.
-"""
-}
-
-def clean_punctuation(text: str) -> str:
+def clean_text(text: str) -> str:
     if not text:
         return ''
-    text = re.sub(r'[.!?]{2,}', '.', text)
-    text = re.sub(r'\s+', ' ', text)
-    return text.strip()
-
-def ensure_ends_with_dot(text: str) -> str:
-    if not text:
-        return ''
-    text = text.strip()
-    if text[-1] in ('.', '!', '?'):
-        return text
-    return text + '.'
-
-def get_sentences(text: str) -> list:
-    if not text:
-        return []
-    return re.split(r'(?<=[.!?])\s+', text.strip())
-
-def is_sentence_complete(sentence: str) -> bool:
-    if not sentence:
-        return False
-    clean = re.sub(r'[.!?]$', '', sentence).strip()
-    words = clean.split()
-    if len(words) < 5:
-        return False
-    return True
+    text = text.replace('—', '-').replace('–', '-')
+    text = re.sub(r'\s+', ' ', text).strip()
+    return text
 
 def truncate_by_sentences(text: str, max_length: int = 1023) -> str:
     if not text:
         return ''
     text = text.strip()
     if len(text) <= max_length:
-        return ensure_ends_with_dot(text)
+        return text
     sentences = re.split(r'(?<=[.!?])\s+', text)
     result = []
     current_length = 0
@@ -457,158 +325,52 @@ def truncate_by_sentences(text: str, max_length: int = 1023) -> str:
             current_length += len(sentence) + 1
         else:
             break
-    final_text = ' '.join(result).strip()
-    if final_text:
-        final_text = ensure_ends_with_dot(final_text)
-    return final_text
-
-def validate_caption(text: str, min_length: int = 500, max_length: int = 1023) -> Tuple[str, Optional[str]]:
-    if not text:
-        return '', 'Текст пустой'
-    text = clean_text(text)
-    if len(text) < 10:
-        return '', 'Слишком короткий'
-    
-    if len(text) > max_length:
-        text = truncate_by_sentences(text, max_length)
-        if not text:
-            return '', 'Текст слишком длинный и не может быть обрезан'
-    
-    if not text.endswith(('.', '!', '?')):
-        text = ensure_ends_with_dot(text)
-    
-    all_sentences = get_sentences(text)
-    if not all_sentences:
-        return '', 'Нет предложений'
-    
-    if min_length > 0 and len(text) < min_length:
-        return '', f'Слишком короткий ({len(text)} символов, нужно {min_length})'
-    
-    return text, None
-
-def clean_text(text: str) -> str:
-    if not text:
-        return ''
-    text = text.replace('—', '-').replace('–', '-')
-    text = re.sub(r'\s+', ' ', text).strip()
-    text = clean_punctuation(text)
-    return text
+    return ' '.join(result).strip()
 
 def get_fallback_caption() -> str:
-    global used_fallbacks
-    
     all_fallbacks = [
-        "Сижу в кафе в Бангкоке, пью кофе, смотрю на прохожих. И вдруг понимаю — я уже полгода здесь, а всё ещё удивляюсь, как тайцы умудряются улыбаться даже в пробках. Я бы на их месте уже давно завёлся, а они просто включают музыку и подпевают. Это не про лаки, это про отношение к жизни. И я учусь. Медленно, но учусь.",
-        "Вчера я решил, что пора завязывать с дошираками и начать готовить сам. Купил овощи, рис, приправы. Стою на кухне, смотрю на всё это богатство и понимаю — я даже не знаю, с чего начать. В итоге сварил рис, порезал помидор, посыпал всё приправами. Получилось съедобно. Даже вкусно. Теперь я шеф-повар. Ну, или хотя бы ученик.",
-        "Сегодня утром я чуть не опоздал на встречу. Выхожу из дома, а мой мотоцикл не заводится. Я начинаю паниковать, дёргать ручки, пинать колёса. Проходит 10 минут — я уже весь мокрый, а он даже не чихнул. И тут я вспоминаю, что я в Таиланде, и у меня есть Grab. Заказал такси за 5 минут и уехал. Весь этот цирк был только для того, чтобы я вспомнил, что я не механик. И что мне нужно выпить кофе.",
+        "Сижу в кафе в Бангкоке, пью кофе, смотрю на прохожих. И вдруг понимаю — я уже полгода здесь, а всё ещё удивляюсь, как тайцы умудряются улыбаться даже в пробках.",
+        "Вчера я решил, что пора завязывать с дошираками и начать готовить сам. Купил овощи, рис, приправы. Стою на кухне, смотрю на всё это богатство и понимаю — я даже не знаю, с чего начать.",
+        "Сегодня утром я чуть не опоздал на встречу. Выхожу из дома, а мой мотоцикл не заводится. Я начинаю паниковать, дёргать ручки, пинать колёса.",
     ]
-    
-    available_fallbacks = []
-    for fb in all_fallbacks:
-        key = fb[:50]
-        if key not in [u[:50] for u in used_fallbacks[-10:]]:
-            available_fallbacks.append(fb)
-    
-    if not available_fallbacks:
-        available_fallbacks = all_fallbacks
-        used_fallbacks.clear()
-    
-    chosen = random.choice(available_fallbacks)
-    used_fallbacks.append(chosen[:50])
-    if len(used_fallbacks) > 20:
-        used_fallbacks.pop(0)
-    
-    return chosen
-
-async def generate_caption_with_retry(style: str, max_attempts: int = 5) -> Optional[str]:
-    if not DEEPSEEK_API_KEY:
-        logger.warning("DEEPSEEK_API_KEY не задан, использую резервный вариант")
-        return get_fallback_caption()
-    
-    prompt = style_prompts.get(style, style_prompts['medium'])
-    
-    for attempt in range(max_attempts):
-        try:
-            headers = {
-                "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
-                "Content-Type": "application/json"
-            }
-            
-            if attempt == 0:
-                current_prompt = prompt
-            else:
-                current_prompt = prompt + f"\n\nПопытка {attempt + 1}. Сделай текст мягче, убери слишком резкие выражения, сохрани смысл и сарказм."
-            
-            data = {
-                "model": "deepseek-chat",
-                "messages": [
-                    {"role": "system", "content": "Ты — генератор текстов для постов в Telegram. Твоя задача — создавать интересные, провокационные и саркастичные посты от лица Анатолия. Текст должен быть живым, с юмором и иронией, но не переходить границы оскорблений. Используй сленг умеренно."},
-                    {"role": "user", "content": current_prompt}
-                ],
-                "temperature": 0.9,
-                "max_tokens": 800,
-                "top_p": 0.95,
-                "frequency_penalty": 0.5,
-                "presence_penalty": 0.5
-            }
-            
-            response = requests.post(
-                "https://api.deepseek.com/v1/chat/completions",
-                headers=headers,
-                json=data,
-                timeout=30
-            )
-            
-            if response.status_code == 200:
-                result = response.json()
-                caption = result["choices"][0]["message"]["content"].strip()
-                
-                if caption and len(caption) > 20:
-                    return caption
-                else:
-                    logger.warning(f"Сгенерирован слишком короткий текст, попытка {attempt + 1}")
-                    continue
-            
-            elif response.status_code == 400:
-                error_data = response.json()
-                error_msg = error_data.get("error", {}).get("message", "")
-                
-                if "content" in error_msg.lower() or "safety" in error_msg.lower():
-                    logger.warning(f"API блокирует контент, смягчаю. Попытка {attempt + 1}")
-                    continue
-                else:
-                    logger.error(f"Ошибка API: {response.text}")
-                    return get_fallback_caption()
-            
-            else:
-                logger.error(f"Ошибка DeepSeek: {response.status_code} - {response.text}")
-                if attempt == max_attempts - 1:
-                    return get_fallback_caption()
-                await asyncio.sleep(1)
-                
-        except Exception as e:
-            logger.error(f"Ошибка генерации: {e}")
-            if attempt == max_attempts - 1:
-                return get_fallback_caption()
-            await asyncio.sleep(1)
-    
-    return get_fallback_caption()
+    return random.choice(all_fallbacks)
 
 async def generate_caption(style: str) -> str:
-    caption = await generate_caption_with_retry(style)
-    
-    if not caption:
+    if not DEEPSEEK_API_KEY:
         return get_fallback_caption()
     
-    caption = clean_text(caption)
+    try:
+        headers = {
+            "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+            "Content-Type": "application/json"
+        }
+        
+        data = {
+            "model": "deepseek-chat",
+            "messages": [
+                {"role": "system", "content": "Ты — генератор текстов для постов в Telegram."},
+                {"role": "user", "content": f"Создай пост в стиле {style}"}
+            ],
+            "temperature": 0.9,
+            "max_tokens": 500
+        }
+        
+        response = requests.post(
+            "https://api.deepseek.com/v1/chat/completions",
+            headers=headers,
+            json=data,
+            timeout=30
+        )
+        
+        if response.status_code == 200:
+            result = response.json()
+            caption = result["choices"][0]["message"]["content"].strip()
+            if caption and len(caption) > 20:
+                return caption
+    except Exception as e:
+        logger.error(f"Ошибка генерации: {e}")
     
-    if len(caption) > 1023:
-        caption = truncate_by_sentences(caption, 1023)
-    
-    if not caption.endswith(('.', '!', '?')):
-        caption = ensure_ends_with_dot(caption)
-    
-    return caption
+    return get_fallback_caption()
 
 # ===== КОМАНДЫ БОТА =====
 @dp.message(Command("broadcast"))
@@ -657,33 +419,13 @@ async def broadcast_command(message: Message):
             media_type = "animation"
             media_file_id = message.animation.file_id
             text = message.caption or ""
-        elif message.audio:
-            has_media = True
-            media_type = "audio"
-            media_file_id = message.audio.file_id
-            text = message.caption or ""
-        elif message.voice:
-            has_media = True
-            media_type = "voice"
-            media_file_id = message.voice.file_id
-            text = message.caption or ""
-        elif message.video_note:
-            has_media = True
-            media_type = "video_note"
-            media_file_id = message.video_note.file_id
-            text = message.caption or ""
         
         if not text and not has_media:
             current_price = load_broadcast_price()
             await message.answer(
-                f"📢 Чтобы отправить сообщение всем подписчикам, отправьте:\n"
-                f"• Текст: /broadcast Ваше сообщение\n"
-                f"• Фото: подпись к фото или без\n"
-                f"• Видео: подпись к видео или без\n"
-                f"• Документ: подпись к документу или без\n"
-                f"• GIF: подпись к GIF или без\n\n"
+                f"📢 Использование: /broadcast Ваше сообщение\n\n"
                 f"💰 Стоимость: {current_price} {FREEKASSA_CURRENCY}\n"
-                f"💳 Оплата через FreeKassa (карты, электронные кошельки)\n\n"
+                f"💳 Оплата через FreeKassa\n\n"
                 f"После оплаты сообщение будет отправлено на модерацию."
             )
             return
@@ -701,12 +443,6 @@ async def broadcast_command(message: Message):
             media_file_id=media_file_id or ""
         )
         
-        description = "Рассылка в Telegram"
-        if text:
-            description += " (текст скрыт)"
-        if has_media:
-            description += " с медиа"
-        
         broadcast_data[user_id] = {
             'text': text,
             'has_media': has_media,
@@ -720,13 +456,16 @@ async def broadcast_command(message: Message):
             'encrypted_data': encrypted_text
         }
         
-        # ✅ ПРАВИЛЬНАЯ ССЫЛКА
+        # ✅ ПРАВИЛЬНАЯ ССЫЛКА (ТОЛЬКО ОБЯЗАТЕЛЬНЫЕ ПАРАМЕТРЫ)
         payment_url = create_freekassa_payment_link(
             current_price, 
             order_id, 
-            description,
-            encrypted_text
+            "Рассылка в Telegram"
         )
+        
+        # Логируем для отладки
+        logger.info(f"🔗 Ссылка для оплаты: {payment_url}")
+        logger.info(f"📋 Merchant: {FREEKASSA_MERCHANT_ID}, Order: {order_id}, Amount: {current_price}")
         
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(
@@ -741,18 +480,17 @@ async def broadcast_command(message: Message):
         
         await message.answer(
             f"📢 Для отправки рассылки необходимо оплатить {current_price} {FREEKASSA_CURRENCY}.\n\n"
-            f"📝 Текст: {text[:100]}{'...' if len(text) > 100 else '' if text else '(без текста)'}\n"
+            f"📝 Текст: {text[:100]}{'...' if len(text) > 100 else ''}\n"
             f"{'📎 С медиафайлом' if has_media else ''}\n\n"
             f"🔐 Данные зашифрованы и защищены.\n"
-            f"💳 Нажмите кнопку ниже для оплаты.\n"
-            f"После оплаты нажмите 'Проверить оплату'.",
+            f"💳 Нажмите кнопку ниже для оплаты.",
             reply_markup=keyboard
         )
         
-        logger.info(f"💳 Счёт FreeKassa создан для пользователя {user_id}, заказ {order_id}")
+        logger.info(f"💳 Счёт создан для пользователя {user_id}, заказ {order_id}")
         
     except Exception as e:
-        logger.error(f"Ошибка в команде broadcast: {e}")
+        logger.error(f"Ошибка в команде broadcast: {e}", exc_info=True)
         await message.answer(f"❌ Произошла ошибка: {str(e)[:100]}")
 
 @dp.callback_query(lambda c: c.data and c.data.startswith('check_payment_'))
@@ -781,13 +519,12 @@ async def check_payment(callback: CallbackQuery):
                 await callback.message.answer(
                     "❌ Платёж ещё не оплачен.\n"
                     "Пожалуйста, оплатите счёт и нажмите 'Проверить оплату' снова.\n"
-                    "Если вы уже оплатили, подождите 1-2 минуты и повторите проверку."
+                    "Если вы уже оплатили, подождите 1-2 минуты."
                 )
         else:
             await callback.message.answer(
                 "⚠️ Не удалось проверить статус платежа.\n"
-                "Пожалуйста, попробуйте ещё раз через несколько минут.\n"
-                "Если проблема повторяется, свяжитесь с администратором."
+                "Попробуйте ещё раз через несколько минут."
             )
         
     except Exception as e:
@@ -820,7 +557,7 @@ async def process_broadcast_payment(callback: CallbackQuery, user_id: int, broad
         
         await callback.message.edit_text(
             f"✅ Оплата подтверждена! Сообщение отправлено на модерацию.\n"
-            f"📝 Текст: {text[:100]}{'...' if len(text) > 100 else '' if text else 'Без текста'}\n"
+            f"📝 Текст: {text[:100]}{'...' if len(text) > 100 else ''}\n"
             f"{'📎 С медиафайлом' if has_media else ''}\n\n"
             f"⏳ Ожидайте подтверждения от администратора."
         )
@@ -851,7 +588,6 @@ async def send_broadcast_for_moderation(broadcast_id: str, broadcast_info: dict)
         preview_text = f"📋 Новая рассылка на модерацию #{broadcast_id}\n\n"
         preview_text += f"👤 Заказчик ID: {user_id}\n"
         preview_text += f"💰 Оплачено: {broadcast_info.get('price', broadcast_price)} {FREEKASSA_CURRENCY}\n"
-        preview_text += f"💳 Через FreeKassa\n"
         
         if text:
             preview_text += f"\n📝 Текст:\n{text[:300]}{'...' if len(text) > 300 else ''}\n"
@@ -863,10 +599,7 @@ async def send_broadcast_for_moderation(broadcast_id: str, broadcast_info: dict)
                 "photo": "📸 Фото",
                 "video": "🎬 Видео",
                 "document": "📄 Документ",
-                "animation": "🎥 GIF",
-                "audio": "🎵 Аудио",
-                "voice": "🎤 Голосовое",
-                "video_note": "🔄 Видео-кружок"
+                "animation": "🎥 GIF"
             }
             preview_text += f"\n📎 {media_names.get(media_type, 'Медиафайл')} (будет отправлено)\n"
         
@@ -901,31 +634,6 @@ async def send_broadcast_for_moderation(broadcast_id: str, broadcast_info: dict)
                     caption=preview_text,
                     reply_markup=keyboard
                 )
-            elif media_type == "audio":
-                await bot.send_audio(
-                    chat_id=OWNER_ID,
-                    audio=media_file_id,
-                    caption=preview_text,
-                    reply_markup=keyboard
-                )
-            elif media_type == "voice":
-                await bot.send_voice(
-                    chat_id=OWNER_ID,
-                    voice=media_file_id,
-                    caption=preview_text,
-                    reply_markup=keyboard
-                )
-            elif media_type == "video_note":
-                await bot.send_video_note(
-                    chat_id=OWNER_ID,
-                    video_note=media_file_id,
-                    reply_markup=keyboard
-                )
-                await bot.send_message(
-                    chat_id=OWNER_ID,
-                    text=preview_text,
-                    reply_markup=keyboard
-                )
         else:
             await bot.send_message(
                 chat_id=OWNER_ID,
@@ -933,7 +641,7 @@ async def send_broadcast_for_moderation(broadcast_id: str, broadcast_info: dict)
                 reply_markup=keyboard
             )
         
-        logger.info(f"Рассылка {broadcast_id} отправлена на модерацию владельцу")
+        logger.info(f"Рассылка {broadcast_id} отправлена на модерацию")
     except Exception as e:
         logger.error(f"Ошибка отправки на модерацию: {e}")
 
@@ -956,9 +664,9 @@ async def handle_broadcast_moderation(callback: CallbackQuery):
         broadcast_info = pending_broadcasts[broadcast_id]
         
         if approved:
-            await callback.answer("✅ Сообщение одобрено. Отправляется всем подписчикам...", show_alert=True)
+            await callback.answer("✅ Сообщение одобрено", show_alert=True)
             await callback.message.edit_text(
-                callback.message.text + "\n\n✅ ОДОБРЕНО (отправляется всем подписчикам)",
+                callback.message.text + "\n\n✅ ОДОБРЕНО",
                 reply_markup=None
             )
             
@@ -971,6 +679,7 @@ async def handle_broadcast_moderation(callback: CallbackQuery):
             sent_count = 0
             failed_count = 0
             
+            # Отправка подписчикам
             for chat_id in users_list:
                 try:
                     if has_media and media_file_id:
@@ -998,25 +707,6 @@ async def handle_broadcast_moderation(callback: CallbackQuery):
                                 animation=media_file_id,
                                 caption=text if text else None
                             )
-                        elif media_type == "audio":
-                            await bot.send_audio(
-                                chat_id=chat_id,
-                                audio=media_file_id,
-                                caption=text if text else None
-                            )
-                        elif media_type == "voice":
-                            await bot.send_voice(
-                                chat_id=chat_id,
-                                voice=media_file_id,
-                                caption=text if text else None
-                            )
-                        elif media_type == "video_note":
-                            await bot.send_video_note(
-                                chat_id=chat_id,
-                                video_note=media_file_id
-                            )
-                            if text:
-                                await bot.send_message(chat_id=chat_id, text=text)
                     else:
                         if text:
                             await bot.send_message(chat_id=chat_id, text=text)
@@ -1030,13 +720,10 @@ async def handle_broadcast_moderation(callback: CallbackQuery):
                         if str(chat_id) in [str(u) for u in users_list]:
                             users_list.remove(str(chat_id))
                             save_users(users_list)
-                            logger.info(f"Пользователь {chat_id} удалён из-за ошибки")
             
             # Отправка в канал
             try:
                 channel_id = CHANNEL_ID
-                if not channel_id or not channel_id.strip():
-                    channel_id = await get_channel_id()
                 if channel_id:
                     if has_media and media_file_id:
                         if media_type == "photo":
@@ -1063,25 +750,6 @@ async def handle_broadcast_moderation(callback: CallbackQuery):
                                 animation=media_file_id,
                                 caption=text if text else None
                             )
-                        elif media_type == "audio":
-                            await bot.send_audio(
-                                chat_id=channel_id,
-                                audio=media_file_id,
-                                caption=text if text else None
-                            )
-                        elif media_type == "voice":
-                            await bot.send_voice(
-                                chat_id=channel_id,
-                                voice=media_file_id,
-                                caption=text if text else None
-                            )
-                        elif media_type == "video_note":
-                            await bot.send_video_note(
-                                chat_id=channel_id,
-                                video_note=media_file_id
-                            )
-                            if text:
-                                await bot.send_message(chat_id=channel_id, text=text)
                     else:
                         if text:
                             await bot.send_message(chat_id=channel_id, text=text)
@@ -1091,19 +759,6 @@ async def handle_broadcast_moderation(callback: CallbackQuery):
             
             del pending_broadcasts[broadcast_id]
             
-            # Отчет владельцу
-            try:
-                await bot.send_message(
-                    chat_id=OWNER_ID,
-                    text=f"📊 Рассылка #{broadcast_id} завершена!\n"
-                         f"✅ Отправлено подписчикам: {sent_count}\n"
-                         f"❌ Ошибок: {failed_count}\n"
-                         f"📝 Текст: {text[:200]}{'...' if len(text) > 200 else '' if text else '(без текста)'}\n"
-                         f"{'📎 С медиафайлом' if has_media else ''}"
-                )
-            except Exception as e:
-                logger.error(f"Ошибка отправки отчета: {e}")
-            
             # Уведомление заказчику
             try:
                 user_id = broadcast_info.get('user_id')
@@ -1111,9 +766,7 @@ async def handle_broadcast_moderation(callback: CallbackQuery):
                     await bot.send_message(
                         chat_id=user_id,
                         text=f"✅ Ваше сообщение опубликовано!\n"
-                             f"📨 Отправлено: {sent_count} подписчикам\n"
-                             f"📝 Текст: {text[:100]}{'...' if len(text) > 100 else '' if text else '(без текста)'}\n"
-                             f"{'📎 С медиафайлом' if has_media else ''}"
+                             f"📨 Отправлено: {sent_count} подписчикам"
                     )
             except Exception as e:
                 logger.error(f"Ошибка уведомления заказчика: {e}")
@@ -1174,30 +827,6 @@ async def set_price(message: Message):
 async def get_channel_id() -> Optional[str]:
     if CHANNEL_ID and CHANNEL_ID.strip():
         return CHANNEL_ID.strip()
-    try:
-        me = await bot.get_me()
-        logger.info(f"Бот: @{me.username}")
-        try:
-            updates = await asyncio.wait_for(
-                bot.get_updates(offset=-1, limit=10),
-                timeout=10
-            )
-            for update in updates:
-                if update.channel_post:
-                    chat_id = update.channel_post.chat.id
-                    try:
-                        chat_member = await bot.get_chat_member(chat_id, bot.id)
-                        if chat_member.status in ["administrator", "creator"]:
-                            logger.info(f"Найден канал: {chat_id}")
-                            return str(chat_id)
-                    except:
-                        pass
-        except asyncio.TimeoutError:
-            logger.warning("Таймаут получения обновлений")
-        except Exception as e:
-            logger.error(f"Ошибка получения обновлений: {e}")
-    except Exception as e:
-        logger.error(f"Ошибка поиска канала: {e}")
     return None
 
 # ===== WEBHOOK =====
@@ -1209,42 +838,33 @@ async def freekassa_webhook(request):
         logger.info(f"📩 Получен webhook от FreeKassa: {data}")
         
         if not verify_freekassa_signature(data, FREEKASSA_SECRET_KEY):
-            logger.warning("❌ Неверная подпись в webhook от FreeKassa")
+            logger.warning("❌ Неверная подпись в webhook")
             return web.Response(text="Invalid signature", status=400)
         
-        merchant_id = data.get('MERCHANT_ID')
-        amount = data.get('AMOUNT')
         order_id = data.get('MERCHANT_ORDER_ID')
         status = data.get('STATUS')
-        
-        logger.info(f"Обработка webhook: order_id={order_id}, status={status}, amount={amount}")
         
         if status != 'SUCCESS':
             logger.info(f"Платёж {order_id} не успешен: {status}")
             return web.Response(text="OK", status=200)
         
-        found = False
+        # Обработка успешного платежа
         for uid, info in broadcast_data.items():
             if info.get('order_id') == order_id:
-                found = True
-                logger.info(f"✅ Платёж {order_id} подтверждён через webhook для пользователя {uid}")
+                logger.info(f"✅ Платёж {order_id} подтверждён для пользователя {uid}")
                 try:
                     await bot.send_message(
                         chat_id=uid,
-                        text=f"✅ Оплата подтверждена! Ваш заказ обрабатывается.\n"
-                             f"Скоро он будет отправлен на модерацию."
+                        text="✅ Оплата подтверждена! Ваш заказ обрабатывается."
                     )
                 except Exception as e:
-                    logger.error(f"Ошибка отправки уведомления пользователю {uid}: {e}")
+                    logger.error(f"Ошибка уведомления: {e}")
                 break
-        
-        if not found:
-            logger.warning(f"⚠️ Заказ {order_id} не найден в broadcast_data")
         
         return web.Response(text="OK", status=200)
         
     except Exception as e:
-        logger.error(f"Ошибка в webhook FreeKassa: {e}")
+        logger.error(f"Ошибка в webhook: {e}")
         return web.Response(text="Error", status=500)
 
 # ===== ЗАПУСК =====
@@ -1253,14 +873,9 @@ async def main():
         logger.info("=" * 60)
         logger.info("🤖 Бот запущен с оплатой через FreeKassa")
         logger.info(f"📊 Подписчиков: {len(load_users())}")
-        current_schedule = load_schedule()
-        times = ", ".join(current_schedule.get("times", ["10:00", "12:00", "15:00", "18:00", "21:00"]))
-        logger.info(f"🕐 Расписание: {times}")
-        logger.info(f"📢 Канал: {CHANNEL_ID if CHANNEL_ID else 'авто-поиск'}")
-        logger.info(f"👤 Владелец: {OWNER_ID if OWNER_ID else '❌ не задан'}")
-        current_price = load_broadcast_price()
-        logger.info(f"💰 Цена broadcast: {current_price} {FREEKASSA_CURRENCY}")
-        logger.info(f"💳 FreeKassa Merchant ID: {FREEKASSA_MERCHANT_ID[:10] if FREEKASSA_MERCHANT_ID else '❌ не задан'}...")
+        logger.info(f"💰 Цена: {load_broadcast_price()} {FREEKASSA_CURRENCY}")
+        logger.info(f"💳 Merchant ID: {FREEKASSA_MERCHANT_ID[:10] if FREEKASSA_MERCHANT_ID else '❌ не задан'}")
+        logger.info(f"🔐 Шифрование: {'✅ включено' if CRYPTO_AVAILABLE and cipher else '❌ выключено'}")
         
         # Запуск webhook сервера
         if FREEKASSA_WEBHOOK_URL:
@@ -1270,7 +885,7 @@ async def main():
             await runner.setup()
             site = web.TCPSite(runner, '0.0.0.0', 8080)
             await site.start()
-            logger.info(f"🌐 Webhook FreeKassa запущен на порту 8080")
+            logger.info(f"🌐 Webhook запущен на порту 8080")
             logger.info(f"📌 URL: {FREEKASSA_WEBHOOK_URL}/freekassa/webhook")
         
         logger.info("=" * 60)
@@ -1283,7 +898,7 @@ async def main():
         
         await dp.start_polling(
             bot,
-            allowed_updates=["message", "callback_query", "pre_checkout_query"],
+            allowed_updates=["message", "callback_query"],
             skip_updates=True,
             polling_timeout=30
         )
