@@ -4,12 +4,10 @@ import sys
 import hashlib
 import json
 import time
-import base64
-from urllib.parse import urlencode
 import logging
 import requests
-from typing import Optional, Dict, Any, List, Tuple
-from datetime import datetime, timedelta
+from typing import Optional, List
+from urllib.parse import urlencode
 
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
@@ -26,13 +24,17 @@ logger = logging.getLogger(__name__)
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHANNEL_ID = os.getenv("CHANNEL_ID")
 OWNER_ID = int(os.getenv("OWNER_ID", 0))
+WEBHOOK_PATH = os.getenv("WEBHOOK_PATH", "/freekassa/webhook")
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")
+
+# ✅ Ссылка на вашего бота
+BOT_LINK = "https://t.me/asianpicbot"
 
 FREEKASSA_MERCHANT_ID = os.getenv("FREEKASSA_MERCHANT_ID", "")
 FREEKASSA_SECRET_KEY_S1 = os.getenv("FREEKASSA_SECRET_KEY_S1", "")
 FREEKASSA_SECRET_KEY_S2 = os.getenv("FREEKASSA_SECRET_KEY_S2", "")
 FREEKASSA_API_KEY = os.getenv("FREEKASSA_API_KEY", "")
 FREEKASSA_CURRENCY = os.getenv("FREEKASSA_CURRENCY", "RUB")
-FREEKASSA_WEBHOOK_URL = os.getenv("FREEKASSA_WEBHOOK_URL", "")
 
 if not BOT_TOKEN:
     logger.error("BOT_TOKEN не задан")
@@ -44,14 +46,14 @@ if not OWNER_ID:
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-# ===== ФАЙЛЫ ДЛЯ ХРАНЕНИЯ =====
-USERS_FILE = "users.json"
+# ===== ХРАНИЛИЩА =====
+broadcast_data = {}
+pending_broadcasts = {}
 BROADCAST_PRICE_FILE = "broadcast_price.json"
-TEMP_USERS_FILE = "temp_users.json"  # ✅ Новый файл для временных пользователей
+TEMP_USERS_FILE = "temp_users.json"
 
 # ===== РАБОТА С ВРЕМЕННЫМИ ПОЛЬЗОВАТЕЛЯМИ =====
 def load_temp_users() -> dict:
-    """Загружает временных пользователей с временем добавления"""
     try:
         with open(TEMP_USERS_FILE, "r") as f:
             return json.load(f)
@@ -59,57 +61,27 @@ def load_temp_users() -> dict:
         return {}
 
 def save_temp_users(temp_users: dict):
-    """Сохраняет временных пользователей"""
     try:
         with open(TEMP_USERS_FILE, "w") as f:
             json.dump(temp_users, f)
     except Exception as e:
-        logger.error(f"Ошибка сохранения временных пользователей: {e}")
+        logger.error(f"Ошибка сохранения: {e}")
 
 def add_temp_user(user_id: str, broadcast_id: str):
-    """Добавляет пользователя во временную базу"""
     temp_users = load_temp_users()
-    temp_users[user_id] = {
-        "added_at": time.time(),
-        "broadcast_id": broadcast_id
-    }
+    temp_users[user_id] = {"added_at": time.time(), "broadcast_id": broadcast_id}
     save_temp_users(temp_users)
-    logger.info(f"✅ Пользователь {user_id} добавлен во временную базу")
 
 def remove_temp_user(user_id: str):
-    """Удаляет пользователя из временной базы"""
     temp_users = load_temp_users()
     if user_id in temp_users:
         del temp_users[user_id]
         save_temp_users(temp_users)
-        logger.info(f"🗑️ Пользователь {user_id} удалён из временной базы")
 
 def get_active_users() -> List[str]:
-    """Возвращает список активных пользователей"""
     temp_users = load_temp_users()
     return list(temp_users.keys())
 
-def cleanup_expired_users(hours: int = 24):
-    """Удаляет пользователей, которые были добавлены более hours часов назад"""
-    temp_users = load_temp_users()
-    current_time = time.time()
-    expired_users = []
-    
-    for user_id, data in temp_users.items():
-        added_time = data.get("added_at", 0)
-        if current_time - added_time > hours * 3600:
-            expired_users.append(user_id)
-    
-    for user_id in expired_users:
-        del temp_users[user_id]
-        logger.info(f"🗑️ Пользователь {user_id} удалён (истекло {hours} часов)")
-    
-    if expired_users:
-        save_temp_users(temp_users)
-    
-    return expired_users
-
-# ===== РАБОТА С ПОСТАМИ =====
 def load_broadcast_price() -> int:
     try:
         with open(BROADCAST_PRICE_FILE, "r") as f:
@@ -128,25 +100,20 @@ def save_broadcast_price(price: int):
 
 broadcast_price = load_broadcast_price()
 
-# ===== ХРАНИЛИЩА =====
-broadcast_data = {}
-pending_broadcasts = {}
-
 # ===== FREEKASSA =====
 def generate_freekassa_signature(merchant_id: str, amount: str, order_id: str) -> str:
-    """Генерация подписи для FreeKassa с валютой"""
+    """Генерация подписи с валютой"""
     sign_str = f"{merchant_id}:{amount}:{FREEKASSA_SECRET_KEY_S1}:{FREEKASSA_CURRENCY}:{order_id}"
     logger.info(f"🔑 Строка для подписи: {sign_str}")
     signature = hashlib.md5(sign_str.encode()).hexdigest()
-    logger.info(f"🔑 Подпись (MD5): {signature}")
+    logger.info(f"🔑 Подпись: {signature}")
     return signature
 
 def verify_freekassa_webhook_signature(data: dict) -> bool:
-    """Проверка подписи от FreeKassa для webhook"""
+    """Проверка подписи webhook с S2"""
     required_fields = ['MERCHANT_ID', 'AMOUNT', 'MERCHANT_ORDER_ID', 'SIGN']
     for field in required_fields:
         if field not in data:
-            logger.warning(f"Отсутствует поле: {field}")
             return False
     
     merchant_id = str(data.get('MERCHANT_ID'))
@@ -157,11 +124,13 @@ def verify_freekassa_webhook_signature(data: dict) -> bool:
     sign_str = f"{merchant_id}:{amount}:{FREEKASSA_SECRET_KEY_S2}:{FREEKASSA_CURRENCY}:{order_id}"
     expected_sign = hashlib.md5(sign_str.encode()).hexdigest()
     
-    logger.info(f"🔑 Проверка webhook: {sign} == {expected_sign}")
     return sign == expected_sign
 
 def create_freekassa_payment_link(amount: float, order_id: str, description: str = "") -> str:
-    """Создание ссылки для оплаты через FreeKassa"""
+    """
+    Создание ссылки для оплаты через FreeKassa
+    ✅ После оплаты перенаправляет в t.me/asianpicbot
+    """
     if not FREEKASSA_MERCHANT_ID or not FREEKASSA_SECRET_KEY_S1:
         logger.error("❌ FreeKassa не настроен")
         return ""
@@ -171,6 +140,7 @@ def create_freekassa_payment_link(amount: float, order_id: str, description: str
     amount_str = str(amount_int)
     order_id_str = str(order_id)
     
+    # ✅ Генерируем подпись с валютой
     signature = generate_freekassa_signature(
         merchant_id,
         amount_str,
@@ -183,6 +153,9 @@ def create_freekassa_payment_link(amount: float, order_id: str, description: str
         "currency": FREEKASSA_CURRENCY,
         "o": order_id_str,
         "s": signature,
+        # ✅ Перенаправление в бота после оплаты
+        "us": BOT_LINK,  # https://t.me/asianpicbot
+        "uf": BOT_LINK,  # https://t.me/asianpicbot
     }
     
     if description:
@@ -194,6 +167,7 @@ def create_freekassa_payment_link(amount: float, order_id: str, description: str
     logger.info("=" * 60)
     logger.info("🔗 ССЫЛКА ДЛЯ ОПЛАТЫ:")
     logger.info(link)
+    logger.info(f"🔄 После оплаты пользователь перейдёт в: {BOT_LINK}")
     logger.info("=" * 60)
     
     return link
@@ -201,7 +175,6 @@ def create_freekassa_payment_link(amount: float, order_id: str, description: str
 async def check_freekassa_payment_status(order_id: str) -> Optional[dict]:
     """Проверка статуса платежа через API FreeKassa"""
     if not FREEKASSA_API_KEY:
-        logger.error("❌ FREEKASSA_API_KEY не задан")
         return None
     
     try:
@@ -241,6 +214,7 @@ async def broadcast_command(message: Message):
             )
             return
         
+        # Парсим сообщение
         text = message.text.replace("/broadcast", "").strip() if message.text else ""
         has_media = False
         media_type = None
@@ -273,7 +247,8 @@ async def broadcast_command(message: Message):
                 f"📢 Использование: /broadcast Ваше сообщение\n\n"
                 f"💰 Стоимость: {current_price} {FREEKASSA_CURRENCY}\n"
                 f"💳 Оплата через FreeKassa\n\n"
-                f"📌 Можно прикрепить фото, видео, GIF или документ"
+                f"📌 Можно прикрепить фото, видео, GIF или документ\n"
+                f"🔄 После оплаты вы вернётесь в бота"
             )
             return
         
@@ -292,10 +267,11 @@ async def broadcast_command(message: Message):
             'price': current_price
         }
         
+        # ✅ Создаем ссылку с перенаправлением в бота
         payment_url = create_freekassa_payment_link(
             current_price, 
             order_id,
-            f"Рассылка в Telegram"
+            f"Рассылка в Telegram: {text[:50]}"
         )
         
         if not payment_url:
@@ -310,6 +286,10 @@ async def broadcast_command(message: Message):
             [InlineKeyboardButton(
                 text="✅ Проверить оплату",
                 callback_data=f"check_payment_{order_id}"
+            )],
+            [InlineKeyboardButton(
+                text="🤖 Перейти в бота",
+                url=BOT_LINK
             )]
         ])
         
@@ -318,7 +298,7 @@ async def broadcast_command(message: Message):
             f"📝 Текст: {text[:100]}{'...' if len(text) > 100 else ''}\n"
             f"{'📎 С медиафайлом' if has_media else ''}\n\n"
             f"💳 Нажмите кнопку ниже для оплаты.\n"
-            f"⏳ После оплаты вы будете добавлены в базу на 24 часа.",
+            f"🔄 После оплаты вы вернётесь в бота.",
             reply_markup=keyboard
         )
         
@@ -347,20 +327,13 @@ async def check_payment(callback: CallbackQuery):
         
         payment_status = await check_freekassa_payment_status(order_id)
         
-        if payment_status:
-            if payment_status.get('status') == 'paid':
-                await process_broadcast_payment(callback, user_id, broadcast_info)
-            else:
-                await callback.message.answer(
-                    "❌ Платёж ещё не оплачен.\n"
-                    "Оплатите счёт и нажмите 'Проверить оплату' снова.\n"
-                    "Если оплатили, подождите 1-2 минуты."
-                )
+        if payment_status and payment_status.get('status') == 'paid':
+            await process_broadcast_payment(callback, user_id, broadcast_info)
         else:
             await callback.message.answer(
-                "⚠️ Не удалось проверить статус платежа.\n"
-                "Попробуйте ещё раз через несколько минут.\n"
-                "Если ошибка повторяется, свяжитесь с администратором."
+                "❌ Платёж ещё не оплачен.\n"
+                "Оплатите счёт и нажмите 'Проверить оплату' снова.\n"
+                "Если оплатили, подождите 1-2 минуты."
             )
         
     except Exception as e:
@@ -395,7 +368,7 @@ async def process_broadcast_payment(callback: CallbackQuery, user_id: int, broad
         await send_broadcast_for_moderation(broadcast_id, pending_broadcasts[broadcast_id])
         
         await callback.message.edit_text(
-            f"✅ Оплата подтверждена! Вы добавлены в базу на 24 часа.\n"
+            f"✅ Оплата подтверждена! Вы добавлены в базу.\n"
             f"📝 Текст: {text[:100]}{'...' if len(text) > 100 else ''}\n"
             f"{'📎 С медиафайлом' if has_media else ''}\n\n"
             f"⏳ Сообщение отправлено на модерацию владельцу.\n"
@@ -428,12 +401,10 @@ async def send_broadcast_for_moderation(broadcast_id: str, broadcast_info: dict)
         preview_text = f"📋 Новая рассылка на модерацию #{broadcast_id}\n\n"
         preview_text += f"👤 Заказчик ID: {user_id}\n"
         preview_text += f"💰 Оплачено: {broadcast_info.get('price', broadcast_price)} {FREEKASSA_CURRENCY}\n"
-        preview_text += f"⏳ Пользователь добавлен в базу на 24 часа\n\n"
+        preview_text += f"⏳ Пользователь добавлен в базу\n\n"
         
         if text:
             preview_text += f"📝 Текст:\n{text[:300]}{'...' if len(text) > 300 else ''}\n"
-        else:
-            preview_text += f"📝 Текст: (без текста)\n"
         
         if has_media:
             media_names = {
@@ -665,18 +636,22 @@ async def test_freekassa(message: Message):
     
     sign_str = f"{merchant}:{test_amount}:{s1}:{currency}:{test_order}"
     signature = hashlib.md5(sign_str.encode()).hexdigest()
-    link = f"https://pay.fk.money/?m={merchant}&oa={test_amount}&currency={currency}&o={test_order}&s={signature}"
+    
+    # ✅ Ссылка с перенаправлением в бота
+    link = f"https://pay.fk.money/?m={merchant}&oa={test_amount}&currency={currency}&o={test_order}&s={signature}&us={BOT_LINK}&uf={BOT_LINK}"
     
     await message.answer(
         f"🧪 **ТЕСТ FREEKASSA**\n\n"
         f"📋 Merchant ID: `{merchant}`\n"
         f"🔑 S1: `{s1}` ({len(s1)} символов)\n"
+        f"🔑 S2: `{s2}` ({len(s2)} символов)\n"
         f"💱 Currency: `{currency}`\n"
         f"💰 Сумма: `{test_amount}`\n"
         f"🆔 Order: `{test_order}`\n\n"
         f"🔑 Строка: `{sign_str}`\n"
         f"🔑 MD5: `{signature}`\n\n"
-        f"🔗 Ссылка:\n`{link}`",
+        f"🔗 **Ссылка для проверки:**\n`{link}`\n\n"
+        f"🔄 После оплаты вы вернётесь в: {BOT_LINK}",
         parse_mode="Markdown"
     )
 
@@ -739,7 +714,17 @@ async def cleanup_users(message: Message):
         await message.answer("⛔ Доступ запрещен")
         return
     
-    expired = cleanup_expired_users(24)
+    temp_users = load_temp_users()
+    current_time = time.time()
+    expired = []
+    
+    for user_id, data in temp_users.items():
+        if current_time - data.get("added_at", 0) > 24 * 3600:
+            expired.append(user_id)
+    
+    for user_id in expired:
+        remove_temp_user(user_id)
+    
     await message.answer(f"🗑️ Удалено пользователей с истекшим сроком: {len(expired)}")
 
 @dp.message(Command("start"))
@@ -755,7 +740,8 @@ async def start_command(message: Message):
         "• `/users` — список активных пользователей\n"
         "• `/cleanup` — удалить пользователей с истекшим сроком\n\n"
         "💰 После оплаты вы будете добавлены в базу на 24 часа.\n"
-        "После рассылки вы будете автоматически удалены.",
+        "🔄 После оплаты вы вернётесь в бота.\n"
+        "📬 После рассылки вы будете автоматически удалены.",
         parse_mode="Markdown"
     )
 
@@ -777,11 +763,11 @@ async def freekassa_webhook(request):
         if status == 'SUCCESS':
             for uid, info in broadcast_data.items():
                 if info.get('order_id') == order_id:
-                    logger.info(f"✅ Платёж {order_id} подтверждён")
+                    logger.info(f"✅ Платёж {order_id} подтверждён для пользователя {uid}")
                     try:
                         await bot.send_message(
                             chat_id=uid,
-                            text="✅ Оплата подтверждена!"
+                            text="✅ Оплата подтверждена! Ваш заказ обрабатывается."
                         )
                     except Exception as e:
                         logger.error(f"Ошибка уведомления: {e}")
@@ -798,9 +784,20 @@ async def cleanup_task():
     """Фоновая задача для автоматической очистки пользователей"""
     while True:
         try:
-            expired = cleanup_expired_users(24)
+            temp_users = load_temp_users()
+            current_time = time.time()
+            expired = []
+            
+            for user_id, data in temp_users.items():
+                if current_time - data.get("added_at", 0) > 24 * 3600:
+                    expired.append(user_id)
+            
+            for user_id in expired:
+                remove_temp_user(user_id)
+            
             if expired:
                 logger.info(f"🗑️ Автоочистка: удалено {len(expired)} пользователей")
+            
             await asyncio.sleep(3600)  # Проверка каждый час
         except Exception as e:
             logger.error(f"Ошибка в задаче очистки: {e}")
@@ -814,13 +811,29 @@ async def main():
         logger.info(f"💰 Цена: {load_broadcast_price()} {FREEKASSA_CURRENCY}")
         logger.info(f"💳 Merchant ID: {FREEKASSA_MERCHANT_ID}")
         logger.info(f"🔑 S1: {FREEKASSA_SECRET_KEY_S1}")
-        logger.info(f"👤 Владелец: {OWNER_ID}")
+        logger.info(f"🔑 S2: {FREEKASSA_SECRET_KEY_S2}")
+        logger.info(f"🤖 Бот: {BOT_LINK}")
+        logger.info("🔄 После оплаты пользователь вернётся в бота")
         
         # Запускаем фоновую очистку
         asyncio.create_task(cleanup_task())
         logger.info("🔄 Запущена задача автоматической очистки")
         
         logger.info("=" * 60)
+        
+        # Запуск webhook сервера
+        if WEBHOOK_URL:
+            port = int(os.getenv("PORT", 8080))
+            app = web.Application()
+            app.router.add_post(WEBHOOK_PATH, freekassa_webhook)
+            app.router.add_get("/", lambda request: web.Response(text="Bot is running!"))
+            
+            runner = web.AppRunner(app)
+            await runner.setup()
+            site = web.TCPSite(runner, '0.0.0.0', port)
+            await site.start()
+            logger.info(f"🌐 Webhook сервер запущен на порту {port}")
+            logger.info(f"📌 URL: {WEBHOOK_URL}{WEBHOOK_PATH}")
         
         await bot.delete_webhook(drop_pending_updates=True)
         
@@ -833,13 +846,15 @@ async def main():
         
     except Exception as e:
         logger.error(f"❌ Критическая ошибка: {e}")
+        import traceback
+        traceback.print_exc()
         sys.exit(1)
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        logger.info("🛑 Бот остановлен")
+        logger.info("🛑 Бот остановлен пользователем")
     except Exception as e:
         logger.error(f"❌ Фатальная ошибка: {e}")
         sys.exit(1)
