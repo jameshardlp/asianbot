@@ -9,6 +9,7 @@ from urllib.parse import urlencode
 import logging
 import requests
 from typing import Optional, Dict, Any, List, Tuple
+from datetime import datetime, timedelta
 
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
@@ -27,8 +28,8 @@ CHANNEL_ID = os.getenv("CHANNEL_ID")
 OWNER_ID = int(os.getenv("OWNER_ID", 0))
 
 FREEKASSA_MERCHANT_ID = os.getenv("FREEKASSA_MERCHANT_ID", "")
-FREEKASSA_SECRET_KEY_S1 = os.getenv("FREEKASSA_SECRET_KEY_S1", "")  # S1 - 15 символов
-FREEKASSA_SECRET_KEY_S2 = os.getenv("FREEKASSA_SECRET_KEY_S2", "")  # S2 - 15 символов
+FREEKASSA_SECRET_KEY_S1 = os.getenv("FREEKASSA_SECRET_KEY_S1", "")
+FREEKASSA_SECRET_KEY_S2 = os.getenv("FREEKASSA_SECRET_KEY_S2", "")
 FREEKASSA_API_KEY = os.getenv("FREEKASSA_API_KEY", "")
 FREEKASSA_CURRENCY = os.getenv("FREEKASSA_CURRENCY", "RUB")
 FREEKASSA_WEBHOOK_URL = os.getenv("FREEKASSA_WEBHOOK_URL", "")
@@ -43,12 +44,72 @@ if not OWNER_ID:
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-# ===== ХРАНИЛИЩА =====
-broadcast_data = {}
-pending_broadcasts = {}
-BROADCAST_PRICE_FILE = "broadcast_price.json"
+# ===== ФАЙЛЫ ДЛЯ ХРАНЕНИЯ =====
 USERS_FILE = "users.json"
+BROADCAST_PRICE_FILE = "broadcast_price.json"
+TEMP_USERS_FILE = "temp_users.json"  # ✅ Новый файл для временных пользователей
 
+# ===== РАБОТА С ВРЕМЕННЫМИ ПОЛЬЗОВАТЕЛЯМИ =====
+def load_temp_users() -> dict:
+    """Загружает временных пользователей с временем добавления"""
+    try:
+        with open(TEMP_USERS_FILE, "r") as f:
+            return json.load(f)
+    except:
+        return {}
+
+def save_temp_users(temp_users: dict):
+    """Сохраняет временных пользователей"""
+    try:
+        with open(TEMP_USERS_FILE, "w") as f:
+            json.dump(temp_users, f)
+    except Exception as e:
+        logger.error(f"Ошибка сохранения временных пользователей: {e}")
+
+def add_temp_user(user_id: str, broadcast_id: str):
+    """Добавляет пользователя во временную базу"""
+    temp_users = load_temp_users()
+    temp_users[user_id] = {
+        "added_at": time.time(),
+        "broadcast_id": broadcast_id
+    }
+    save_temp_users(temp_users)
+    logger.info(f"✅ Пользователь {user_id} добавлен во временную базу")
+
+def remove_temp_user(user_id: str):
+    """Удаляет пользователя из временной базы"""
+    temp_users = load_temp_users()
+    if user_id in temp_users:
+        del temp_users[user_id]
+        save_temp_users(temp_users)
+        logger.info(f"🗑️ Пользователь {user_id} удалён из временной базы")
+
+def get_active_users() -> List[str]:
+    """Возвращает список активных пользователей"""
+    temp_users = load_temp_users()
+    return list(temp_users.keys())
+
+def cleanup_expired_users(hours: int = 24):
+    """Удаляет пользователей, которые были добавлены более hours часов назад"""
+    temp_users = load_temp_users()
+    current_time = time.time()
+    expired_users = []
+    
+    for user_id, data in temp_users.items():
+        added_time = data.get("added_at", 0)
+        if current_time - added_time > hours * 3600:
+            expired_users.append(user_id)
+    
+    for user_id in expired_users:
+        del temp_users[user_id]
+        logger.info(f"🗑️ Пользователь {user_id} удалён (истекло {hours} часов)")
+    
+    if expired_users:
+        save_temp_users(temp_users)
+    
+    return expired_users
+
+# ===== РАБОТА С ПОСТАМИ =====
 def load_broadcast_price() -> int:
     try:
         with open(BROADCAST_PRICE_FILE, "r") as f:
@@ -67,12 +128,13 @@ def save_broadcast_price(price: int):
 
 broadcast_price = load_broadcast_price()
 
-# ===== FREEKASSA - ИСПРАВЛЕННАЯ ПОДПИСЬ =====
+# ===== ХРАНИЛИЩА =====
+broadcast_data = {}
+pending_broadcasts = {}
+
+# ===== FREEKASSA =====
 def generate_freekassa_signature(merchant_id: str, amount: str, order_id: str) -> str:
-    """
-    Генерация подписи для FreeKassa
-    ✅ ПРАВИЛЬНЫЙ ПОРЯДОК: merchant_id:amount:S1:currency:order_id
-    """
+    """Генерация подписи для FreeKassa с валютой"""
     sign_str = f"{merchant_id}:{amount}:{FREEKASSA_SECRET_KEY_S1}:{FREEKASSA_CURRENCY}:{order_id}"
     logger.info(f"🔑 Строка для подписи: {sign_str}")
     signature = hashlib.md5(sign_str.encode()).hexdigest()
@@ -80,11 +142,7 @@ def generate_freekassa_signature(merchant_id: str, amount: str, order_id: str) -
     return signature
 
 def verify_freekassa_webhook_signature(data: dict) -> bool:
-    """
-    Проверка подписи от FreeKassa для webhook
-    Использует S2
-    ПОРЯДОК: merchant_id:amount:S2:currency:order_id
-    """
+    """Проверка подписи от FreeKassa для webhook"""
     required_fields = ['MERCHANT_ID', 'AMOUNT', 'MERCHANT_ORDER_ID', 'SIGN']
     for field in required_fields:
         if field not in data:
@@ -103,10 +161,7 @@ def verify_freekassa_webhook_signature(data: dict) -> bool:
     return sign == expected_sign
 
 def create_freekassa_payment_link(amount: float, order_id: str, description: str = "") -> str:
-    """
-    Создание ссылки для оплаты через FreeKassa
-    ✅ ПРАВИЛЬНЫЙ ФОРМАТ: https://pay.fk.money/?m=ID&oa=SUM&currency=RUB&o=ORDER&s=SIGN
-    """
+    """Создание ссылки для оплаты через FreeKassa"""
     if not FREEKASSA_MERCHANT_ID or not FREEKASSA_SECRET_KEY_S1:
         logger.error("❌ FreeKassa не настроен")
         return ""
@@ -116,7 +171,6 @@ def create_freekassa_payment_link(amount: float, order_id: str, description: str
     amount_str = str(amount_int)
     order_id_str = str(order_id)
     
-    # ✅ Генерируем подпись С ВАЛЮТОЙ
     signature = generate_freekassa_signature(
         merchant_id,
         amount_str,
@@ -140,13 +194,6 @@ def create_freekassa_payment_link(amount: float, order_id: str, description: str
     logger.info("=" * 60)
     logger.info("🔗 ССЫЛКА ДЛЯ ОПЛАТЫ:")
     logger.info(link)
-    logger.info("📋 ПРОВЕРКА ПОДПИСИ:")
-    logger.info(f"Merchant ID: {merchant_id}")
-    logger.info(f"Сумма: {amount_str}")
-    logger.info(f"S1: {FREEKASSA_SECRET_KEY_S1} ({len(FREEKASSA_SECRET_KEY_S1)} символов)")
-    logger.info(f"Currency: {FREEKASSA_CURRENCY}")
-    logger.info(f"Order ID: {order_id_str}")
-    logger.info(f"Подпись: {signature}")
     logger.info("=" * 60)
     
     return link
@@ -175,20 +222,6 @@ async def check_freekassa_payment_status(order_id: str) -> Optional[dict]:
         logger.error(f"Ошибка проверки статуса: {e}")
         return None
 
-def load_users():
-    try:
-        with open(USERS_FILE, "r") as f:
-            return json.load(f)
-    except:
-        return []
-
-def save_users(users_list):
-    try:
-        with open(USERS_FILE, "w") as f:
-            json.dump(users_list, f)
-    except Exception as e:
-        logger.error(f"Ошибка сохранения пользователей: {e}")
-
 # ===== КОМАНДА /BROADCAST =====
 @dp.message(Command("broadcast"))
 async def broadcast_command(message: Message):
@@ -204,7 +237,7 @@ async def broadcast_command(message: Message):
                 "❌ FreeKassa не настроен.\n"
                 "Установите переменные:\n"
                 "FREEKASSA_MERCHANT_ID\n"
-                "FREEKASSA_SECRET_KEY_S1 (S1)"
+                "FREEKASSA_SECRET_KEY_S1"
             )
             return
         
@@ -259,7 +292,6 @@ async def broadcast_command(message: Message):
             'price': current_price
         }
         
-        # ✅ Генерируем ссылку с ПРАВИЛЬНОЙ подписью
         payment_url = create_freekassa_payment_link(
             current_price, 
             order_id,
@@ -285,7 +317,8 @@ async def broadcast_command(message: Message):
             f"📢 Для отправки рассылки оплатите {current_price} {FREEKASSA_CURRENCY}.\n\n"
             f"📝 Текст: {text[:100]}{'...' if len(text) > 100 else ''}\n"
             f"{'📎 С медиафайлом' if has_media else ''}\n\n"
-            f"💳 Нажмите кнопку ниже для оплаты.",
+            f"💳 Нажмите кнопку ниже для оплаты.\n"
+            f"⏳ После оплаты вы будете добавлены в базу на 24 часа.",
             reply_markup=keyboard
         )
         
@@ -343,6 +376,9 @@ async def process_broadcast_payment(callback: CallbackQuery, user_id: int, broad
         
         broadcast_id = f"broadcast_{int(time.time())}_{hashlib.md5(str(broadcast_info).encode()).hexdigest()[:8]}"
         
+        # ✅ Добавляем пользователя во временную базу
+        add_temp_user(str(user_id), broadcast_id)
+        
         pending_broadcasts[broadcast_id] = {
             'text': text,
             'has_media': has_media,
@@ -359,10 +395,11 @@ async def process_broadcast_payment(callback: CallbackQuery, user_id: int, broad
         await send_broadcast_for_moderation(broadcast_id, pending_broadcasts[broadcast_id])
         
         await callback.message.edit_text(
-            f"✅ Оплата подтверждена! Сообщение отправлено на модерацию.\n"
+            f"✅ Оплата подтверждена! Вы добавлены в базу на 24 часа.\n"
             f"📝 Текст: {text[:100]}{'...' if len(text) > 100 else ''}\n"
             f"{'📎 С медиафайлом' if has_media else ''}\n\n"
-            f"⏳ Ожидайте подтверждения от администратора."
+            f"⏳ Сообщение отправлено на модерацию владельцу.\n"
+            f"📬 После одобрения оно будет отправлено всем подписчикам."
         )
         await callback.answer("✅ Оплата подтверждена!", show_alert=True)
         
@@ -391,11 +428,12 @@ async def send_broadcast_for_moderation(broadcast_id: str, broadcast_info: dict)
         preview_text = f"📋 Новая рассылка на модерацию #{broadcast_id}\n\n"
         preview_text += f"👤 Заказчик ID: {user_id}\n"
         preview_text += f"💰 Оплачено: {broadcast_info.get('price', broadcast_price)} {FREEKASSA_CURRENCY}\n"
+        preview_text += f"⏳ Пользователь добавлен в базу на 24 часа\n\n"
         
         if text:
-            preview_text += f"\n📝 Текст:\n{text[:300]}{'...' if len(text) > 300 else ''}\n"
+            preview_text += f"📝 Текст:\n{text[:300]}{'...' if len(text) > 300 else ''}\n"
         else:
-            preview_text += f"\n📝 Текст: (без текста)\n"
+            preview_text += f"📝 Текст: (без текста)\n"
         
         if has_media:
             media_names = {
@@ -469,7 +507,7 @@ async def handle_broadcast_moderation(callback: CallbackQuery):
         if approved:
             await callback.answer("✅ Сообщение одобрено", show_alert=True)
             await callback.message.edit_text(
-                callback.message.text + "\n\n✅ ОДОБРЕНО",
+                callback.message.text + "\n\n✅ ОДОБРЕНО (отправляется подписчикам)",
                 reply_markup=None
             )
             
@@ -477,7 +515,9 @@ async def handle_broadcast_moderation(callback: CallbackQuery):
             has_media = broadcast_info.get('has_media', False)
             media_type = broadcast_info.get('media_type')
             media_file_id = broadcast_info.get('media_file_id')
-            users_list = load_users()
+            
+            # ✅ Получаем активных пользователей
+            users_list = get_active_users()
             
             sent_count = 0
             failed_count = 0
@@ -518,12 +558,10 @@ async def handle_broadcast_moderation(callback: CallbackQuery):
                 except Exception as e:
                     logger.error(f"Ошибка отправки в {chat_id}: {e}")
                     failed_count += 1
-                    if "forbidden" in str(e).lower() or "chat not found" in str(e).lower():
-                        if str(chat_id) in [str(u) for u in users_list]:
-                            users_list.remove(str(chat_id))
-                            save_users(users_list)
+                    # Если пользователь недоступен, удаляем его
+                    remove_temp_user(str(chat_id))
             
-            # Отправка в канал
+            # ✅ Отправка в канал
             try:
                 channel_id = CHANNEL_ID
                 if channel_id:
@@ -559,17 +597,23 @@ async def handle_broadcast_moderation(callback: CallbackQuery):
             except Exception as e:
                 logger.error(f"Ошибка отправки в канал: {e}")
             
+            # ✅ Удаляем пользователя после рассылки
+            user_id = broadcast_info.get('user_id')
+            if user_id:
+                remove_temp_user(str(user_id))
+                logger.info(f"🗑️ Пользователь {user_id} удалён после рассылки")
+            
             del pending_broadcasts[broadcast_id]
             
             # Уведомление заказчику
             try:
-                user_id = broadcast_info.get('user_id')
                 if user_id:
                     await bot.send_message(
                         chat_id=user_id,
                         text=f"✅ Ваше сообщение опубликовано!\n"
                              f"📨 Отправлено: {sent_count} подписчикам\n"
-                             f"❌ Ошибок: {failed_count}"
+                             f"❌ Ошибок: {failed_count}\n\n"
+                             f"🗑️ Вы удалены из базы. Для новой рассылки оплатите снова."
                     )
             except Exception as e:
                 logger.error(f"Ошибка уведомления заказчика: {e}")
@@ -580,22 +624,26 @@ async def handle_broadcast_moderation(callback: CallbackQuery):
                 callback.message.text + "\n\n❌ ОТКЛОНЕНО",
                 reply_markup=None
             )
-            try:
-                user_id = broadcast_info.get('user_id')
-                if user_id:
+            # Удаляем пользователя при отклонении
+            user_id = broadcast_info.get('user_id')
+            if user_id:
+                remove_temp_user(str(user_id))
+                try:
                     await bot.send_message(
                         chat_id=user_id,
-                        text="❌ Ваше сообщение отклонено модератором."
+                        text="❌ Ваше сообщение отклонено модератором.\n"
+                             "🗑️ Вы удалены из базы. Средства не возвращаются."
                     )
-            except Exception as e:
-                logger.error(f"Ошибка уведомления заказчика: {e}")
+                except Exception as e:
+                    logger.error(f"Ошибка уведомления заказчика: {e}")
+            
             if broadcast_id in pending_broadcasts:
                 del pending_broadcasts[broadcast_id]
     except Exception as e:
         logger.error(f"Ошибка в broadcast модерации: {e}")
         await callback.answer("❌ Ошибка", show_alert=True)
 
-# ===== ТЕСТОВАЯ КОМАНДА =====
+# ===== ВСПОМОГАТЕЛЬНЫЕ КОМАНДЫ =====
 @dp.message(Command("testfreekassa"))
 async def test_freekassa(message: Message):
     """Тестовая команда для диагностики FreeKassa"""
@@ -609,79 +657,105 @@ async def test_freekassa(message: Message):
     currency = FREEKASSA_CURRENCY
     
     if not merchant or not s1:
-        await message.answer("❌ FreeKassa не настроен!\n\n"
-                            "Установите:\n"
-                            "FREEKASSA_MERCHANT_ID\n"
-                            "FREEKASSA_SECRET_KEY_S1 (S1)")
+        await message.answer("❌ FreeKassa не настроен!")
         return
     
     test_amount = 100
     test_order = f"test_{int(time.time())}"
     
-    # ✅ ПРАВИЛЬНАЯ подпись С ВАЛЮТОЙ
     sign_str = f"{merchant}:{test_amount}:{s1}:{currency}:{test_order}"
     signature = hashlib.md5(sign_str.encode()).hexdigest()
-    
-    # ✅ Формируем ссылку
     link = f"https://pay.fk.money/?m={merchant}&oa={test_amount}&currency={currency}&o={test_order}&s={signature}"
     
     await message.answer(
         f"🧪 **ТЕСТ FREEKASSA**\n\n"
         f"📋 Merchant ID: `{merchant}`\n"
         f"🔑 S1: `{s1}` ({len(s1)} символов)\n"
-        f"🔑 S2: `{s2}` ({len(s2)} символов)\n"
         f"💱 Currency: `{currency}`\n"
         f"💰 Сумма: `{test_amount}`\n"
-        f"🆔 Order ID: `{test_order}`\n\n"
-        f"🔑 **Строка подписи:**\n`{sign_str}`\n"
-        f"🔑 **MD5:** `{signature}`\n\n"
-        f"🔗 **Ссылка для проверки:**\n`{link}`\n\n"
-        f"📌 Откройте ссылку в браузере",
+        f"🆔 Order: `{test_order}`\n\n"
+        f"🔑 Строка: `{sign_str}`\n"
+        f"🔑 MD5: `{signature}`\n\n"
+        f"🔗 Ссылка:\n`{link}`",
         parse_mode="Markdown"
     )
 
 @dp.message(Command("price"))
 async def set_price(message: Message):
+    if message.from_user.id != OWNER_ID:
+        await message.answer("⛔ Доступ запрещён. Только для владельца.")
+        return
+    args = message.text.replace("/price", "").strip()
+    if not args:
+        current_price = load_broadcast_price()
+        await message.answer(
+            f"💰 Текущая цена рассылки: {current_price} {FREEKASSA_CURRENCY}\n\n"
+            f"Изменить: /price 100\n"
+            f"Цена от 10 до 10000."
+        )
+        return
     try:
-        if message.from_user.id != OWNER_ID:
-            await message.answer("⛔ Доступ запрещён. Только для владельца.")
+        price = int(args)
+        if price < 10 or price > 10000:
+            await message.answer("❌ Цена должна быть от 10 до 10000.")
             return
-        args = message.text.replace("/price", "").strip()
-        if not args:
-            current_price = load_broadcast_price()
-            await message.answer(
-                f"💰 Текущая цена рассылки: {current_price} {FREEKASSA_CURRENCY}\n\n"
-                f"Изменить: /price 100\n"
-                f"Цена от 10 до 10000."
-            )
-            return
-        try:
-            price = int(args)
-            if price < 10 or price > 10000:
-                await message.answer("❌ Цена должна быть от 10 до 10000.")
-                return
-            save_broadcast_price(price)
-            global broadcast_price
-            broadcast_price = price
-            await message.answer(f"✅ Цена рассылки установлена: {price} {FREEKASSA_CURRENCY}")
-            logger.info(f"Цена рассылки изменена на {price} {FREEKASSA_CURRENCY}")
-        except ValueError:
-            await message.answer("❌ Введите число. Пример: /price 100")
-    except Exception as e:
-        logger.error(f"Ошибка: {e}")
-        await message.answer("❌ Произошла ошибка")
+        save_broadcast_price(price)
+        global broadcast_price
+        broadcast_price = price
+        await message.answer(f"✅ Цена рассылки установлена: {price} {FREEKASSA_CURRENCY}")
+    except ValueError:
+        await message.answer("❌ Введите число. Пример: /price 100")
+
+@dp.message(Command("users"))
+async def list_active_users(message: Message):
+    """Показывает список активных пользователей"""
+    if message.from_user.id != OWNER_ID:
+        await message.answer("⛔ Доступ запрещен")
+        return
+    
+    temp_users = load_temp_users()
+    if not temp_users:
+        await message.answer("📊 Нет активных пользователей")
+        return
+    
+    user_list = []
+    for user_id, data in temp_users.items():
+        added_time = data.get("added_at", 0)
+        hours_ago = (time.time() - added_time) / 3600
+        remaining = max(0, 24 - hours_ago)
+        user_list.append(f"• `{user_id}` (осталось {remaining:.1f} ч)")
+    
+    await message.answer(
+        f"📊 **Активные пользователи**\n\n"
+        f"Всего: {len(temp_users)}\n\n"
+        f"{chr(10).join(user_list[:20])}",
+        parse_mode="Markdown"
+    )
+
+@dp.message(Command("cleanup"))
+async def cleanup_users(message: Message):
+    """Принудительно удаляет пользователей с истекшим сроком"""
+    if message.from_user.id != OWNER_ID:
+        await message.answer("⛔ Доступ запрещен")
+        return
+    
+    expired = cleanup_expired_users(24)
+    await message.answer(f"🗑️ Удалено пользователей с истекшим сроком: {len(expired)}")
 
 @dp.message(Command("start"))
 async def start_command(message: Message):
     await message.answer(
         "🤖 **Бот для платных рассылок**\n\n"
-        "📢 **Команды:**\n"
+        "📢 **Команды для всех:**\n"
         "• `/broadcast` — создать платную рассылку\n"
-        "• `/price` — установить цену (только владелец)\n"
-        "• `/testfreekassa` — тест FreeKassa (только владелец)\n"
         "• `/start` — это сообщение\n\n"
-        "💰 Для отправки сообщения подписчикам нужно оплатить через FreeKassa.\n"
-        "После оплаты сообщение уходит на модерацию владельцу.",
+        "🔑 **Команды владельца:**\n"
+        "• `/price` — установить цену\n"
+        "• `/testfreekassa` — тест FreeKassa\n"
+        "• `/users` — список активных пользователей\n"
+        "• `/cleanup` — удалить пользователей с истекшим сроком\n\n"
+        "💰 После оплаты вы будете добавлены в базу на 24 часа.\n"
+        "После рассылки вы будете автоматически удалены.",
         parse_mode="Markdown"
     )
 
@@ -693,26 +767,21 @@ async def freekassa_webhook(request):
         
         logger.info(f"📩 Получен webhook: {data}")
         
-        # ✅ Проверка подписи с S2
         if not verify_freekassa_webhook_signature(data):
             logger.warning("❌ Неверная подпись в webhook")
             return web.Response(text="Invalid signature", status=400)
         
         order_id = data.get('MERCHANT_ORDER_ID')
         status = data.get('STATUS')
-        amount = data.get('AMOUNT')
-        
-        logger.info(f"📋 Order: {order_id}, Status: {status}, Amount: {amount}")
         
         if status == 'SUCCESS':
-            # Обработка успешного платежа
             for uid, info in broadcast_data.items():
                 if info.get('order_id') == order_id:
-                    logger.info(f"✅ Платёж {order_id} подтверждён для пользователя {uid}")
+                    logger.info(f"✅ Платёж {order_id} подтверждён")
                     try:
                         await bot.send_message(
                             chat_id=uid,
-                            text="✅ Оплата подтверждена! Ваш заказ обрабатывается."
+                            text="✅ Оплата подтверждена!"
                         )
                     except Exception as e:
                         logger.error(f"Ошибка уведомления: {e}")
@@ -724,27 +793,34 @@ async def freekassa_webhook(request):
         logger.error(f"Ошибка в webhook: {e}")
         return web.Response(text="Error", status=500)
 
+# ===== ФОНОВАЯ ЗАДАЧА ДЛЯ ОЧИСТКИ =====
+async def cleanup_task():
+    """Фоновая задача для автоматической очистки пользователей"""
+    while True:
+        try:
+            expired = cleanup_expired_users(24)
+            if expired:
+                logger.info(f"🗑️ Автоочистка: удалено {len(expired)} пользователей")
+            await asyncio.sleep(3600)  # Проверка каждый час
+        except Exception as e:
+            logger.error(f"Ошибка в задаче очистки: {e}")
+            await asyncio.sleep(3600)
+
 # ===== ЗАПУСК =====
 async def main():
     try:
         logger.info("=" * 60)
         logger.info("🤖 БОТ ЗАПУЩЕН")
         logger.info(f"💰 Цена: {load_broadcast_price()} {FREEKASSA_CURRENCY}")
-        logger.info(f"💳 Merchant ID: {FREEKASSA_MERCHANT_ID if FREEKASSA_MERCHANT_ID else '❌ не задан'}")
-        logger.info(f"🔑 S1: {FREEKASSA_SECRET_KEY_S1 if FREEKASSA_SECRET_KEY_S1 else '❌ не задан'}")
-        logger.info(f"🔑 S2: {FREEKASSA_SECRET_KEY_S2 if FREEKASSA_SECRET_KEY_S2 else '❌ не задан'}")
-        logger.info("=" * 60)
+        logger.info(f"💳 Merchant ID: {FREEKASSA_MERCHANT_ID}")
+        logger.info(f"🔑 S1: {FREEKASSA_SECRET_KEY_S1}")
+        logger.info(f"👤 Владелец: {OWNER_ID}")
         
-        # Запуск webhook сервера
-        if FREEKASSA_WEBHOOK_URL:
-            app = web.Application()
-            app.router.add_post('/freekassa/webhook', freekassa_webhook)
-            runner = web.AppRunner(app)
-            await runner.setup()
-            site = web.TCPSite(runner, '0.0.0.0', 8080)
-            await site.start()
-            logger.info(f"🌐 Webhook запущен на порту 8080")
-            logger.info(f"📌 URL: {FREEKASSA_WEBHOOK_URL}/freekassa/webhook")
+        # Запускаем фоновую очистку
+        asyncio.create_task(cleanup_task())
+        logger.info("🔄 Запущена задача автоматической очистки")
+        
+        logger.info("=" * 60)
         
         await bot.delete_webhook(drop_pending_updates=True)
         
@@ -757,15 +833,13 @@ async def main():
         
     except Exception as e:
         logger.error(f"❌ Критическая ошибка: {e}")
-        import traceback
-        traceback.print_exc()
         sys.exit(1)
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        logger.info("🛑 Бот остановлен пользователем")
+        logger.info("🛑 Бот остановлен")
     except Exception as e:
         logger.error(f"❌ Фатальная ошибка: {e}")
         sys.exit(1)
