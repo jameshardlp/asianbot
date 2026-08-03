@@ -37,7 +37,6 @@ OWNER_ID = int(os.getenv("OWNER_ID", 0))
 
 BOT_LINK = "https://t.me/asianpicbot"
 
-# ✅ ИЗМЕНЕННЫЕ НАЗВАНИЯ ПЕРЕМЕННЫХ
 FREEKASSA_SHOP_ID = os.getenv("FREEKASSA_SHOP_ID", "")
 FREEKASSA_SECRET1 = os.getenv("FREEKASSA_SECRET1", "")
 FREEKASSA_SECRET2 = os.getenv("FREEKASSA_SECRET2", "")
@@ -141,8 +140,6 @@ def create_freekassa_payment_link(amount: float, order_id: str, description: str
         logger.error("❌ FreeKassa не настроен")
         return ""
     
-    base_url = "https://asianbot-production.up.railway.app"
-    
     shop_id = str(FREEKASSA_SHOP_ID)
     amount_int = int(amount)
     amount_str = str(amount_int)
@@ -154,14 +151,13 @@ def create_freekassa_payment_link(amount: float, order_id: str, description: str
         order_id_str
     )
     
+    # ✅ Убраны параметры us и uf
     params = {
         "m": shop_id,
         "oa": amount_str,
         "currency": FREEKASSA_CURRENCY,
         "o": order_id_str,
         "s": signature,
-        "us": f"{base_url}/success",
-        "uf": f"{base_url}/fail",
     }
     
     if description:
@@ -825,8 +821,7 @@ async def test_freekassa(message: Message):
     sign_str = f"{shop_id}:{test_amount}:{FREEKASSA_SECRET1}:{FREEKASSA_CURRENCY}:{test_order}"
     signature = hashlib.md5(sign_str.encode()).hexdigest()
     
-    base_url = "https://asianbot-production.up.railway.app"
-    link = f"https://pay.fk.money/?m={shop_id}&oa={test_amount}&currency={FREEKASSA_CURRENCY}&o={test_order}&s={signature}&us={base_url}/success&uf={base_url}/fail"
+    link = f"https://pay.fk.money/?m={shop_id}&oa={test_amount}&currency={FREEKASSA_CURRENCY}&o={test_order}&s={signature}"
     
     await message.answer(
         f"🧪 **Тест FreeKassa**\n\n"
