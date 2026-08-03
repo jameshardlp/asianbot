@@ -47,9 +47,6 @@ DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 CHANNEL_ID = os.getenv("CHANNEL_ID")
 OWNER_ID = int(os.getenv("OWNER_ID", 0))
 
-# Разрешённые пользователи для команды /photo в ЛС (теперь доступна всем)
-ALLOWED_PHOTO_USERS = [OWNER_ID, 1361723521]
-
 # Настройки для Stars
 STARS_CHANNEL_ID = -1003893727881
 
@@ -542,74 +539,56 @@ def is_photo_valid(url: str) -> bool:
             return False
     return True
 
-def is_photo_acceptable(url: str, additional_context: str = "") -> Tuple[bool, str]:
-    if not url:
-        return False, "Пустой URL"
-    if is_child_photo(url):
-        return False, "Фото содержит ребёнка"
-    if has_man_in_photo(url):
-        return False, "Фото содержит мужчину"
-    if not is_asian_photo(url, additional_context):
-        return False, "Не азиатская внешность"
-    if not is_age_appropriate(url):
-        return False, "Возраст не подходит"
-    if is_traditional_clothing(url):
-        return False, "Традиционная одежда"
-    unwanted = ['naked', 'nude', 'porn', 'xxx', 'sex', 'erotic', 'bikini']
-    for word in unwanted:
-        if word in url.lower():
-            return False, f"Нежелательное содержание: {word}"
-    return True, "OK"
-
 # ===== СТИЛИ ДЛЯ ГЕНЕРАЦИИ =====
 style_prompts = {
     'short_joke': """
-Ты — Анатолий, холостой блогер средних лет.
+Ты — Анатолий, холостой мужик за 40, который вынужденно свайпнул в Азию, потому что в России всё пошло по пизде.
 
 ВАЖНО:
 - Это КОРОТКИЙ пост (200-350 символов)
-- Просто смешная мысль или шутка про жизнь в Азии
-- Без длинных историй, без воды
-- Одна острая шутка или забавное наблюдение
-- Можно спросить у подписчиков: "как у вас там?"
+- Одна острая шутка про жизнь, кризис, идиотов вокруг
+- Колко, дерзко, с самоиронией
+- Можно спросить у подписчиков: "как у вас там, выжили?"
 
 Твой стиль:
-- Коротко, ёмко, смешно
-- Как будто написал в статус или твит
+- Как будто ты выпил пива и решил высказаться
+- Прямо, грубо, но смешно
+- Напоминай, что ты оказался в Азии не от хорошей жизни
 
-Напиши короткий смешной пост про жизнь в Азии.
+Напиши короткий колкий пост.
 
 Требования:
 - 200-350 символов
 - Мат 0-1 раз
-- Одна шутка или наблюдение
+- Одна острая шутка
 - Обращайся к читателям на "вы"
 - Пиши только готовый пост
 """,
 
     'medium': """
-Ты — Анатолий, холостой блогер средних лет, который много путешествует по Азии и заводит знакомства с местными девушками.
+Ты — Анатолий, холостой мужик за 40, который вынужденно свайпнул в Азию, потому что в России всё пошло по пизде.
 
 ВАЖНО:
 - Это СРЕДНИЙ пост (500-700 символов)
-- Одна история или ситуация
-- Не слишком длинно, но с деталями
+- Одна история из жизни
+- 70% — ситуация, 30% — колкая шутка
 - Ты НЕ переезжаешь из страны в страну чаще раза в неделю
-- Если вчера ты был в Бангкоке — сегодня ты там же
 - Ты описываешь как путешествия, так и семейную жизнь с азиатками
 - У тебя НЕТ жены, но когда-то она была (НЕ упоминай когда именно и кто это был)
 - ИНОГДА давай советы о жизни в Азии (как секретный разговор)
+- РЕДКО вспоминай события из детства или из жизни в России (1-2 раза в неделю максимум)
+- ЕЩЁ РЕЖЕ сравнивай это со своей вынужденной поездкой в Азию
 - Можно спросить у подписчиков: "как у вас там?"
 
 Твой стиль:
 - Рассказываешь реальную историю
-- Самоирония и юмор
-- Живой разговорный язык
+- Самоирония и чёрный юмор
+- Добавляй одну острую шутку в конце
 
 Структура:
 1. Зацепка (1 предложение)
 2. История с деталями
-3. Вывод или шутка
+3. Острая шутка или колкий вывод
 
 Требования:
 - 500-700 символов
@@ -621,23 +600,24 @@ style_prompts = {
 """,
 
     'long': """
-Ты — Анатолий, холостой блогер средних лет, который много путешествует по Азии и заводит знакомства с местными девушками.
+Ты — Анатолий, холостой мужик за 40, который вынужденно свайпнул в Азию, потому что в России всё пошло по пизде.
 
 ВАЖНО:
 - Это ДЛИННЫЙ пост (850-1023 символов)
 - Полноценная история с несколькими событиями
+- 60% — история, 40% — колкие шутки
 - Ты НЕ переезжаешь из страны в страну чаще раза в неделю
-- Если вчера ты был в Бангкоке — сегодня ты там же
 - Ты описываешь как путешествия, так и семейную жизнь с азиатками
 - У тебя НЕТ жены, но когда-то она была (НЕ упоминай когда именно и кто это был)
 - МОЖНО дать развёрнутый совет о жизни в Азии (как секретный разговор)
+- РЕДКО вспоминай события из детства или из жизни в России (1-2 раза в неделю максимум)
+- ЕЩЁ РЕЖЕ сравнивай это со своей вынужденной поездкой в Азию
 - Можно задать вопрос подписчикам
 
 Твой стиль:
 - Детальный рассказ
-- Самоирония и юмор
-- Живой разговорный язык
-- Можно добавить диалоги
+- Самоирония и чёрный юмор
+- Добавляй 2-3 острые шутки
 
 Структура:
 1. Зацепка (1-2 предложения)
@@ -648,32 +628,32 @@ style_prompts = {
 Требования:
 - 850-1023 символов
 - Мат 2-3 раза
-- 1-2 острые шутки
+- 2-3 острые шутки
 - Обращайся к читателям на "вы"
 - НЕ упоминай жену (бывшую тоже)
 - Пиши только готовый пост
 """,
 
     'everyday': """
-Ты — Анатолий, холостой блогер средних лет, который много путешествует по Азии и заводит знакомства с местными девушками.
+Ты — Анатолий, холостой мужик за 40, который вынужденно свайпнул в Азию, потому что в России всё пошло по пизде.
 
 ВАЖНО:
 - Это СРЕДНИЙ пост (500-700 символов)
 - Одна история или ситуация
 - Ты НЕ переезжаешь из страны в страну чаще раза в неделю
-- Если вчера ты был в Бангкоке — сегодня ты там же
 - Ты описываешь как путешествия, так и семейную жизнь с азиатками
 - У тебя НЕТ жены, но когда-то она была (НЕ упоминай когда именно и кто это был)
 - ИНОГДА давай советы о выгодной жизни в Азии (как секретный разговор)
+- РЕДКО вспоминай события из детства или из жизни в России (1-2 раза в неделю максимум)
+- ЕЩЁ РЕЖЕ сравнивай это со своей вынужденной поездкой в Азию
 - Чаще спрашивай у подписчиков в духе: "как там у вас, всё ещё дошираки доедаете?"
 
 Твой стиль:
 - Рассказываешь реальные истории
-- Самоирония
+- Самоирония и чёрный юмор
 - Добавляй одну острую шутку
-- Пишешь живым разговорным языком
 
-Напиши пост про реальную ситуацию из жизни в Азии (путешествия, знакомства, быт).
+Напиши пост про реальную ситуацию из жизни.
 
 Структура:
 1. Зацепка
@@ -691,7 +671,7 @@ style_prompts = {
 """,
 
     'funny': """
-Ты — Анатолий, холостой блогер средних лет.
+Ты — Анатолий, холостой мужик за 40, который вынужденно свайпнул в Азию.
 
 ВАЖНО:
 - Это СРЕДНИЙ пост (500-700 символов)
@@ -699,15 +679,15 @@ style_prompts = {
 - Ты НЕ переезжаешь из страны в страну чаще раза в неделю
 - Ты описываешь как путешествия, так и семейную жизнь с азиатками
 - У тебя НЕТ жены, но когда-то она была (НЕ упоминай когда именно и кто это был)
+- РЕДКО вспоминай события из детства или из жизни в России
 
 Твой стиль:
 - Рассказываешь смешные истории
 - Главный объект шуток — ты сам
-- Юмор самоироничный
+- Юмор самоироничный с чёрным оттенком
 - Добавляй одну острую шутку
-- Пишешь живым языком
 
-Напиши смешной пост про свою жизнь в Азии.
+Напиши смешной пост про свою жизнь.
 
 Структура:
 1. Необычная ситуация
@@ -724,22 +704,23 @@ style_prompts = {
 """,
 
     'romantic': """
-Ты — Анатолий, холостой блогер средних лет.
+Ты — Анатолий, холостой мужик за 40, который вынужденно свайпнул в Азию.
 
 ВАЖНО:
 - Это СРЕДНИЙ пост (500-700 символов)
-- Романтичная история
+- Романтичная история с чёрным юмором
 - Ты НЕ переезжаешь из страны в страну чаще раза в неделю
 - Ты описываешь как путешествия, так и семейную жизнь с азиатками
 - У тебя НЕТ жены, но когда-то она была (НЕ упоминай когда именно и кто это был)
+- РЕДКО вспоминай события из детства или из жизни в России
 
 Твой стиль:
 - Рассказываешь о своих чувствах с самоиронией
-- Немного романтики, но с юмором
+- Немного романтики, но с чёрным юмором
 - Честно говоришь о своих недостатках
 - Добавляй одну острую шутку (про себя)
 
-Напиши романтичный пост о встрече с азиаткой во время путешествия.
+Напиши романтичный пост о встрече с азиаткой.
 
 Структура:
 1. Неожиданная встреча
@@ -756,23 +737,23 @@ style_prompts = {
 """,
 
     'envy': """
-Ты — Анатолий, холостой блогер средних лет.
+Ты — Анатолий, холостой мужик за 40, который вынужденно свайпнул в Азию.
 
 ВАЖНО:
 - Это СРЕДНИЙ пост (500-700 символов)
-- Зависть с юмором
+- Зависть с чёрным юмором
 - Ты НЕ переезжаешь из страны в страну чаще раза в неделю
 - Ты описываешь как путешествия, так и семейную жизнь с азиатками
 - У тебя НЕТ жены, но когда-то она была (НЕ упоминай когда именно и кто это был)
 - ИНОГДА давай советы о жизни в Азии (как секретный разговор)
+- РЕДКО вспоминай события из детства или из жизни в России
 
 Твой стиль:
 - Рассказываешь о том, чему завидуешь, с юмором
 - Самоирония
 - Добавляй одну острую шутку
-- Пишешь живо
 
-Напиши пост о том, чему ты завидуешь в Азии.
+Напиши пост о том, чему ты завидуешь.
 
 Структура:
 1. Что тебя поразило
@@ -789,7 +770,7 @@ style_prompts = {
 """,
 
     'joke': """
-Ты — Анатолий, холостой блогер средних лет.
+Ты — Анатолий, холостой мужик за 40, который вынужденно свайпнул в Азию.
 
 ВАЖНО:
 - Это СРЕДНИЙ пост (500-700 символов)
@@ -802,9 +783,9 @@ style_prompts = {
 Твой стиль:
 - Острые шутки без оскорблений
 - Можно использовать мат
-- Пишешь как в баре
+- Пишешь как в баре с мужиками
 
-Напиши пост с острой шуткой про жизнь в Азии.
+Напиши пост с острой шуткой.
 
 Структура:
 1. Жизненная ситуация
@@ -816,6 +797,37 @@ style_prompts = {
 - 500-700 символов
 - Мат 1-3 раза
 - 2-3 шутки, одна острая
+- Обращайся к читателям на "вы"
+- Пиши только готовый пост
+""",
+
+    'russia': """
+Ты — Анатолий, холостой мужик за 40, который вынужденно свайпнул в Азию, потому что в России всё пошло по пизде.
+
+ВАЖНО:
+- Это СРЕДНИЙ пост (500-700 символов)
+- История из России, которую ты РЕДКО вспоминаешь
+- Сравниваешь свою прошлую жизнь в России с теперешней в Азии
+- Но НЕ ноешь — шутишь над этим
+- Только 1-2 раза в неделю такие посты
+
+Твой стиль:
+- Вспоминаешь прошлое с иронией
+- Сравниваешь, но без ностальгии
+- Добавляй одну острую шутку
+
+Напиши пост про жизнь в России из прошлого.
+
+Структура:
+1. Воспоминание
+2. Сравнение с Азией
+3. Острая шутка
+4. Вывод
+
+Требования:
+- 500-700 символов
+- Мат 1-2 раза
+- Одна острая шутка
 - Обращайся к читателям на "вы"
 - Пиши только готовый пост
 """,
@@ -1120,7 +1132,7 @@ def complete_truncated_text(content: str, finish_reason: str) -> str:
             logger.warning("Продолжение не получено, работаю с тем что есть")
     return content
 
-# ===== ГЕНЕРАЦИЯ ПОСТОВ =====
+# ===== РЕЗЕРВНЫЙ ТЕКСТ =====
 
 def get_fallback_caption() -> str:
     fallbacks = [
@@ -1130,6 +1142,8 @@ def get_fallback_caption() -> str:
         "Тайские девушки - это отдельный вид искусства. Вчера одна сказала мне: Ты такой забавный, как мой папа. Я чуть кофе не поперхнулся. Думаю - ну всё, старость пришла. А она потом говорит: Это комплимент, папа у меня крутой! Ну ладно, тогда норм. Буду теперь гордо носить звание папик в Таиланде. Хотя, сука, обидно было первые пять секунд.",
     ]
     return random.choice(fallbacks)
+
+# ===== ОБНОВЛЁННАЯ ГЕНЕРАЦИЯ ПОСТОВ =====
 
 def generate_caption() -> str:
     logger.info("Генерирую уникальный пост...")
@@ -1145,7 +1159,11 @@ def generate_caption() -> str:
         return clean_text(truncate_by_sentences(get_fallback_caption()))
     
     rand = random.random()
-    if rand < 0.20:
+    if rand < 0.05:
+        style = 'russia'
+        logger.info("Выбран РЕДКИЙ пост про Россию")
+        min_len, max_len = 500, 700
+    elif rand < 0.20:
         style = 'short_joke'
         logger.info("Выбран КОРОТКИЙ пост (шутка)")
         min_len, max_len = 200, 400
@@ -1164,23 +1182,30 @@ def generate_caption() -> str:
     
     alternative_prompts = {
         'short_joke': [
-            "Напиши короткую смешную мысль про жизнь в Азии. 200-350 символов.",
-            "Короткая шутка про Азию. 200-350 символов.",
-            "Забавное наблюдение про жизнь в Азии. 200-350 символов.",
+            "Напиши короткую колкую шутку про жизнь. 200-350 символов.",
+            "Короткая острая шутка. 200-350 символов.",
+            "Забавное наблюдение с колкостью. 200-350 символов.",
         ],
         'long': [
-            "Напиши длинный пост с историей про жизнь в Азии. 850-1023 символов.",
-            "Подробный рассказ о жизни в Азии. 850-1023 символов.",
-            "Развёрнутая история из Азии с деталями. 850-1023 символов.",
+            "Напиши длинный пост с историей. 850-1023 символов.",
+            "Подробный рассказ с колкими шутками. 850-1023 символов.",
+            "Развёрнутая история с чёрным юмором. 850-1023 символов.",
         ],
         'medium': [
-            "Напиши пост про жизнь в Азии с юмором. 500-700 символов.",
-            "История из жизни в Азии. 500-700 символов.",
-            "Забавная ситуация из Азии. 500-700 символов.",
+            "Напиши пост с юмором. 500-700 символов.",
+            "История с острой шуткой. 500-700 символов.",
+            "Забавная ситуация с колким выводом. 500-700 символов.",
+        ],
+        'russia': [
+            "Напиши пост про жизнь в России из прошлого. 500-700 символов.",
+            "Вспомни свою прошлую жизнь в России с иронией. 500-700 символов.",
+            "Расскажи про Россию с чёрным юмором. 500-700 символов.",
         ]
     }
     
-    for attempt in range(5):
+    attempt = 0
+    while True:
+        attempt += 1
         try:
             url = "https://api.deepseek.com/chat/completions"
             headers = {
@@ -1189,36 +1214,40 @@ def generate_caption() -> str:
             }
             
             current_prompt = prompt
-            if attempt > 0:
+            if attempt > 1:
                 if style == 'short_joke':
                     alt = random.choice(alternative_prompts['short_joke'])
                 elif style == 'long':
                     alt = random.choice(alternative_prompts['long'])
+                elif style == 'russia':
+                    alt = random.choice(alternative_prompts['russia'])
                 else:
                     alt = random.choice(alternative_prompts['medium'])
                 current_prompt = alt + "\n\nТвой ответ (ТОЛЬКО ПОСТ, БЕЗ РАССУЖДЕНИЙ):"
-                logger.info(f"Пробую альтернативный промпт (попытка {attempt+1})...")
+                logger.info(f"Пробую альтернативный промпт (попытка {attempt})...")
             
             data = {
                 "model": "deepseek-chat",
                 "messages": [
-                    {"role": "system", "content": """Ты — Анатолий, холостой блогер средних лет. Ты путешествуешь по Азии и ведёшь блог от своего лица.
+                    {"role": "system", "content": """Ты — Анатолий, холостой мужик за 40, который вынужденно свайпнул в Азию, потому что в России всё пошло по пизде.
 
 Твой стиль:
-- Самоирония и сарказм
+- Колкий, дерзкий, с чёрным юмором
 - Рассказываешь реальные истории из жизни
-- Можешь добавить острую шутку — не оскорбительную, с юмором, может содержать мат
-- Шути про себя или про жизнь, но без политики
-- Пиши так, будто рассказываешь друзьям в баре
+- Шутишь о жизненных ситуациях и современном кризисе
+- Самоирония и сарказм
+- Пиши так, будто рассказываешь друзьям в баре после второй рюмки
 
 Важно:
+- Посты должны провоцировать пользователей написать комментарий
 - Пиши от первого лица
-- Используй мат для эмоций
+- Используй мат для эмоций (не перебарщивай)
 - Обращайся к читателям на "вы"
 - Не упоминай жену
 - Не используй штампы
 - Обязательно заверши мысль - естественный вывод, не мораль
 - Если пишешь шутку — она должна быть острой, но не оскорбительной
+- Никогда не пиши о том, что твой контент запрещён или ты не можешь его создать
 - Отвечай ТОЛЬКО готовым постом. БЕЗ РАССУЖДЕНИЙ. Только текст поста."""},
                     {"role": "user", "content": current_prompt}
                 ],
@@ -1231,7 +1260,7 @@ def generate_caption() -> str:
             if response.status_code == 400:
                 error_text = response.text.lower()
                 if "извините" in error_text or "не могу" in error_text or "не разрешено" in error_text:
-                    logger.warning(f"Контент заблокирован, пробую другой промпт (попытка {attempt+1})...")
+                    logger.warning(f"Контент заблокирован, пробую другой промпт (попытка {attempt})...")
                     continue
             
             if response.status_code != 200:
@@ -1265,12 +1294,12 @@ def generate_caption() -> str:
             if not caption:
                 continue
             
-            if caption.lower().startswith(("мы должны", "нужно", "я должен", "напиши", "вот", "давайте", "попробуем", "извините")):
+            if caption.lower().startswith(("мы должны", "нужно", "я должен", "напиши", "вот", "давайте", "попробуем", "извините", "к сожалению")):
                 logger.warning("DeepSeek выдал рассуждение или отказ, пробуем другой промпт...")
                 continue
             
             if is_similar(caption):
-                logger.warning("Пост похож на недавний, пробуем ещё...")
+                logger.info("Пост похож на недавний, пробуем ещё...")
                 continue
             
             caption = clean_text(caption)
@@ -1290,7 +1319,7 @@ def generate_caption() -> str:
                 validated, error = validate_caption(caption, min_length=min_len, max_length=max_len)
             
             if validated:
-                logger.info(f"Сгенерирован пост ({len(validated)} символов, тип: {style})")
+                logger.info(f"Сгенерирован уникальный пост ({len(validated)} символов, тип: {style}, попытка {attempt})")
                 add_to_last_posts(validated)
                 return validated
             else:
@@ -1298,17 +1327,8 @@ def generate_caption() -> str:
                 continue
             
         except Exception as e:
-            logger.error(f"Ошибка генерации (попытка {attempt+1}): {e}")
+            logger.error(f"Ошибка генерации (попытка {attempt}): {e}")
             continue
-    
-    logger.warning("Не удалось сгенерировать уникальный пост, использую резерв")
-    caption = get_fallback_caption()
-    caption = clean_text(caption)
-    caption = truncate_by_sentences(caption, max_length=1023)
-    validated, error = validate_caption(caption, min_length=500, max_length=1023)
-    if validated:
-        return validated
-    return clean_text(truncate_by_sentences(get_fallback_caption(), max_length=1023))
 
 # ===== ПОИСК ФОТО =====
 
@@ -2027,7 +2047,95 @@ async def is_user_admin(chat_id: int, user_id: int) -> bool:
         logger.error(f"Ошибка проверки админа: {e}")
         return False
 
-# ===== КОМАНДА /PRICE =====
+@dp.message(Command("photo"))
+async def photo_command(message: Message):
+    try:
+        chat_id = message.chat.id
+        user_id = message.from_user.id
+        chat_type = message.chat.type
+        
+        if chat_type != "private":
+            await message.answer("ℹ️ Эта команда работает только в личных сообщениях.")
+            return
+        
+        if chat_id not in users:
+            await message.answer("⚠️ Бот не активирован. Напишите /start")
+            return
+        
+        photo_url = await get_random_photo()
+        
+        if not photo_url:
+            await message.answer("❌ Не удалось найти подходящее фото. Попробуйте позже.")
+            return
+        
+        caption = generate_caption()
+        
+        history.append(photo_url)
+        save_history(history)
+        
+        await message.answer_photo(
+            photo=photo_url,
+            caption=caption,
+            parse_mode="Markdown"
+        )
+        
+        logger.info(f"📸 Команда /photo от {user_id}: фото отправлено")
+        
+    except Exception as e:
+        logger.error(f"Ошибка в команде photo: {e}", exc_info=True)
+        await message.answer("❌ Произошла ошибка. Попробуйте позже.")
+
+@dp.message(Command("post"))
+async def post_command(message: Message):
+    try:
+        user_id = message.from_user.id
+        chat_id = message.chat.id
+        
+        if user_id != OWNER_ID:
+            await message.answer("⛔ Доступ запрещён. Только для владельца.")
+            return
+        
+        if message.chat.type != "private":
+            await message.answer("ℹ️ Используйте команду в личных сообщениях.")
+            return
+        
+        photo_url = await get_random_photo()
+        
+        if not photo_url:
+            await message.answer("❌ Не удалось найти подходящее фото. Попробуйте позже.")
+            return
+        
+        caption = generate_caption()
+        
+        history.append(photo_url)
+        save_history(history)
+        
+        await message.answer_photo(
+            photo=photo_url,
+            caption=f"📸 **Пост для канала**\n\n{caption}\n\n━━━━━━━━━━━━━━━━━\n🤖 Сгенерировано AI",
+            parse_mode="Markdown"
+        )
+        
+        if CHANNEL_ID and CHANNEL_ID.strip():
+            try:
+                await bot.send_photo(
+                    chat_id=CHANNEL_ID,
+                    photo=photo_url,
+                    caption=caption
+                )
+                logger.info(f"📝 Пост отправлен в канал {CHANNEL_ID}")
+                await message.answer("✅ Пост также отправлен в канал!")
+            except Exception as e:
+                logger.error(f"Ошибка отправки в канал: {e}")
+                await message.answer("❌ Не удалось отправить пост в канал.")
+        else:
+            await message.answer("⚠️ Канал не настроен. Пост отправлен только в ЛС.")
+        
+        logger.info(f"📝 Команда /post от владельца: фото отправлено в ЛС и канал")
+        
+    except Exception as e:
+        logger.error(f"Ошибка в команде post: {e}", exc_info=True)
+        await message.answer("❌ Произошла ошибка. Попробуйте позже.")
 
 @dp.message(Command("price"))
 async def set_price(message: Message):
@@ -2089,19 +2197,16 @@ async def broadcast_command(message: Message):
         user_id = message.from_user.id
         chat_id = message.chat.id
         
-        # Парсим текст и медиа
         text = ""
         has_media = False
         media_type = None
         media_file_id = None
         
-        # Проверяем текст
         if message.text:
             text = message.text.replace("/broadcast", "").strip()
         elif message.caption:
             text = message.caption.replace("/broadcast", "").strip()
         
-        # Проверяем наличие медиа
         if message.photo:
             has_media = True
             media_type = "photo"
@@ -2143,7 +2248,6 @@ async def broadcast_command(message: Message):
             media_file_id = message.sticker.file_id
             text = message.caption or ""
         
-        # Проверяем, что есть текст или медиа
         if not text and not has_media:
             stars_price = broadcast_prices.get("stars", 100)
             rub_price = broadcast_prices.get("rub", 100)
@@ -2161,7 +2265,6 @@ async def broadcast_command(message: Message):
         rub_price = broadcast_prices.get("rub", 100)
         order_id = f"broadcast_{user_id}_{int(time.time())}"
         
-        # Сохраняем данные о сообщении
         broadcast_data[user_id] = {
             'text': text,
             'has_media': has_media,
@@ -2173,13 +2276,11 @@ async def broadcast_command(message: Message):
             'order_id': order_id
         }
         
-        # Кнопки выбора оплаты
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text=f"⭐ Оплатить {stars_price} звёзд", callback_data=f"pay_stars_{order_id}")],
             [InlineKeyboardButton(text=f"💳 Оплатить {rub_price} RUB", callback_data=f"pay_rub_{order_id}")]
         ])
         
-        # Превью сообщения
         preview_text = f"📢 **Ваше сообщение для рассылки**\n\n"
         if text:
             preview_text += f"📝 {text[:200]}{'...' if len(text) > 200 else ''}\n\n"
@@ -2202,7 +2303,6 @@ async def broadcast_command(message: Message):
         preview_text += f"💰 Цена: {stars_price} ⭐ или {rub_price} {FREEKASSA_CURRENCY}\n"
         preview_text += f"⏳ После оплаты сообщение уйдёт на модерацию."
         
-        # Если есть медиа, показываем превью
         if has_media and media_file_id:
             if media_type == "photo":
                 await message.answer_photo(
@@ -2351,7 +2451,6 @@ async def pay_with_rub(callback: CallbackQuery):
         if text:
             description += f": {text[:50]}"
         
-        # Генерируем ссылку на оплату через FreeKassa
         payment_url = create_freekassa_payment_link(
             rub_price,
             f"{order_id}_rub",
@@ -2475,7 +2574,6 @@ async def process_successful_payment_broadcast(user_id: int, broadcast_info: dic
         
         del broadcast_data[user_id]
         
-        # Отправляем на модерацию с медиа
         await send_broadcast_for_moderation(broadcast_id, pending_broadcasts[broadcast_id])
         
         await bot.send_message(
@@ -2533,7 +2631,6 @@ async def send_broadcast_for_moderation(broadcast_id: str, broadcast_info: dict)
         
         preview_text += f"\n⏳ После подтверждения будет задержка 5 минут перед публикацией."
         
-        # Отправляем с медиа если есть
         if has_media and media_file_id:
             if media_type == "photo":
                 await bot.send_photo(
@@ -2633,7 +2730,6 @@ async def handle_broadcast_moderation(callback: CallbackQuery):
                 sent_count = 0
                 failed_count = 0
                 
-                # Отправка подписчикам
                 for chat_id in users_list:
                     try:
                         if has_media and media_file_id:
@@ -2689,7 +2785,6 @@ async def handle_broadcast_moderation(callback: CallbackQuery):
                                 users_list.remove(chat_id)
                                 save_users(users_list)
                 
-                # Отправка в канал
                 try:
                     if CHANNEL_ID and CHANNEL_ID.strip():
                         if has_media and media_file_id:
@@ -2734,7 +2829,6 @@ async def handle_broadcast_moderation(callback: CallbackQuery):
                 
                 del pending_broadcasts[broadcast_id]
                 
-                # Отчёт владельцу
                 try:
                     await bot.send_message(
                         chat_id=OWNER_ID,
@@ -2747,7 +2841,6 @@ async def handle_broadcast_moderation(callback: CallbackQuery):
                 except Exception as e:
                     logger.error(f"Ошибка отправки отчета: {e}")
                 
-                # Уведомление заказчику
                 try:
                     user_id = broadcast_info.get('user_id')
                     if user_id:
@@ -2781,158 +2874,7 @@ async def handle_broadcast_moderation(callback: CallbackQuery):
         logger.error(f"Ошибка в broadcast модерации: {e}")
         await callback.answer("❌ Ошибка", show_alert=True)
 
-# ===== КОМАНДА /PHOTO (для всех пользователей) =====
-
-@dp.message(Command("photo"))
-async def photo_command(message: Message):
-    try:
-        chat_id = message.chat.id
-        user_id = message.from_user.id
-        chat_type = message.chat.type
-        
-        # Проверяем, что команда вызвана в ЛС
-        if chat_type != "private":
-            await message.answer("ℹ️ Эта команда работает только в личных сообщениях.")
-            return
-        
-        # Проверяем, что пользователь подписан на рассылку
-        if chat_id not in users:
-            await message.answer("⚠️ Бот не активирован. Напишите /start")
-            return
-        
-        # Отправляем сообщение о начале поиска
-        loading_msg = await message.answer("🔍 Ищу подходящее фото...")
-        
-        # 1. Ищем фото через все источники
-        photo_url = await get_random_photo()
-        
-        if not photo_url:
-            await loading_msg.edit_text("❌ Не удалось найти подходящее фото. Попробуйте позже.")
-            return
-        
-        # 2. Генерируем текст для поста
-        await loading_msg.edit_text("✍️ Генерирую текст для поста...")
-        caption = generate_caption()
-        
-        if not caption:
-            caption = get_fallback_caption()
-            caption = clean_text(caption)
-            caption = truncate_by_sentences(caption, max_length=1023)
-            validated, error = validate_caption(caption, min_length=200, max_length=1023)
-            if validated:
-                caption = validated
-            else:
-                caption = clean_text(truncate_by_sentences(get_fallback_caption(), max_length=1023))
-        
-        # 3. Проверяем и обрезаем подпись
-        if len(caption) > 1024:
-            caption = truncate_by_sentences(caption, max_length=1023)
-        
-        # 4. Добавляем в историю (чтобы не повторяться)
-        history.append(photo_url)
-        save_history(history)
-        
-        # Удаляем сообщение о загрузке
-        await loading_msg.delete()
-        
-        # Отправляем готовый пост с фото и подписью
-        await message.answer_photo(
-            photo=photo_url,
-            caption=caption,
-            parse_mode="Markdown"
-        )
-        
-        logger.info(f"📸 Команда /photo от {user_id}: фото отправлено")
-        
-    except Exception as e:
-        logger.error(f"Ошибка в команде photo: {e}", exc_info=True)
-        await message.answer("❌ Произошла ошибка. Попробуйте позже.")
-
-# ===== КОМАНДА /POST (для владельца, с дублированием в канал) =====
-
-@dp.message(Command("post"))
-async def post_command(message: Message):
-    try:
-        user_id = message.from_user.id
-        chat_id = message.chat.id
-        
-        # Проверяем, что команда вызвана владельцем
-        if user_id != OWNER_ID:
-            await message.answer("⛔ Доступ запрещён. Только для владельца.")
-            return
-        
-        # Проверяем, что команда вызвана в ЛС
-        if message.chat.type != "private":
-            await message.answer("ℹ️ Используйте команду в личных сообщениях.")
-            return
-        
-        # Отправляем сообщение о начале поиска
-        loading_msg = await message.answer("🔍 Ищу подходящее фото...")
-        
-        # 1. Ищем фото через все источники
-        photo_url = await get_random_photo()
-        
-        if not photo_url:
-            await loading_msg.edit_text("❌ Не удалось найти подходящее фото. Попробуйте позже.")
-            return
-        
-        # 2. Генерируем текст для поста
-        await loading_msg.edit_text("✍️ Генерирую текст для поста...")
-        caption = generate_caption()
-        
-        if not caption:
-            caption = get_fallback_caption()
-            caption = clean_text(caption)
-            caption = truncate_by_sentences(caption, max_length=1023)
-            validated, error = validate_caption(caption, min_length=200, max_length=1023)
-            if validated:
-                caption = validated
-            else:
-                caption = clean_text(truncate_by_sentences(get_fallback_caption(), max_length=1023))
-        
-        # 3. Проверяем и обрезаем подпись
-        if len(caption) > 1024:
-            caption = truncate_by_sentences(caption, max_length=1023)
-        
-        # 4. Добавляем в историю (чтобы не повторяться)
-        history.append(photo_url)
-        save_history(history)
-        
-        # Удаляем сообщение о загрузке
-        await loading_msg.delete()
-        
-        # 5. Отправляем пост в ЛС владельцу
-        await message.answer_photo(
-            photo=photo_url,
-            caption=f"📸 **Пост для канала**\n\n{caption}\n\n━━━━━━━━━━━━━━━━━\n🤖 Сгенерировано AI",
-            parse_mode="Markdown"
-        )
-        
-        # 6. Отправляем ТОЧНО ТАКОЙ ЖЕ пост в канал
-        if CHANNEL_ID and CHANNEL_ID.strip():
-            try:
-                await bot.send_photo(
-                    chat_id=CHANNEL_ID,
-                    photo=photo_url,
-                    caption=caption
-                )
-                logger.info(f"📝 Пост отправлен в канал {CHANNEL_ID}")
-                
-                # Отправляем подтверждение владельцу
-                await message.answer("✅ Пост также отправлен в канал!")
-            except Exception as e:
-                logger.error(f"Ошибка отправки в канал: {e}")
-                await message.answer("❌ Не удалось отправить пост в канал.")
-        else:
-            await message.answer("⚠️ Канал не настроен. Пост отправлен только в ЛС.")
-        
-        logger.info(f"📝 Команда /post от владельца: фото отправлено в ЛС и канал")
-        
-    except Exception as e:
-        logger.error(f"Ошибка в команде post: {e}", exc_info=True)
-        await message.answer("❌ Произошла ошибка. Попробуйте позже.")
-
-# ===== КОМАНДА /START =====
+# ===== ОСТАЛЬНЫЕ КОМАНДЫ =====
 
 @dp.message(Command("start"))
 async def start(msg: Message):
@@ -2979,8 +2921,6 @@ async def start(msg: Message):
         logger.error(f"Ошибка в команде start: {e}")
         await msg.answer("❌ Произошла ошибка. Попробуйте позже.")
 
-# ===== КОМАНДА /STOP =====
-
 @dp.message(Command("stop"))
 async def stop(msg: Message):
     try:
@@ -3002,8 +2942,6 @@ async def stop(msg: Message):
     except Exception as e:
         logger.error(f"Ошибка в команде stop: {e}")
         await msg.answer("❌ Произошла ошибка. Попробуйте позже.")
-
-# ===== КОМАНДА /SCHEDULE =====
 
 @dp.message(Command("schedule"))
 async def schedule(msg: Message):
@@ -3048,8 +2986,6 @@ async def schedule(msg: Message):
         logger.error(f"Ошибка в команде schedule: {e}")
         await msg.answer("❌ Произошла ошибка. Попробуйте позже.")
 
-# ===== КОМАНДА /STATUS =====
-
 @dp.message(Command("status"))
 async def status(msg: Message):
     try:
@@ -3086,8 +3022,6 @@ async def status(msg: Message):
         logger.error(f"Ошибка в команде status: {e}")
         await msg.answer("❌ Произошла ошибка. Попробуйте позже.")
 
-# ===== КОМАНДА /CHECK_CHANNEL =====
-
 @dp.message(Command("check_channel"))
 async def check_channel(message: Message):
     try:
@@ -3110,6 +3044,10 @@ async def check_channel(message: Message):
         await message.answer("❌ Произошла ошибка")
 
 # ===== ФОНОВЫЕ ЗАДАЧИ =====
+
+is_sending = False
+last_post_time = 0
+MIN_POST_INTERVAL = 2 * 60 * 60
 
 async def scheduler():
     global is_sending, last_post_time
@@ -3149,55 +3087,6 @@ async def scheduler():
             logger.error(f"Ошибка в планировщике: {e}")
             await asyncio.sleep(60)
 
-# ===== ЗАПУСК =====
-
-async def main():
-    try:
-        logger.info("=" * 60)
-        logger.info("🤖 БОТ ЗАПУЩЕН")
-        logger.info("📸 /photo — для всех пользователей")
-        logger.info("📝 /post — только для владельца (дублируется в канал)")
-        logger.info("📢 /broadcast — платная рассылка с медиа")
-        logger.info("=" * 60)
-        
-        # Запускаем веб-сервер для FreeKassa webhook
-        if FREEKASSA_SHOP_ID and FREEKASSA_SECRET1:
-            port = int(os.getenv("PORT", 8080))
-            app = web.Application()
-            app.router.add_get("/", health_check)
-            app.router.add_get("/success", success_page)
-            app.router.add_get("/fail", fail_page)
-            app.router.add_post('/freekassa/webhook', freekassa_webhook)
-            
-            runner = web.AppRunner(app)
-            await runner.setup()
-            site = web.TCPSite(runner, '0.0.0.0', port)
-            await site.start()
-            logger.info(f"🌐 Webhook сервер запущен на порту {port}")
-        
-        await task_queue.connect()
-        
-        # Запускаем фоновые задачи
-        asyncio.create_task(queue_processor())
-        asyncio.create_task(scheduler())
-        
-        await bot.delete_webhook(drop_pending_updates=True)
-        
-        await dp.start_polling(
-            bot,
-            allowed_updates=["message", "callback_query", "pre_checkout_query"],
-            skip_updates=True,
-            polling_timeout=30
-        )
-        
-    except Exception as e:
-        logger.error(f"❌ Критическая ошибка: {e}")
-        import traceback
-        traceback.print_exc()
-        sys.exit(1)
-
-# ===== WEBHOOK ДЛЯ FREEKASSA =====
-
 async def freekassa_webhook(request):
     try:
         data = await request.post()
@@ -3231,6 +3120,51 @@ async def freekassa_webhook(request):
     except Exception as e:
         logger.error(f"Ошибка в webhook: {e}")
         return web.Response(text="Error", status=500)
+
+# ===== ЗАПУСК =====
+
+async def main():
+    try:
+        logger.info("=" * 60)
+        logger.info("🤖 БОТ ЗАПУЩЕН")
+        logger.info("📸 /photo — для всех пользователей")
+        logger.info("📝 /post — только для владельца (дублируется в канал)")
+        logger.info("📢 /broadcast — платная рассылка с медиа")
+        logger.info("=" * 60)
+        
+        if FREEKASSA_SHOP_ID and FREEKASSA_SECRET1:
+            port = int(os.getenv("PORT", 8080))
+            app = web.Application()
+            app.router.add_get("/", health_check)
+            app.router.add_get("/success", success_page)
+            app.router.add_get("/fail", fail_page)
+            app.router.add_post('/freekassa/webhook', freekassa_webhook)
+            
+            runner = web.AppRunner(app)
+            await runner.setup()
+            site = web.TCPSite(runner, '0.0.0.0', port)
+            await site.start()
+            logger.info(f"🌐 Webhook сервер запущен на порту {port}")
+        
+        await task_queue.connect()
+        
+        asyncio.create_task(queue_processor())
+        asyncio.create_task(scheduler())
+        
+        await bot.delete_webhook(drop_pending_updates=True)
+        
+        await dp.start_polling(
+            bot,
+            allowed_updates=["message", "callback_query", "pre_checkout_query"],
+            skip_updates=True,
+            polling_timeout=30
+        )
+        
+    except Exception as e:
+        logger.error(f"❌ Критическая ошибка: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
 
 if __name__ == "__main__":
     try:
