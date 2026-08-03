@@ -24,8 +24,6 @@ logger = logging.getLogger(__name__)
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHANNEL_ID = os.getenv("CHANNEL_ID")
 OWNER_ID = int(os.getenv("OWNER_ID", 0))
-WEBHOOK_PATH = os.getenv("WEBHOOK_PATH", "/freekassa/webhook")
-WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 
 # ✅ Ссылка на вашего бота
 BOT_LINK = "https://t.me/asianpicbot"
@@ -153,9 +151,9 @@ def create_freekassa_payment_link(amount: float, order_id: str, description: str
         "currency": FREEKASSA_CURRENCY,
         "o": order_id_str,
         "s": signature,
-        # ✅ Перенаправление в бота после оплаты
-        "us": BOT_LINK,  # https://t.me/asianpicbot
-        "uf": BOT_LINK,  # https://t.me/asianpicbot
+        # ✅ Перенаправление в бота
+        "us": BOT_LINK,
+        "uf": BOT_LINK,
     }
     
     if description:
@@ -372,7 +370,8 @@ async def process_broadcast_payment(callback: CallbackQuery, user_id: int, broad
             f"📝 Текст: {text[:100]}{'...' if len(text) > 100 else ''}\n"
             f"{'📎 С медиафайлом' if has_media else ''}\n\n"
             f"⏳ Сообщение отправлено на модерацию владельцу.\n"
-            f"📬 После одобрения оно будет отправлено всем подписчикам."
+            f"📬 После одобрения оно будет отправлено всем подписчикам.\n"
+            f"🔄 Вы будете перенаправлены в бота."
         )
         await callback.answer("✅ Оплата подтверждена!", show_alert=True)
         
@@ -529,7 +528,6 @@ async def handle_broadcast_moderation(callback: CallbackQuery):
                 except Exception as e:
                     logger.error(f"Ошибка отправки в {chat_id}: {e}")
                     failed_count += 1
-                    # Если пользователь недоступен, удаляем его
                     remove_temp_user(str(chat_id))
             
             # ✅ Отправка в канал
@@ -595,7 +593,6 @@ async def handle_broadcast_moderation(callback: CallbackQuery):
                 callback.message.text + "\n\n❌ ОТКЛОНЕНО",
                 reply_markup=None
             )
-            # Удаляем пользователя при отклонении
             user_id = broadcast_info.get('user_id')
             if user_id:
                 remove_temp_user(str(user_id))
@@ -821,20 +818,27 @@ async def main():
         
         logger.info("=" * 60)
         
-        # Запуск webhook сервера
-        if WEBHOOK_URL:
-            port = int(os.getenv("PORT", 8080))
-            app = web.Application()
-            app.router.add_post(WEBHOOK_PATH, freekassa_webhook)
-            app.router.add_get("/", lambda request: web.Response(text="Bot is running!"))
-            
-            runner = web.AppRunner(app)
-            await runner.setup()
-            site = web.TCPSite(runner, '0.0.0.0', port)
-            await site.start()
-            logger.info(f"🌐 Webhook сервер запущен на порту {port}")
-            logger.info(f"📌 URL: {WEBHOOK_URL}{WEBHOOK_PATH}")
+        # ✅ Берем порт из переменной окружения Railway
+        port = int(os.getenv("PORT", 8080))
         
+        # ✅ Создаем приложение для webhook
+        app = web.Application()
+        
+        # ✅ ОБЯЗАТЕЛЬНО: добавляем health-check для корневого пути
+        async def health_check(request):
+            return web.Response(text="Bot is running! ✅")
+        
+        app.router.add_get("/", health_check)  # <-- ЭТО РЕШАЕТ ПРОБЛЕМУ 502
+        app.router.add_post('/freekassa/webhook', freekassa_webhook)
+        
+        # ✅ Запускаем сервер
+        runner = web.AppRunner(app)
+        await runner.setup()
+        site = web.TCPSite(runner, '0.0.0.0', port)
+        await site.start()
+        logger.info(f"🌐 Webhook сервер запущен на порту {port}")
+        
+        # ✅ Запускаем бота в режиме polling
         await bot.delete_webhook(drop_pending_updates=True)
         
         await dp.start_polling(
