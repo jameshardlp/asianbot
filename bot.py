@@ -9,12 +9,20 @@ import time
 import gc
 import hashlib
 import hmac
+import base64
 from urllib.parse import quote, urlencode
 from datetime import datetime, timedelta
 from typing import Optional, Tuple, List, Dict, Any
 from dataclasses import dataclass
 from enum import Enum
 import logging
+
+# Шифрование
+try:
+    from cryptography.fernet import Fernet
+    CRYPTO_AVAILABLE = True
+except ImportError:
+    CRYPTO_AVAILABLE = False
 
 logging.basicConfig(
     level=logging.INFO,
@@ -39,6 +47,7 @@ from aiogram.exceptions import TelegramConflictError, TelegramAPIError
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 from aiohttp import web
 
+# ===== КОНФИГУРАЦИЯ =====
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 CHANNEL_ID = os.getenv("CHANNEL_ID")
@@ -76,12 +85,71 @@ if not DEEPSEEK_API_KEY:
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
+# ===== ФАЙЛЫ ДЛЯ ХРАНЕНИЯ =====
 USERS_FILE = "users.json"
 HISTORY_FILE = "history.json"
 SCHEDULE_FILE = "schedule.json"
 MEMORY_FILE = "memory.json"
 BROADCAST_PRICE_FILE = "broadcast_price.json"
 
+# ===== ШИФРОВАНИЕ =====
+ENCRYPTION_KEY = os.getenv("ENCRYPTION_KEY", "")
+if not ENCRYPTION_KEY and CRYPTO_AVAILABLE:
+    key = Fernet.generate_key()
+    ENCRYPTION_KEY = base64.urlsafe_b64encode(key).decode()
+    logger.warning(f"⚠️ Сгенерирован новый ключ шифрования: {ENCRYPTION_KEY}")
+    logger.warning("📌 Сохраните этот ключ в ENCRYPTION_KEY в переменных окружения!")
+
+if CRYPTO_AVAILABLE and ENCRYPTION_KEY:
+    try:
+        cipher = Fernet(ENCRYPTION_KEY.encode())
+    except Exception as e:
+        logger.error(f"Ошибка инициализации шифрования: {e}")
+        cipher = None
+else:
+    cipher = None
+
+def encrypt_broadcast_data(text: str, media_type: str = "", media_file_id: str = "") -> str:
+    """Шифрует данные рассылки в строку для передачи в URL"""
+    if not CRYPTO_AVAILABLE or not cipher:
+        return base64.urlsafe_b64encode(text.encode()).decode()
+    
+    try:
+        data = {
+            "text": text,
+            "media_type": media_type,
+            "media_file_id": media_file_id,
+            "timestamp": time.time()
+        }
+        json_str = json.dumps(data, ensure_ascii=False)
+        encrypted = cipher.encrypt(json_str.encode('utf-8'))
+        return base64.urlsafe_b64encode(encrypted).decode()
+    except Exception as e:
+        logger.error(f"Ошибка шифрования: {e}")
+        return base64.urlsafe_b64encode(text.encode()).decode()
+
+def decrypt_broadcast_data(encrypted_data: str) -> dict:
+    """Расшифровывает данные рассылки"""
+    if not CRYPTO_AVAILABLE or not cipher:
+        try:
+            text = base64.urlsafe_b64decode(encrypted_data.encode()).decode()
+            return {"text": text, "media_type": "", "media_file_id": ""}
+        except:
+            return {"text": encrypted_data, "media_type": "", "media_file_id": ""}
+    
+    try:
+        encrypted_bytes = base64.urlsafe_b64decode(encrypted_data.encode())
+        decrypted = cipher.decrypt(encrypted_bytes)
+        return json.loads(decrypted.decode('utf-8'))
+    except Exception as e:
+        logger.error(f"Ошибка расшифровки: {e}")
+        try:
+            text = base64.urlsafe_b64decode(encrypted_data.encode()).decode()
+            return {"text": text, "media_type": "", "media_file_id": ""}
+        except:
+            return {"text": encrypted_data, "media_type": "", "media_file_id": ""}
+
+# ===== РАБОТА С ЦЕНОЙ =====
 def load_broadcast_price() -> int:
     try:
         with open(BROADCAST_PRICE_FILE, "r") as f:
@@ -100,14 +168,18 @@ def save_broadcast_price(price: int):
 
 broadcast_price = load_broadcast_price()
 
+# ===== ХРАНИЛИЩА ДАННЫХ =====
 broadcast_data = {}
 pending_broadcasts = {}
 
+# ===== FREEKASSA =====
 def generate_freekassa_signature(merchant_id: str, order_id: str, amount: str, secret_key: str) -> str:
+    """Генерация подписи для FreeKassa"""
     sign_str = f"{merchant_id}:{amount}:{secret_key}:{order_id}"
     return hashlib.md5(sign_str.encode()).hexdigest()
 
 def verify_freekassa_signature(data: dict, secret_key: str) -> bool:
+    """Проверка подписи от FreeKassa"""
     required_fields = ['MERCHANT_ID', 'AMOUNT', 'MERCHANT_ORDER_ID', 'SIGN']
     for field in required_fields:
         if field not in data:
@@ -121,12 +193,53 @@ def verify_freekassa_signature(data: dict, secret_key: str) -> bool:
     sign_str = f"{merchant_id}:{amount}:{secret_key}:{order_id}"
     expected_sign = hashlib.md5(sign_str.encode()).hexdigest()
     
-    if sign != expected_sign:
-        return False
+    return sign == expected_sign
+
+def create_freekassa_payment_link(amount: float, order_id: str, description: str = "", encrypted_data: str = "") -> str:
+    """Создание правильной ссылки для оплаты через FreeKassa"""
+    if not FREEKASSA_MERCHANT_ID or not FREEKASSA_SECRET_KEY:
+        logger.error("FreeKassa не настроен")
+        return ""
     
-    return True
+    # Шифруем описание, если переданы данные
+    if encrypted_data:
+        description = encrypt_broadcast_data(
+            text=description,
+            media_type="",
+            media_file_id=""
+        )
+    
+    # Ограничиваем длину описания
+    if description and len(description) > 255:
+        description = description[:255]
+    
+    # ✅ ПРАВИЛЬНЫЕ ПАРАМЕТРЫ (как в примере)
+    params = {
+        "m": FREEKASSA_MERCHANT_ID,      # ID мерчанта
+        "oa": str(amount),                # Сумма
+        "o": order_id,                    # ID заказа
+        "i": "",                          # Обязательный пустой параметр
+        "currency": FREEKASSA_CURRENCY,   # Валюта
+        "pay": "PAY",                     # ✅ Обязательный параметр!
+        "s": generate_freekassa_signature(
+            FREEKASSA_MERCHANT_ID, 
+            order_id, 
+            str(amount), 
+            FREEKASSA_SECRET_KEY
+        )
+    }
+    
+    # Добавляем описание, если есть
+    if description:
+        params["description"] = description
+    
+    query_string = urlencode(params)
+    
+    # ✅ ПРАВИЛЬНЫЙ ДОМЕН
+    return f"https://pay.fk.money/?{query_string}"
 
 async def check_freekassa_payment_status(order_id: str) -> Optional[dict]:
+    """Проверка статуса платежа через API FreeKassa"""
     if not FREEKASSA_API_KEY:
         logger.error("FREEKASSA_API_KEY не задан")
         return None
@@ -149,35 +262,13 @@ async def check_freekassa_payment_status(order_id: str) -> Optional[dict]:
         logger.error(f"Ошибка проверки статуса FreeKassa: {e}")
         return None
 
-def create_freekassa_payment_link(amount: float, order_id: str, description: str = "") -> str:
-    if not FREEKASSA_MERCHANT_ID or not FREEKASSA_SECRET_KEY:
-        logger.error("FreeKassa не настроен")
-        return ""
-    
-    params = {
-        "m": FREEKASSA_MERCHANT_ID,
-        "oa": amount,
-        "o": order_id,
-        "s": generate_freekassa_signature(FREEKASSA_MERCHANT_ID, order_id, str(amount), FREEKASSA_SECRET_KEY),
-        "currency": FREEKASSA_CURRENCY,
-        "lang": "ru",
-    }
-    
-    if description:
-        params["description"] = description[:255]
-    
-    query_string = urlencode(params)
-    return f"https://pay.freekassa.ru/?{query_string}"
-
+# ===== РАБОТА С ФАЙЛАМИ =====
 def load_memory():
     try:
         with open(MEMORY_FILE, "r") as f:
             data = json.load(f)
             return data.get("last_posts", [])
-    except (FileNotFoundError, json.JSONDecodeError):
-        return []
-    except Exception as e:
-        logger.error(f"Ошибка загрузки памяти: {e}")
+    except:
         return []
 
 def save_memory(last_posts_list):
@@ -216,115 +307,61 @@ def is_similar(text: str) -> bool:
             return True
     return False
 
-def format_text_with_paragraphs(text: str, style: str) -> str:
-    if not text:
-        return text
-    
-    if style == 'short_joke':
-        return text.strip()
-    
-    if '\n\n' in text:
-        paragraphs = [p.strip() for p in text.split('\n\n') if p.strip()]
-        if len(paragraphs) > 3:
-            if style == 'long':
-                text = '\n\n'.join(paragraphs[:3])
-            else:
-                text = '\n\n'.join(paragraphs[:2])
-        return text
-    
-    sentences = re.split(r'(?<=[.!?])\s+', text)
-    sentences = [s.strip() for s in sentences if s.strip()]
-    
-    if not sentences:
-        return text
-    
-    if style == 'long' and len(sentences) >= 6:
-        third = len(sentences) // 3
-        p1 = ' '.join(sentences[:third])
-        p2 = ' '.join(sentences[third:third*2])
-        p3 = ' '.join(sentences[third*2:])
-        return '\n\n'.join([p1, p2, p3])
-    else:
-        half = len(sentences) // 2
-        if half == 0:
-            return text
-        p1 = ' '.join(sentences[:half])
-        p2 = ' '.join(sentences[half:])
-        return '\n\n'.join([p1, p2])
+def load_users():
+    try:
+        with open(USERS_FILE, "r") as f:
+            return json.load(f)
+    except:
+        return []
 
-def is_coherent_text(text: str) -> bool:
-    if not text or len(text) < 50:
-        return False
-    
-    sentences = re.split(r'[.!?]+\s+', text)
-    sentences = [s.strip() for s in sentences if s.strip()]
-    
-    if len(sentences) < 2:
-        return False
-    
-    coherence_markers = [
-        'поэтому', 'потому что', 'так как', 'из-за', 'благодаря',
-        'затем', 'потом', 'после', 'сначала', 'в итоге',
-        'однако', 'но', 'а', 'хотя', 'несмотря на',
-        'вдруг', 'неожиданно', 'когда', 'пока', 'в то время как',
-        'например', 'кстати', 'между тем',
-        'я понял', 'я подумал', 'я решил', 'я вспомнил',
-        'со мной', 'у меня', 'мне пришлось', 'я оказался',
-        'забавно', 'смешно', 'интересно',
-    ]
-    
-    text_lower = text.lower()
-    has_marker = any(marker in text_lower for marker in coherence_markers)
-    
-    if has_marker:
+def save_users(users_list):
+    try:
+        with open(USERS_FILE, "w") as f:
+            json.dump(users_list, f)
+    except Exception as e:
+        logger.error(f"Ошибка сохранения пользователей: {e}")
+
+users = load_users()
+
+def load_history():
+    try:
+        with open(HISTORY_FILE, "r") as f:
+            return json.load(f)
+    except:
+        return []
+
+def save_history(history_list):
+    try:
+        if len(history_list) > 100:
+            history_list = history_list[-100:]
+        with open(HISTORY_FILE, "w") as f:
+            json.dump(history_list, f)
+    except Exception as e:
+        logger.error(f"Ошибка сохранения истории: {e}")
+
+history = load_history()
+
+def load_schedule():
+    try:
+        with open(SCHEDULE_FILE, "r") as f:
+            data = json.load(f)
+            if not data or not data.get("times"):
+                return {"times": ["10:00", "12:00", "15:00", "18:00", "21:00"]}
+            return data
+    except:
+        return {"times": ["10:00", "12:00", "15:00", "18:00", "21:00"]}
+
+def save_schedule(schedule_data):
+    try:
+        with open(SCHEDULE_FILE, "w") as f:
+            json.dump(schedule_data, f)
         return True
-    
-    intro_words = ['однажды', 'вчера', 'сегодня', 'недавно', 'как-то', 'помню', 'сижу']
-    has_intro = any(word in text_lower for word in intro_words)
-    
-    pronouns = ['я', 'мне', 'меня', 'мой', 'моя', 'моё']
-    has_pronouns = any(pronoun in text_lower for pronoun in pronouns)
-    
-    verbs = ['был', 'была', 'было', 'пришёл', 'пошёл', 'сделал', 'сказал', 'подумал', 'решил', 'сижу', 'стою', 'лежу']
-    has_verbs = any(verb in text_lower for verb in verbs)
-    
-    if has_intro and has_pronouns and has_verbs:
-        return True
-    
-    total_chars = len(text)
-    avg_sentence_len = total_chars / max(len(sentences), 1)
-    
-    if avg_sentence_len < 20 and len(sentences) > 3:
+    except:
         return False
-    
-    return True
 
-def get_fallback_caption() -> str:
-    global used_fallbacks
-    
-    all_fallbacks = [
-        "Сижу в кафе в Бангкоке, пью кофе, смотрю на прохожих. И вдруг понимаю — я уже полгода здесь, а всё ещё удивляюсь, как тайцы умудряются улыбаться даже в пробках. Я бы на их месте уже давно завёлся, а они просто включают музыку и подпевают. Это не про лаки, это про отношение к жизни. И я учусь. Медленно, но учусь.",
-        "Вчера я решил, что пора завязывать с дошираками и начать готовить сам. Купил овощи, рис, приправы. Стою на кухне, смотрю на всё это богатство и понимаю — я даже не знаю, с чего начать. В итоге сварил рис, порезал помидор, посыпал всё приправами. Получилось съедобно. Даже вкусно. Теперь я шеф-повар. Ну, или хотя бы ученик.",
-        "Сегодня утром я чуть не опоздал на встречу. Выхожу из дома, а мой мотоцикл не заводится. Я начинаю паниковать, дёргать ручки, пинать колёса. Проходит 10 минут — я уже весь мокрый, а он даже не чихнул. И тут я вспоминаю, что я в Таиланде, и у меня есть Grab. Заказал такси за 5 минут и уехал. Весь этот цирк был только для того, чтобы я вспомнил, что я не механик. И что мне нужно выпить кофе.",
-    ]
-    
-    available_fallbacks = []
-    for fb in all_fallbacks:
-        key = fb[:50]
-        if key not in [u[:50] for u in used_fallbacks[-10:]]:
-            available_fallbacks.append(fb)
-    
-    if not available_fallbacks:
-        available_fallbacks = all_fallbacks
-        used_fallbacks.clear()
-    
-    chosen = random.choice(available_fallbacks)
-    used_fallbacks.append(chosen[:50])
-    if len(used_fallbacks) > 20:
-        used_fallbacks.pop(0)
-    
-    return chosen
+schedule_data = load_schedule()
 
+# ===== ГЕНЕРАЦИЯ ТЕКСТОВ =====
 style_prompts = {
     'short_joke': """
 Ты — Анатолий, холостой мужчина средних лет, который живёт в Азии. Ты обычный парень с циничным, саркастичным чувством юмора, уставший от финансового кризиса и человеческой глупости. Твои посты должны быть провокационными, заставлять думать и вызывать эмоции.
@@ -457,59 +494,31 @@ def clean_text(text: str) -> str:
     text = clean_punctuation(text)
     return text
 
-def load_schedule():
-    try:
-        with open(SCHEDULE_FILE, "r") as f:
-            data = json.load(f)
-            if not data or not data.get("times"):
-                return {"times": ["10:00", "12:00", "15:00", "18:00", "21:00"]}
-            return data
-    except:
-        return {"times": ["10:00", "12:00", "15:00", "18:00", "21:00"]}
-
-def save_schedule(schedule_data):
-    try:
-        with open(SCHEDULE_FILE, "w") as f:
-            json.dump(schedule_data, f)
-        return True
-    except:
-        return False
-
-schedule_data = load_schedule()
-
-def load_users():
-    try:
-        with open(USERS_FILE, "r") as f:
-            return json.load(f)
-    except:
-        return []
-
-def save_users(users_list):
-    try:
-        with open(USERS_FILE, "w") as f:
-            json.dump(users_list, f)
-    except Exception as e:
-        logger.error(f"Ошибка сохранения пользователей: {e}")
-
-users = load_users()
-
-def load_history():
-    try:
-        with open(HISTORY_FILE, "r") as f:
-            return json.load(f)
-    except:
-        return []
-
-def save_history(history_list):
-    try:
-        if len(history_list) > 100:
-            history_list = history_list[-100:]
-        with open(HISTORY_FILE, "w") as f:
-            json.dump(history_list, f)
-    except Exception as e:
-        logger.error(f"Ошибка сохранения истории: {e}")
-
-history = load_history()
+def get_fallback_caption() -> str:
+    global used_fallbacks
+    
+    all_fallbacks = [
+        "Сижу в кафе в Бангкоке, пью кофе, смотрю на прохожих. И вдруг понимаю — я уже полгода здесь, а всё ещё удивляюсь, как тайцы умудряются улыбаться даже в пробках. Я бы на их месте уже давно завёлся, а они просто включают музыку и подпевают. Это не про лаки, это про отношение к жизни. И я учусь. Медленно, но учусь.",
+        "Вчера я решил, что пора завязывать с дошираками и начать готовить сам. Купил овощи, рис, приправы. Стою на кухне, смотрю на всё это богатство и понимаю — я даже не знаю, с чего начать. В итоге сварил рис, порезал помидор, посыпал всё приправами. Получилось съедобно. Даже вкусно. Теперь я шеф-повар. Ну, или хотя бы ученик.",
+        "Сегодня утром я чуть не опоздал на встречу. Выхожу из дома, а мой мотоцикл не заводится. Я начинаю паниковать, дёргать ручки, пинать колёса. Проходит 10 минут — я уже весь мокрый, а он даже не чихнул. И тут я вспоминаю, что я в Таиланде, и у меня есть Grab. Заказал такси за 5 минут и уехал. Весь этот цирк был только для того, чтобы я вспомнил, что я не механик. И что мне нужно выпить кофе.",
+    ]
+    
+    available_fallbacks = []
+    for fb in all_fallbacks:
+        key = fb[:50]
+        if key not in [u[:50] for u in used_fallbacks[-10:]]:
+            available_fallbacks.append(fb)
+    
+    if not available_fallbacks:
+        available_fallbacks = all_fallbacks
+        used_fallbacks.clear()
+    
+    chosen = random.choice(available_fallbacks)
+    used_fallbacks.append(chosen[:50])
+    if len(used_fallbacks) > 20:
+        used_fallbacks.pop(0)
+    
+    return chosen
 
 async def generate_caption_with_retry(style: str, max_attempts: int = 5) -> Optional[str]:
     if not DEEPSEEK_API_KEY:
@@ -601,6 +610,7 @@ async def generate_caption(style: str) -> str:
     
     return caption
 
+# ===== КОМАНДЫ БОТА =====
 @dp.message(Command("broadcast"))
 async def broadcast_command(message: Message):
     try:
@@ -684,20 +694,18 @@ async def broadcast_command(message: Message):
         current_price = load_broadcast_price()
         order_id = f"broadcast_{user_id}_{int(time.time())}"
         
-        description = "Рассылка сообщения всем подписчикам"
+        # Шифруем данные
+        encrypted_text = encrypt_broadcast_data(
+            text=text,
+            media_type=media_type or "",
+            media_file_id=media_file_id or ""
+        )
+        
+        description = "Рассылка в Telegram"
         if text:
-            description += f"\n\nТекст: {text[:100]}{'...' if len(text) > 100 else ''}"
+            description += " (текст скрыт)"
         if has_media:
-            media_names = {
-                "photo": "📸 Фото",
-                "video": "🎬 Видео",
-                "document": "📄 Документ",
-                "animation": "🎥 GIF",
-                "audio": "🎵 Аудио",
-                "voice": "🎤 Голосовое",
-                "video_note": "🔄 Видео-кружок"
-            }
-            description += f"\n{media_names.get(media_type, '📎 Медиафайл')}"
+            description += " с медиа"
         
         broadcast_data[user_id] = {
             'text': text,
@@ -708,10 +716,17 @@ async def broadcast_command(message: Message):
             'chat_id': chat_id,
             'user_id': user_id,
             'order_id': order_id,
-            'price': current_price
+            'price': current_price,
+            'encrypted_data': encrypted_text
         }
         
-        payment_url = create_freekassa_payment_link(current_price, order_id, description[:255])
+        # ✅ ПРАВИЛЬНАЯ ССЫЛКА
+        payment_url = create_freekassa_payment_link(
+            current_price, 
+            order_id, 
+            description,
+            encrypted_text
+        )
         
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(
@@ -728,12 +743,13 @@ async def broadcast_command(message: Message):
             f"📢 Для отправки рассылки необходимо оплатить {current_price} {FREEKASSA_CURRENCY}.\n\n"
             f"📝 Текст: {text[:100]}{'...' if len(text) > 100 else '' if text else '(без текста)'}\n"
             f"{'📎 С медиафайлом' if has_media else ''}\n\n"
+            f"🔐 Данные зашифрованы и защищены.\n"
             f"💳 Нажмите кнопку ниже для оплаты.\n"
             f"После оплаты нажмите 'Проверить оплату'.",
             reply_markup=keyboard
         )
         
-        logger.info(f"Счёт FreeKassa создан для пользователя {user_id}, заказ {order_id}")
+        logger.info(f"💳 Счёт FreeKassa создан для пользователя {user_id}, заказ {order_id}")
         
     except Exception as e:
         logger.error(f"Ошибка в команде broadcast: {e}")
@@ -794,7 +810,8 @@ async def process_broadcast_payment(callback: CallbackQuery, user_id: int, broad
             'media_file_id': media_file_id,
             'user_id': user_id,
             'timestamp': time.time(),
-            'chat_id': broadcast_info.get('chat_id')
+            'chat_id': broadcast_info.get('chat_id'),
+            'price': broadcast_info.get('price', broadcast_price)
         }
         
         del broadcast_data[user_id]
@@ -813,52 +830,6 @@ async def process_broadcast_payment(callback: CallbackQuery, user_id: int, broad
         logger.error(f"Ошибка обработки оплаты: {e}")
         await callback.message.answer(f"❌ Ошибка: {str(e)[:100]}")
         await callback.answer("❌ Ошибка", show_alert=True)
-
-async def freekassa_webhook(request):
-    try:
-        data = await request.post()
-        data = dict(data)
-        
-        logger.info(f"Получен webhook от FreeKassa: {data}")
-        
-        if not verify_freekassa_signature(data, FREEKASSA_SECRET_KEY):
-            logger.warning("Неверная подпись в webhook от FreeKassa")
-            return web.Response(text="Invalid signature", status=400)
-        
-        merchant_id = data.get('MERCHANT_ID')
-        amount = data.get('AMOUNT')
-        order_id = data.get('MERCHANT_ORDER_ID')
-        status = data.get('STATUS')
-        
-        logger.info(f"Обработка webhook: order_id={order_id}, status={status}, amount={amount}")
-        
-        if status != 'SUCCESS':
-            logger.info(f"Платёж {order_id} не успешен: {status}")
-            return web.Response(text="OK", status=200)
-        
-        found = False
-        for uid, info in broadcast_data.items():
-            if info.get('order_id') == order_id:
-                found = True
-                logger.info(f"Платёж {order_id} подтверждён через webhook для пользователя {uid}")
-                try:
-                    await bot.send_message(
-                        chat_id=uid,
-                        text=f"✅ Оплата подтверждена! Ваш заказ обрабатывается.\n"
-                             f"Скоро он будет отправлен на модерацию."
-                    )
-                except Exception as e:
-                    logger.error(f"Ошибка отправки уведомления пользователю {uid}: {e}")
-                break
-        
-        if not found:
-            logger.warning(f"Заказ {order_id} не найден в broadcast_data")
-        
-        return web.Response(text="OK", status=200)
-        
-    except Exception as e:
-        logger.error(f"Ошибка в webhook FreeKassa: {e}")
-        return web.Response(text="Error", status=500)
 
 async def send_broadcast_for_moderation(broadcast_id: str, broadcast_info: dict):
     if not OWNER_ID:
@@ -1061,6 +1032,7 @@ async def handle_broadcast_moderation(callback: CallbackQuery):
                             save_users(users_list)
                             logger.info(f"Пользователь {chat_id} удалён из-за ошибки")
             
+            # Отправка в канал
             try:
                 channel_id = CHANNEL_ID
                 if not channel_id or not channel_id.strip():
@@ -1119,6 +1091,7 @@ async def handle_broadcast_moderation(callback: CallbackQuery):
             
             del pending_broadcasts[broadcast_id]
             
+            # Отчет владельцу
             try:
                 await bot.send_message(
                     chat_id=OWNER_ID,
@@ -1131,6 +1104,7 @@ async def handle_broadcast_moderation(callback: CallbackQuery):
             except Exception as e:
                 logger.error(f"Ошибка отправки отчета: {e}")
             
+            # Уведомление заказчику
             try:
                 user_id = broadcast_info.get('user_id')
                 if user_id:
@@ -1165,35 +1139,6 @@ async def handle_broadcast_moderation(callback: CallbackQuery):
         logger.error(f"Ошибка в broadcast модерации: {e}")
         await callback.answer("❌ Ошибка", show_alert=True)
 
-async def get_channel_id() -> Optional[str]:
-    if CHANNEL_ID and CHANNEL_ID.strip():
-        return CHANNEL_ID.strip()
-    try:
-        me = await bot.get_me()
-        logger.info(f"Бот: @{me.username}")
-        try:
-            updates = await asyncio.wait_for(
-                bot.get_updates(offset=-1, limit=10),
-                timeout=10
-            )
-            for update in updates:
-                if update.channel_post:
-                    chat_id = update.channel_post.chat.id
-                    try:
-                        chat_member = await bot.get_chat_member(chat_id, bot.id)
-                        if chat_member.status in ["administrator", "creator"]:
-                            logger.info(f"Найден канал: {chat_id}")
-                            return str(chat_id)
-                    except:
-                        pass
-        except asyncio.TimeoutError:
-            logger.warning("Таймаут получения обновлений")
-        except Exception as e:
-            logger.error(f"Ошибка получения обновлений: {e}")
-    except Exception as e:
-        logger.error(f"Ошибка поиска канала: {e}")
-    return None
-
 @dp.message(Command("price"))
 async def set_price(message: Message):
     try:
@@ -1226,20 +1171,98 @@ async def set_price(message: Message):
         logger.error(f"Ошибка в команде price: {e}")
         await message.answer("❌ Произошла ошибка. Попробуйте позже.")
 
+async def get_channel_id() -> Optional[str]:
+    if CHANNEL_ID and CHANNEL_ID.strip():
+        return CHANNEL_ID.strip()
+    try:
+        me = await bot.get_me()
+        logger.info(f"Бот: @{me.username}")
+        try:
+            updates = await asyncio.wait_for(
+                bot.get_updates(offset=-1, limit=10),
+                timeout=10
+            )
+            for update in updates:
+                if update.channel_post:
+                    chat_id = update.channel_post.chat.id
+                    try:
+                        chat_member = await bot.get_chat_member(chat_id, bot.id)
+                        if chat_member.status in ["administrator", "creator"]:
+                            logger.info(f"Найден канал: {chat_id}")
+                            return str(chat_id)
+                    except:
+                        pass
+        except asyncio.TimeoutError:
+            logger.warning("Таймаут получения обновлений")
+        except Exception as e:
+            logger.error(f"Ошибка получения обновлений: {e}")
+    except Exception as e:
+        logger.error(f"Ошибка поиска канала: {e}")
+    return None
+
+# ===== WEBHOOK =====
+async def freekassa_webhook(request):
+    try:
+        data = await request.post()
+        data = dict(data)
+        
+        logger.info(f"📩 Получен webhook от FreeKassa: {data}")
+        
+        if not verify_freekassa_signature(data, FREEKASSA_SECRET_KEY):
+            logger.warning("❌ Неверная подпись в webhook от FreeKassa")
+            return web.Response(text="Invalid signature", status=400)
+        
+        merchant_id = data.get('MERCHANT_ID')
+        amount = data.get('AMOUNT')
+        order_id = data.get('MERCHANT_ORDER_ID')
+        status = data.get('STATUS')
+        
+        logger.info(f"Обработка webhook: order_id={order_id}, status={status}, amount={amount}")
+        
+        if status != 'SUCCESS':
+            logger.info(f"Платёж {order_id} не успешен: {status}")
+            return web.Response(text="OK", status=200)
+        
+        found = False
+        for uid, info in broadcast_data.items():
+            if info.get('order_id') == order_id:
+                found = True
+                logger.info(f"✅ Платёж {order_id} подтверждён через webhook для пользователя {uid}")
+                try:
+                    await bot.send_message(
+                        chat_id=uid,
+                        text=f"✅ Оплата подтверждена! Ваш заказ обрабатывается.\n"
+                             f"Скоро он будет отправлен на модерацию."
+                    )
+                except Exception as e:
+                    logger.error(f"Ошибка отправки уведомления пользователю {uid}: {e}")
+                break
+        
+        if not found:
+            logger.warning(f"⚠️ Заказ {order_id} не найден в broadcast_data")
+        
+        return web.Response(text="OK", status=200)
+        
+    except Exception as e:
+        logger.error(f"Ошибка в webhook FreeKassa: {e}")
+        return web.Response(text="Error", status=500)
+
+# ===== ЗАПУСК =====
 async def main():
     try:
         logger.info("=" * 60)
-        logger.info("Бот запущен с оплатой через FreeKassa")
-        logger.info(f"Подписчиков: {len(load_users())}")
+        logger.info("🤖 Бот запущен с оплатой через FreeKassa")
+        logger.info(f"📊 Подписчиков: {len(load_users())}")
         current_schedule = load_schedule()
         times = ", ".join(current_schedule.get("times", ["10:00", "12:00", "15:00", "18:00", "21:00"]))
-        logger.info(f"Расписание: {times}")
-        logger.info(f"Канал: {CHANNEL_ID if CHANNEL_ID else 'авто-поиск'}")
-        logger.info(f"Владелец: {OWNER_ID if OWNER_ID else '❌ не задан'}")
+        logger.info(f"🕐 Расписание: {times}")
+        logger.info(f"📢 Канал: {CHANNEL_ID if CHANNEL_ID else 'авто-поиск'}")
+        logger.info(f"👤 Владелец: {OWNER_ID if OWNER_ID else '❌ не задан'}")
         current_price = load_broadcast_price()
         logger.info(f"💰 Цена broadcast: {current_price} {FREEKASSA_CURRENCY}")
         logger.info(f"💳 FreeKassa Merchant ID: {FREEKASSA_MERCHANT_ID[:10] if FREEKASSA_MERCHANT_ID else '❌ не задан'}...")
         
+        # Запуск webhook сервера
         if FREEKASSA_WEBHOOK_URL:
             app = web.Application()
             app.router.add_post('/freekassa/webhook', freekassa_webhook)
@@ -1254,7 +1277,7 @@ async def main():
         
         try:
             await bot.delete_webhook(drop_pending_updates=True)
-            logger.info("Webhook удалён")
+            logger.info("🔄 Webhook удалён")
         except Exception as e:
             logger.warning(f"Ошибка webhook: {e}")
         
@@ -1266,7 +1289,7 @@ async def main():
         )
         
     except Exception as e:
-        logger.error(f"Критическая ошибка: {e}")
+        logger.error(f"❌ Критическая ошибка: {e}")
         import traceback
         traceback.print_exc()
         sys.exit(1)
@@ -1275,7 +1298,7 @@ if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        logger.info("Бот остановлен пользователем")
+        logger.info("🛑 Бот остановлен пользователем")
     except Exception as e:
-        logger.error(f"Фатальная ошибка: {e}")
+        logger.error(f"❌ Фатальная ошибка: {e}")
         sys.exit(1)
