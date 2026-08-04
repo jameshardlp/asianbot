@@ -62,6 +62,13 @@ FREEKASSA_API_KEY = os.getenv("FREEKASSA_API_KEY", "")
 FREEKASSA_CURRENCY = os.getenv("FREEKASSA_CURRENCY", "RUB")
 FREEKASSA_WEBHOOK_URL = os.getenv("FREEKASSA_WEBHOOK_URL", "")
 
+# ===== НАСТРОЙКИ AURAPAY =====
+AURAPAY_MERCHANT_ID = os.getenv("AURAPAY_MERCHANT_ID", "6a70ee5492726")
+AURAPAY_API_KEY = os.getenv("AURAPAY_API_KEY", "")
+AURAPAY_API_URL = os.getenv("AURAPAY_API_URL", "https://api.aurapay.tech/v1")
+AURAPAY_WEBHOOK_URL = os.getenv("AURAPAY_WEBHOOK_URL", "")
+AURAPAY_MINIAPP_URL = os.getenv("AURAPAY_MINIAPP_URL", "https://ваш-username.github.io/aura-payment.html")
+
 BROADCAST_PRICE_FILE = "broadcast_price.json"
 
 # Redis настройки
@@ -190,6 +197,212 @@ async def check_freekassa_payment_status(order_id: str) -> Optional[dict]:
     except Exception as e:
         logger.error(f"Ошибка проверки статуса: {e}")
         return None
+
+# ===== ФУНКЦИИ AURAPAY =====
+
+def create_aurapay_payment(amount: float, order_id: str, user_id: int, method: str = "card") -> Optional[dict]:
+    """Создание платежа через AuraPay (по документации docs.aurapay.tech)"""
+    if not AURAPAY_API_KEY:
+        logger.error("❌ AuraPay API ключ не настроен")
+        return None
+    
+    try:
+        url = f"{AURAPAY_API_URL}/payment/create"
+        headers = {
+            "Content-Type": "application/json",
+            "X-API-Key": AURAPAY_API_KEY,
+            "X-Merchant-Id": AURAPAY_MERCHANT_ID
+        }
+        
+        payload = {
+            "merchant_id": AURAPAY_MERCHANT_ID,
+            "order_id": order_id,
+            "amount": str(amount),
+            "currency": "RUB",
+            "description": f"Оплата рассылки #{order_id}",
+            "callback_url": f"{AURAPAY_WEBHOOK_URL}/aurapay/webhook",
+            "success_url": f"{AURAPAY_WEBHOOK_URL}/aurapay-success",
+            "fail_url": f"{AURAPAY_WEBHOOK_URL}/aurapay-fail",
+            "payment_methods": [method] if method else ["card", "sbp", "crypto"],
+            "metadata": {
+                "user_id": str(user_id),
+                "order_type": "broadcast"
+            }
+        }
+        
+        logger.info(f"📤 Запрос к AuraPay: {url}")
+        response = requests.post(url, headers=headers, json=payload, timeout=30)
+        
+        if response.status_code in [200, 201]:
+            result = response.json()
+            logger.info(f"📥 Ответ AuraPay: {result}")
+            
+            if result.get("payment_url"):
+                return {
+                    "payment_url": result["payment_url"],
+                    "payment_id": result.get("payment_id"),
+                    "status": result.get("status", "pending")
+                }
+            elif result.get("redirect_url"):
+                return {
+                    "payment_url": result["redirect_url"],
+                    "payment_id": result.get("payment_id"),
+                    "status": "pending"
+                }
+            else:
+                logger.error(f"Неизвестный формат ответа: {result}")
+                return None
+        else:
+            logger.error(f"❌ Ошибка AuraPay: {response.status_code} - {response.text}")
+            return None
+        
+    except Exception as e:
+        logger.error(f"Исключение при создании платежа AuraPay: {e}")
+        return None
+
+async def check_aurapay_payment_status(order_id: str) -> Optional[dict]:
+    """Проверка статуса платежа через API AuraPay"""
+    if not AURAPAY_API_KEY:
+        return None
+    
+    try:
+        url = f"{AURAPAY_API_URL}/payment/status"
+        headers = {
+            "Content-Type": "application/json",
+            "X-API-Key": AURAPAY_API_KEY,
+            "X-Merchant-Id": AURAPAY_MERCHANT_ID
+        }
+        payload = {"order_id": order_id}
+        
+        logger.info(f"📤 Запрос статуса: {order_id}")
+        response = requests.post(url, headers=headers, json=payload, timeout=10)
+        
+        if response.status_code == 200:
+            result = response.json()
+            logger.info(f"📥 Статус: {result}")
+            return result.get("data") or result
+        else:
+            logger.error(f"Ошибка статуса: {response.status_code}")
+            return None
+        
+    except Exception as e:
+        logger.error(f"Ошибка проверки статуса AuraPay: {e}")
+        return None
+
+async def aurapay_webhook(request):
+    """Обработка вебхуков от AuraPay"""
+    try:
+        data = await request.json()
+        logger.info(f"📩 Получен webhook от AuraPay: {data}")
+        
+        # Проверка подписи (алгоритм может отличаться, сверьте с документацией)
+        # signature = data.get('signature')
+        # if not verify_aurapay_signature(data, AURAPAY_API_KEY):
+        #     logger.warning("❌ Неверная подпись в webhook AuraPay")
+        #     return web.Response(text="Invalid signature", status=400)
+        
+        order_id = data.get('order_id') or data.get('merchant_order_id')
+        status = data.get('status') or data.get('payment_status')
+        payment_id = data.get('payment_id')
+        
+        if not order_id:
+            return web.Response(text="Missing order_id", status=400)
+        
+        if status in ['paid', 'success', 'completed']:
+            base_order_id = order_id.replace('_aurapay', '')
+            found = False
+            
+            for uid, info in broadcast_data.items():
+                if info.get('order_id') == base_order_id:
+                    found = True
+                    logger.info(f"✅ Платёж {order_id} подтверждён для {uid}")
+                    
+                    try:
+                        await bot.send_message(
+                            chat_id=uid,
+                            text="✅ Оплата через AuraPay подтверждена! Ваш заказ обрабатывается."
+                        )
+                    except Exception as e:
+                        logger.error(f"Ошибка уведомления: {e}")
+                    
+                    await process_successful_payment_broadcast(uid, info, "aurapay")
+                    break
+            
+            if not found:
+                logger.warning(f"⚠️ Заказ {base_order_id} не найден в broadcast_data")
+        
+        return web.Response(text="OK", status=200)
+        
+    except Exception as e:
+        logger.error(f"Ошибка в webhook AuraPay: {e}")
+        return web.Response(text="Error", status=500)
+
+async def aurapay_create_payment_api(request):
+    """API для создания платежа через AuraPay (для Mini App)"""
+    try:
+        data = await request.json()
+        order_id = data.get('order_id')
+        user_id = data.get('user_id')
+        amount = data.get('amount', 100)
+        method = data.get('method', 'card')
+        
+        logger.info(f"📱 Запрос создания платежа AuraPay: order_id={order_id}, user_id={user_id}, amount={amount}")
+        
+        if not order_id or not user_id:
+            return web.json_response({"success": False, "error": "Missing parameters"})
+        
+        if int(user_id) not in broadcast_data:
+            return web.json_response({"success": False, "error": "Order not found"})
+        
+        broadcast_info = broadcast_data[int(user_id)]
+        if broadcast_info.get('order_id') != order_id:
+            return web.json_response({"success": False, "error": "Invalid order"})
+        
+        full_order_id = f"{order_id}_aurapay"
+        payment = create_aurapay_payment(float(amount), full_order_id, int(user_id), method)
+        
+        if payment and payment.get('payment_url'):
+            return web.json_response({
+                "success": True,
+                "payment_url": payment['payment_url'],
+                "payment_id": payment.get('payment_id'),
+                "order_id": full_order_id
+            })
+        else:
+            return web.json_response({"success": False, "error": "Payment creation failed"})
+            
+    except Exception as e:
+        logger.error(f"Ошибка создания платежа AuraPay API: {e}")
+        return web.json_response({"success": False, "error": str(e)})
+
+async def aurapay_status_api(request):
+    """API для проверки статуса платежа (для Mini App)"""
+    try:
+        data = await request.json()
+        order_id = data.get('order_id')
+        
+        logger.info(f"📱 Запрос статуса AuraPay: order_id={order_id}")
+        
+        if not order_id:
+            return web.json_response({"success": False, "error": "Missing order_id"})
+        
+        status_data = await check_aurapay_payment_status(f"{order_id}_aurapay")
+        
+        if status_data:
+            return web.json_response({
+                "success": True,
+                "status": status_data.get('status', 'pending'),
+                "data": status_data
+            })
+        else:
+            return web.json_response({
+                "success": True,
+                "status": "pending"
+            })
+            
+    except Exception as e:
+        logger.error(f"Ошибка проверки статуса AuraPay API: {e}")
+        return web.json_response({"success": False, "error": str(e)})
 
 # ===== СТРАНИЦЫ ДЛЯ ПОЛЬЗОВАТЕЛЯ (для FreeKassa) =====
 async def success_page(request):
@@ -2576,9 +2789,11 @@ async def broadcast_command(message: Message):
             'order_id': order_id
         }
         
+        # Обновленная клавиатура с тремя кнопками
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text=f"⭐ Оплатить {stars_price} звёзд", callback_data=f"pay_stars_{order_id}")],
-            [InlineKeyboardButton(text=f"💳 Оплатить {rub_price} RUB", callback_data=f"pay_rub_{order_id}")]
+            [InlineKeyboardButton(text=f"💳 Оплатить {rub_price} RUB", callback_data=f"pay_rub_{order_id}")],
+            [InlineKeyboardButton(text=f"🔗 Оплатить через AuraPay", callback_data=f"pay_aurapay_{order_id}")]
         ])
         
         preview_text = f"📢 **Ваше сообщение для рассылки**\n\n"
@@ -2818,6 +3033,99 @@ async def check_rub_payment(callback: CallbackQuery):
         logger.error(f"Ошибка проверки оплаты: {e}")
         await callback.answer("❌ Ошибка", show_alert=True)
 
+# ===== ОБРАБОТЧИКИ AURAPAY =====
+
+@dp.callback_query(lambda c: c.data and c.data.startswith('pay_aurapay_'))
+async def pay_with_aurapay(callback: CallbackQuery):
+    try:
+        order_id = callback.data.replace('pay_aurapay_', '')
+        user_id = callback.from_user.id
+        
+        if user_id not in broadcast_data:
+            await callback.answer("❌ Данные не найдены", show_alert=True)
+            return
+        
+        broadcast_info = broadcast_data[user_id]
+        if broadcast_info.get('order_id') != order_id:
+            await callback.answer("❌ Неверный заказ", show_alert=True)
+            return
+        
+        rub_price = broadcast_prices.get("rub", 100)
+        
+        # Создаем Mini App URL с параметрами
+        miniapp_url = f"{AURAPAY_MINIAPP_URL}?order_id={order_id}&user_id={user_id}&amount={rub_price}&currency=RUB"
+        
+        # Создаем кнопку с WebApp
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔗 Оплатить через AuraPay", web_app=types.WebAppInfo(url=miniapp_url))],
+            [InlineKeyboardButton(text="✅ Проверить оплату", callback_data=f"check_aurapay_payment_{order_id}")]
+        ])
+        
+        text = broadcast_info.get('text', '')
+        has_media = broadcast_info.get('has_media', False)
+        
+        preview_text = f"🔗 **Оплата через AuraPay**\n\n"
+        if text:
+            preview_text += f"📝 Текст: {text[:100]}{'...' if len(text) > 100 else ''}\n"
+        if has_media:
+            preview_text += f"📎 С медиафайлом\n"
+        preview_text += f"💰 Сумма: {rub_price} RUB\n\n"
+        preview_text += f"🔐 Нажмите кнопку ниже для оплаты через AuraPay.\n"
+        preview_text += f"После оплаты нажмите 'Проверить оплату'."
+        
+        await callback.message.edit_text(
+            preview_text,
+            reply_markup=keyboard,
+            parse_mode="Markdown"
+        )
+        
+        await callback.answer("🔄 Ссылка на AuraPay создана")
+        
+    except Exception as e:
+        logger.error(f"Ошибка оплаты через AuraPay: {e}")
+        await callback.answer("❌ Ошибка", show_alert=True)
+
+@dp.callback_query(lambda c: c.data and c.data.startswith('check_aurapay_payment_'))
+async def check_aurapay_payment(callback: CallbackQuery):
+    try:
+        order_id = callback.data.replace('check_aurapay_payment_', '')
+        user_id = callback.from_user.id
+        
+        if user_id not in broadcast_data:
+            await callback.answer("❌ Данные не найдены", show_alert=True)
+            return
+        
+        broadcast_info = broadcast_data[user_id]
+        if broadcast_info.get('order_id') != order_id:
+            await callback.answer("❌ Неверный заказ", show_alert=True)
+            return
+        
+        await callback.answer("⏳ Проверяю статус платежа...")
+        
+        full_order_id = f"{order_id}_aurapay"
+        payment_status = await check_aurapay_payment_status(full_order_id)
+        
+        if payment_status and payment_status.get('status') in ['paid', 'success', 'completed']:
+            await process_successful_payment_broadcast(user_id, broadcast_info, "aurapay")
+            
+            if user_id in broadcast_data:
+                del broadcast_data[user_id]
+            
+            await callback.message.edit_text(
+                "✅ Оплата через AuraPay подтверждена!\n\n"
+                "Ваше сообщение отправлено на модерацию.\n"
+                "Ожидайте подтверждения от администратора."
+            )
+        else:
+            await callback.message.answer(
+                "❌ Платёж ещё не оплачен.\n"
+                "Оплатите счёт и нажмите 'Проверить оплату' снова."
+            )
+            
+    except Exception as e:
+        logger.error(f"Ошибка проверки оплаты AuraPay: {e}")
+        await callback.answer("❌ Ошибка", show_alert=True)
+
 @dp.pre_checkout_query()
 async def process_pre_checkout_query(pre_checkout_query: PreCheckoutQuery):
     try:
@@ -2872,16 +3180,24 @@ async def process_successful_payment_broadcast(user_id: int, broadcast_info: dic
             'payment_type': payment_type
         }
         
-        del broadcast_data[user_id]
+        if user_id in broadcast_data:
+            del broadcast_data[user_id]
         
         await send_broadcast_for_moderation(broadcast_id, pending_broadcasts[broadcast_id])
+        
+        payment_methods = {
+            'stars': '⭐ Звёзды',
+            'rub': '💳 FreeKassa',
+            'aurapay': '🔗 AuraPay'
+        }
+        payment_method = payment_methods.get(payment_type, '🔗 AuraPay')
         
         await bot.send_message(
             chat_id=user_id,
             text=f"✅ Оплата получена! Сообщение отправлено на модерацию.\n"
                  f"📝 {text[:100]}{'...' if len(text) > 100 else ''}\n"
                  f"{'📎 С медиафайлом' if has_media else ''}\n"
-                 f"💳 Способ оплаты: {'⭐ Звёзды' if payment_type == 'stars' else '💳 Рубли'}\n\n"
+                 f"💳 Способ оплаты: {payment_method}\n\n"
                  f"⏳ Ожидайте подтверждения от администратора."
         )
     except Exception as e:
@@ -2905,7 +3221,12 @@ async def send_broadcast_for_moderation(broadcast_id: str, broadcast_info: dict)
         user_id = broadcast_info.get('user_id')
         payment_type = broadcast_info.get('payment_type', 'stars')
         
-        payment_method = "⭐ Звёзды" if payment_type == "stars" else "💳 Рубли"
+        payment_methods = {
+            'stars': '⭐ Звёзды',
+            'rub': '💳 FreeKassa',
+            'aurapay': '🔗 AuraPay'
+        }
+        payment_method = payment_methods.get(payment_type, '🔗 AuraPay')
         
         preview_text = f"📋 **Новая рассылка на модерацию** #{broadcast_id}\n\n"
         preview_text += f"👤 Заказчик ID: {user_id}\n"
@@ -3436,6 +3757,33 @@ async def main():
             app.router.add_get("/success", success_page)
             app.router.add_get("/fail", fail_page)
             app.router.add_post('/freekassa/webhook', freekassa_webhook)
+            
+            # Добавляем маршруты для AuraPay
+            app.router.add_post('/aurapay/webhook', aurapay_webhook)
+            app.router.add_post('/api/aurapay/create', aurapay_create_payment_api)
+            app.router.add_post('/api/aurapay/status', aurapay_status_api)
+            app.router.add_get('/aurapay-success', success_page)
+            app.router.add_get('/aurapay-fail', fail_page)
+            
+            # Добавляем CORS для работы с Mini App
+            async def cors_middleware(request, handler):
+                response = await handler(request)
+                response.headers['Access-Control-Allow-Origin'] = '*'
+                response.headers['Access-Control-Allow-Methods'] = 'POST, GET, OPTIONS'
+                response.headers['Access-Control-Allow-Headers'] = 'Content-Type, X-Merchant-Id, X-API-Key'
+                return response
+            
+            app.middlewares.append(cors_middleware)
+            
+            async def options_handler(request):
+                return web.Response(status=200, headers={
+                    'Access-Control-Allow-Origin': '*',
+                    'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
+                    'Access-Control-Allow-Headers': 'Content-Type, X-Merchant-Id, X-API-Key'
+                })
+            
+            app.router.add_options('/api/aurapay/create', options_handler)
+            app.router.add_options('/api/aurapay/status', options_handler)
             
             runner = web.AppRunner(app)
             await runner.setup()
