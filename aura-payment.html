@@ -117,6 +117,14 @@
             padding: 8px;
         }
         .back-link:hover { color: #1a73e8; }
+        
+        /* Стили для Telegram Mini App */
+        .telegram-header {
+            display: none;
+        }
+        .container {
+            margin-top: 0;
+        }
     </style>
 </head>
 <body>
@@ -167,7 +175,26 @@
         <a class="back-link" onclick="closeApp()">✕ Закрыть</a>
     </div>
     
+    <!-- Подключаем Telegram Web App SDK -->
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    
     <script>
+        // ===== ИНИЦИАЛИЗАЦИЯ TELEGRAM MINI APP =====
+        // Проверяем, запущено ли приложение в Telegram
+        let tg = null;
+        try {
+            tg = window.Telegram?.WebApp;
+            if (tg) {
+                tg.ready(); // Сообщаем Telegram, что приложение готово
+                tg.expand(); // Растягиваем на весь экран
+                console.log('✅ Telegram Mini App инициализирован');
+            } else {
+                console.log('⚠️ Приложение запущено вне Telegram');
+            }
+        } catch (e) {
+            console.warn('⚠️ Ошибка инициализации Telegram:', e);
+        }
+        
         // ===== КОНФИГУРАЦИЯ =====
         // URL вашего бота на Railway
         const BOT_API_URL = 'https://asianbot-production.up.railway.app';
@@ -182,6 +209,12 @@
         // Устанавливаем сумму
         document.getElementById('amount').textContent = amount;
         document.getElementById('currency').textContent = currency;
+        
+        // Если есть Telegram, пробуем получить данные пользователя
+        if (tg && tg.initDataUnsafe?.user) {
+            const user = tg.initDataUnsafe.user;
+            console.log('👤 Пользователь Telegram:', user.id, user.username || user.first_name);
+        }
         
         let selectedMethod = 'card';
         
@@ -200,6 +233,11 @@
             statusEl.className = 'status ' + type;
             statusEl.textContent = text;
             statusEl.style.display = 'block';
+            
+            // Если есть Telegram, вибрируем при ошибке
+            if (tg && type === 'error') {
+                try { tg.HapticFeedback.impactOccurred('error'); } catch(e) {}
+            }
         }
         
         function hideStatus() {
@@ -211,6 +249,11 @@
             btn.disabled = true;
             btn.textContent = '⏳ Обработка...';
             hideStatus();
+            
+            // Визуальная обратная связь
+            if (tg) {
+                try { tg.HapticFeedback.impactOccurred('light'); } catch(e) {}
+            }
             
             try {
                 // Создаем платеж через API бота
@@ -232,6 +275,9 @@
                     showStatus('❌ ' + data.error, 'error');
                     btn.disabled = false;
                     btn.textContent = '💳 Оплатить';
+                    if (tg) {
+                        try { tg.HapticFeedback.notificationOccurred('error'); } catch(e) {}
+                    }
                     return;
                 }
                 
@@ -259,7 +305,15 @@
                                 showStatus('✅ Оплата прошла успешно!', 'success');
                                 btn.textContent = '✅ Оплачено';
                                 btn.disabled = true;
-                                setTimeout(() => closeApp(), 2000);
+                                if (tg) {
+                                    try { tg.HapticFeedback.notificationOccurred('success'); } catch(e) {}
+                                    // Закрываем через 2 секунды
+                                    setTimeout(() => {
+                                        tg.close();
+                                    }, 2000);
+                                } else {
+                                    setTimeout(() => closeApp(), 2000);
+                                }
                             } else if (attempts >= maxAttempts) {
                                 clearInterval(interval);
                                 showStatus('⏱️ Время ожидания истекло', 'error');
@@ -288,27 +342,40 @@
                 showStatus('❌ Ошибка при создании платежа', 'error');
                 btn.disabled = false;
                 btn.textContent = '💳 Оплатить';
+                if (tg) {
+                    try { tg.HapticFeedback.notificationOccurred('error'); } catch(e) {}
+                }
             }
         }
         
         function closeApp() {
-            if (window.Telegram && window.Telegram.WebApp) {
-                window.Telegram.WebApp.close();
+            if (tg) {
+                tg.close();
             } else {
                 window.close();
             }
-        }
-        
-        // Инициализация Telegram Web App
-        if (window.Telegram && window.Telegram.WebApp) {
-            window.Telegram.WebApp.ready();
-            window.Telegram.WebApp.expand();
         }
         
         // Закрытие по Esc
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') closeApp();
         });
+        
+        // ===== ОБРАБОТКА ИЗМЕНЕНИЯ РАЗМЕРА ОКНА В TELEGRAM =====
+        if (tg) {
+            tg.onEvent('viewportChanged', function() {
+                console.log('📱 Размер окна изменился');
+            });
+            
+            // Показываем кнопку "Назад" в Telegram
+            tg.BackButton.show();
+            tg.BackButton.onClick(function() {
+                closeApp();
+            });
+        }
+        
+        console.log('🚀 Mini App AuraPay загружен');
+        console.log(`📦 Заказ: ${orderId}, Пользователь: ${userId}, Сумма: ${amount} ${currency}`);
     </script>
 </body>
 </html>
