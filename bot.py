@@ -198,26 +198,22 @@ async def check_freekassa_payment_status(order_id: str) -> Optional[dict]:
         logger.error(f"Ошибка проверки статуса: {e}")
         return None
 
-# ===== ФУНКЦИИ AURAPAY (С УЛУЧШЕННОЙ ОБРАБОТКОЙ ОШИБОК) =====
+# ===== ФУНКЦИИ AURAPAY =====
 
 def create_aurapay_payment(amount: float, order_id: str, user_id: int, method: str = "card") -> Optional[dict]:
     """Создание платежа через AuraPay с улучшенной обработкой ошибок"""
-    # Проверка наличия API ключа
     if not AURAPAY_API_KEY:
         logger.error("❌ AuraPay API ключ не настроен. Укажите AURAPAY_API_KEY в переменных окружения.")
         return None
     
-    # Проверка Merchant ID
     if not AURAPAY_MERCHANT_ID:
         logger.error("❌ AuraPay Merchant ID не настроен. Укажите AURAPAY_MERCHANT_ID в переменных окружения.")
         return None
     
-    # Проверка суммы
     if amount <= 0:
         logger.error(f"❌ Неверная сумма платежа: {amount}")
         return None
     
-    # Проверка order_id
     if not order_id:
         logger.error("❌ Не указан order_id")
         return None
@@ -249,13 +245,11 @@ def create_aurapay_payment(amount: float, order_id: str, user_id: int, method: s
         logger.info(f"📤 Запрос к AuraPay: {url}")
         logger.info(f"📤 Данные запроса: {payload}")
         
-        # Отправка запроса с таймаутом
         response = requests.post(url, headers=headers, json=payload, timeout=30)
         
         logger.info(f"📥 Статус ответа: {response.status_code}")
         logger.info(f"📥 Тело ответа: {response.text}")
         
-        # Проверка статуса ответа
         if response.status_code in [200, 201]:
             try:
                 result = response.json()
@@ -263,7 +257,6 @@ def create_aurapay_payment(amount: float, order_id: str, user_id: int, method: s
                 logger.error(f"❌ Не удалось разобрать JSON ответ: {response.text}")
                 return None
             
-            # Проверка наличия payment_url в ответе
             if result.get("payment_url"):
                 logger.info(f"✅ Платёж успешно создан: {order_id}")
                 return {
@@ -282,15 +275,10 @@ def create_aurapay_payment(amount: float, order_id: str, user_id: int, method: s
                 logger.error(f"❌ Неизвестный формат ответа AuraPay: {result}")
                 return None
         else:
-            # Обработка HTTP ошибок
             logger.error(f"❌ Ошибка AuraPay: HTTP {response.status_code}")
             try:
                 error_data = response.json()
                 logger.error(f"❌ Детали ошибки: {error_data}")
-                if error_data.get("error"):
-                    logger.error(f"❌ Сообщение: {error_data['error']}")
-                if error_data.get("message"):
-                    logger.error(f"❌ Сообщение: {error_data['message']}")
             except:
                 logger.error(f"❌ Текст ошибки: {response.text}")
             return None
@@ -365,7 +353,6 @@ async def aurapay_webhook(request):
         data = await request.json()
         logger.info(f"📩 Получен webhook от AuraPay: {data}")
         
-        # Проверка наличия обязательных полей
         order_id = data.get('order_id') or data.get('merchant_order_id')
         status = data.get('status') or data.get('payment_status')
         payment_id = data.get('payment_id') or data.get('transaction_id')
@@ -376,7 +363,6 @@ async def aurapay_webhook(request):
         
         if not status:
             logger.warning(f"⚠️ В webhook отсутствует статус платежа для заказа {order_id}")
-            # Пробуем определить статус по другим полям
             if data.get('paid') == True or data.get('success') == True:
                 status = 'paid'
                 logger.info(f"✅ Статус определен как 'paid' по полям paid/success")
@@ -384,18 +370,15 @@ async def aurapay_webhook(request):
                 logger.error(f"❌ Не удалось определить статус платежа для заказа {order_id}")
                 return web.Response(text="Unknown status", status=400)
         
-        # Обработка успешного платежа
         if status in ['paid', 'success', 'completed']:
             base_order_id = order_id.replace('_aurapay', '')
             found = False
             
-            # Ищем заказ в broadcast_data
             for uid, info in broadcast_data.items():
                 if info.get('order_id') == base_order_id:
                     found = True
                     logger.info(f"✅ Платёж {order_id} подтверждён для пользователя {uid}")
                     
-                    # Отправляем уведомление пользователю
                     try:
                         await bot.send_message(
                             chat_id=uid,
@@ -404,7 +387,6 @@ async def aurapay_webhook(request):
                     except Exception as e:
                         logger.error(f"❌ Ошибка уведомления пользователя {uid}: {e}")
                     
-                    # Обрабатываем успешную оплату
                     try:
                         await process_successful_payment_broadcast(uid, info, "aurapay")
                     except Exception as e:
@@ -431,7 +413,6 @@ async def aurapay_webhook(request):
 async def aurapay_create_payment_api(request):
     """API для создания платежа через AuraPay (для Mini App) с улучшенной обработкой ошибок"""
     try:
-        # Проверка наличия тела запроса
         try:
             data = await request.json()
         except json.JSONDecodeError:
@@ -445,7 +426,6 @@ async def aurapay_create_payment_api(request):
         
         logger.info(f"📱 Запрос создания платежа AuraPay: order_id={order_id}, user_id={user_id}, amount={amount}, method={method}")
         
-        # Проверка обязательных параметров
         if not order_id:
             logger.error("❌ Отсутствует order_id в запросе")
             return web.json_response({"success": False, "error": "Missing order_id"}, status=400)
@@ -454,7 +434,6 @@ async def aurapay_create_payment_api(request):
             logger.error("❌ Отсутствует user_id в запросе")
             return web.json_response({"success": False, "error": "Missing user_id"}, status=400)
         
-        # Проверка существования заказа
         try:
             user_id_int = int(user_id)
         except ValueError:
@@ -470,7 +449,6 @@ async def aurapay_create_payment_api(request):
             logger.warning(f"⚠️ Неверный order_id для пользователя {user_id_int}: ожидался {broadcast_info.get('order_id')}, получен {order_id}")
             return web.json_response({"success": False, "error": "Invalid order"}, status=400)
         
-        # Проверка суммы
         try:
             amount_float = float(amount)
             if amount_float <= 0:
@@ -480,7 +458,6 @@ async def aurapay_create_payment_api(request):
             logger.error(f"❌ Неверный формат суммы: {amount}")
             return web.json_response({"success": False, "error": "Invalid amount format"}, status=400)
         
-        # Создаем платеж
         full_order_id = f"{order_id}_aurapay"
         payment = create_aurapay_payment(amount_float, full_order_id, user_id_int, method)
         
@@ -505,7 +482,6 @@ async def aurapay_create_payment_api(request):
 async def aurapay_status_api(request):
     """API для проверки статуса платежа (для Mini App) с улучшенной обработкой ошибок"""
     try:
-        # Проверка наличия тела запроса
         try:
             data = await request.json()
         except json.JSONDecodeError:
@@ -520,12 +496,10 @@ async def aurapay_status_api(request):
             logger.error("❌ Отсутствует order_id в запросе статуса")
             return web.json_response({"success": False, "error": "Missing order_id"}, status=400)
         
-        # Проверяем статус платежа
         full_order_id = f"{order_id}_aurapay"
         status_data = await check_aurapay_payment_status(full_order_id)
         
         if status_data:
-            # Проверяем, что статус валидный
             payment_status = status_data.get('status', 'pending')
             if payment_status in ['paid', 'success', 'completed']:
                 logger.info(f"✅ Платёж {full_order_id} успешно оплачен")
@@ -540,7 +514,6 @@ async def aurapay_status_api(request):
                 "data": status_data
             })
         else:
-            # Если статус не получен, возвращаем pending
             logger.info(f"ℹ️ Статус платежа {full_order_id} не определен, возвращаем 'pending'")
             return web.json_response({
                 "success": True,
@@ -1010,19 +983,15 @@ def get_search_queries_for_style(style: str) -> List[str]:
     """
     base_queries = SEARCH_QUERIES.copy()
     
-    # Стили, для которых добавляются K-pop запросы
     kpop_styles = ['romantic', 'funny', 'joke', 'envy']
     
     if style in kpop_styles:
-        # Добавляем K-pop запросы с вероятностью 70%
         if random.random() < 0.7:
-            # Выбираем случайные K-pop запросы
             all_kpop = K_POP_QUERIES + K_POP_CROP_TOP_QUERIES
             selected = random.sample(all_kpop, min(5, len(all_kpop)))
             base_queries.extend(selected)
             logger.info(f"🎵 Добавлены K-pop запросы для стиля {style}")
     
-    # Для всех стилей иногда добавляем crop-top запросы (редко, 10%)
     if random.random() < 0.1:
         crop_queries = random.sample(K_POP_CROP_TOP_QUERIES, min(3, len(K_POP_CROP_TOP_QUERIES)))
         base_queries.extend(crop_queries)
@@ -1055,7 +1024,6 @@ async def analyze_photo_for_comment(image_url: str) -> Optional[str]:
         return None
     
     try:
-        # Кодируем картинку
         base64_image = encode_image_to_base64_url(image_url)
         if not base64_image:
             return None
@@ -2102,11 +2070,9 @@ async def get_random_photo(style: str = "medium"):
         history = []
         save_history(history)
     
-    # Получаем запросы в зависимости от стиля
     queries = get_search_queries_for_style(style)
     random.shuffle(queries)
     
-    # Добавляем фитнес-запросы (редко)
     if random.random() < 0.1:
         queries.extend(FITNESS_QUERIES)
         logger.info("Добавлен фитнес-запрос (редко)")
@@ -2160,20 +2126,16 @@ async def create_post_with_photo(chat_id, user_id=0, skip_moderation=False, styl
     Создаёт пост с фото и текстом. ИНОГДА анализирует картинку и добавляет комментарий.
     """
     try:
-        # Ищем фото
         photo_url = await get_random_photo(style)
         if not photo_url:
             logger.error("Не удалось найти фото")
             return False
         
-        # Генерируем текст
         caption = generate_caption()
         if not caption:
             logger.error("Не удалось сгенерировать текст")
             return False
         
-        # ===== АНАЛИЗ КАРТИНКИ (ТОЛЬКО ИНОГДА) =====
-        # Анализируем только для определённых стилей и с вероятностью 15%
         analyze_styles = ['romantic', 'funny', 'joke', 'envy', 'everyday']
         should_analyze = (
             style in analyze_styles and 
@@ -2186,17 +2148,14 @@ async def create_post_with_photo(chat_id, user_id=0, skip_moderation=False, styl
             logger.info(f"🖼️ Анализирую картинку для стиля {style} (15% вероятность)")
             photo_comment = await analyze_photo_for_comment(photo_url)
             if photo_comment:
-                # Добавляем комментарий в конец поста
                 caption = caption.rstrip() + "\n\n" + photo_comment
                 logger.info(f"✅ Добавлен комментарий к фото: {photo_comment}")
             else:
                 logger.info("⚠️ Не удалось получить комментарий к фото")
         
-        # Сохраняем в историю
         history.append(photo_url)
         save_history(history)
         
-        # Создаём задачу
         post_id = f"post_{int(time.time())}_{hashlib.md5(caption.encode()).hexdigest()[:8]}"
         post_data = {
             'id': post_id,
@@ -2613,7 +2572,6 @@ async def send_to_all_users():
             return
         logger.info(f"Добавление постов в очередь для {len(users_list)} пользователей...")
         
-        # Определяем случайный стиль для автоматической рассылки
         styles = ["medium", "everyday", "funny", "romantic", "joke"]
         style = random.choice(styles)
         logger.info(f"Автоматический пост будет в стиле: {style}")
@@ -2636,7 +2594,6 @@ async def send_to_all_users():
             if validated:
                 caption = validated
         
-        # Иногда добавляем комментарий к фото для автоматической рассылки
         if random.random() < 0.1 and DEEPSEEK_API_KEY:
             photo_comment = await analyze_photo_for_comment(photo_url)
             if photo_comment:
@@ -2740,14 +2697,12 @@ async def photo_command(message: Message):
             await message.answer("⚠️ Бот не активирован. Напишите /start")
             return
         
-        # Определяем стиль для поиска (по умолчанию medium)
         args = message.text.replace("/photo", "").strip().lower()
         styles = ["short_joke", "medium", "long", "everyday", "funny", "romantic", "envy", "joke", "russia"]
         style = "medium"
         if args in styles:
             style = args
         
-        # Используем новую функцию с анализом картинки
         await create_post_with_photo(str(chat_id), user_id, skip_moderation=True, style=style)
         
         await message.answer("✅ Пост с фото отправлен в очередь!\n📸 Ищем и генерируем...")
@@ -2772,22 +2727,18 @@ async def post_command(message: Message):
             await message.answer("ℹ️ Используйте команду в личных сообщениях.")
             return
         
-        # Определяем стиль для поиска
         args = message.text.replace("/post", "").strip().lower()
         styles = ["short_joke", "medium", "long", "everyday", "funny", "romantic", "envy", "joke", "russia"]
         style = "medium"
         if args in styles:
             style = args
         
-        # Создаём пост
         result = await create_post_with_photo(str(chat_id), user_id, skip_moderation=True, style=style)
         
         if result:
             await message.answer("✅ Пост сгенерирован и отправлен в очередь!\n📸 Будет отправлен в ЛС и канал.")
             
-            # Дублируем в канал
             if CHANNEL_ID and CHANNEL_ID.strip():
-                # Создаём ещё один пост для канала
                 await create_post_with_photo(str(CHANNEL_ID), user_id, skip_moderation=True, style=style)
                 await message.answer("✅ Пост также добавлен в очередь для канала!")
         else:
@@ -2938,7 +2889,6 @@ async def broadcast_command(message: Message):
             'order_id': order_id
         }
         
-        # Обновленная клавиатура с тремя кнопками
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text=f"⭐ Оплатить {stars_price} звёзд", callback_data=f"pay_stars_{order_id}")],
             [InlineKeyboardButton(text=f"💳 Оплатить {rub_price} RUB", callback_data=f"pay_rub_{order_id}")],
@@ -3201,10 +3151,8 @@ async def pay_with_aurapay(callback: CallbackQuery):
         
         rub_price = broadcast_prices.get("rub", 100)
         
-        # Создаем Mini App URL с параметрами
         miniapp_url = f"{AURAPAY_MINIAPP_URL}?order_id={order_id}&user_id={user_id}&amount={rub_price}&currency=RUB"
         
-        # Создаем кнопку с WebApp
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🔗 Оплатить через AuraPay", web_app=types.WebAppInfo(url=miniapp_url))],
             [InlineKeyboardButton(text="✅ Проверить оплату", callback_data=f"check_aurapay_payment_{order_id}")]
@@ -3902,38 +3850,49 @@ async def main():
         if FREEKASSA_SHOP_ID and FREEKASSA_SECRET1:
             port = int(os.getenv("PORT", 8080))
             app = web.Application()
+            
+            # ===== МАРШРУТЫ =====
             app.router.add_get("/", health_check)
             app.router.add_get("/success", success_page)
             app.router.add_get("/fail", fail_page)
             app.router.add_post('/freekassa/webhook', freekassa_webhook)
             
-            # Добавляем маршруты для AuraPay
+            # Маршруты для AuraPay
             app.router.add_post('/aurapay/webhook', aurapay_webhook)
             app.router.add_post('/api/aurapay/create', aurapay_create_payment_api)
             app.router.add_post('/api/aurapay/status', aurapay_status_api)
             app.router.add_get('/aurapay-success', success_page)
             app.router.add_get('/aurapay-fail', fail_page)
             
-            # Добавляем CORS для работы с Mini App
+            # ===== ПРАВИЛЬНЫЙ CORS MIDDLEWARE =====
+            @web.middleware
             async def cors_middleware(request, handler):
+                """CORS middleware для работы с Mini App"""
+                # Обрабатываем OPTIONS запросы
+                if request.method == 'OPTIONS':
+                    return web.Response(
+                        status=200,
+                        headers={
+                            'Access-Control-Allow-Origin': '*',
+                            'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
+                            'Access-Control-Allow-Headers': 'Content-Type, X-Merchant-Id, X-API-Key'
+                        }
+                    )
+                
+                # Обрабатываем обычные запросы
                 response = await handler(request)
+                
+                # Добавляем CORS заголовки к ответу
                 response.headers['Access-Control-Allow-Origin'] = '*'
                 response.headers['Access-Control-Allow-Methods'] = 'POST, GET, OPTIONS'
                 response.headers['Access-Control-Allow-Headers'] = 'Content-Type, X-Merchant-Id, X-API-Key'
+                
                 return response
             
+            # Подключаем middleware
             app.middlewares.append(cors_middleware)
             
-            async def options_handler(request):
-                return web.Response(status=200, headers={
-                    'Access-Control-Allow-Origin': '*',
-                    'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
-                    'Access-Control-Allow-Headers': 'Content-Type, X-Merchant-Id, X-API-Key'
-                })
-            
-            app.router.add_options('/api/aurapay/create', options_handler)
-            app.router.add_options('/api/aurapay/status', options_handler)
-            
+            # Запускаем сервер
             runner = web.AppRunner(app)
             await runner.setup()
             site = web.TCPSite(runner, '0.0.0.0', port)
