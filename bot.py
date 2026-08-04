@@ -668,6 +668,100 @@ def get_search_queries_for_style(style: str) -> List[str]:
     
     return base_queries
 
+# ===== ФУНКЦИЯ АНАЛИЗА КАРТИНКИ (ЭКОНОМНАЯ) =====
+
+def encode_image_to_base64_url(image_url: str) -> str:
+    """Загружает картинку по URL и кодирует в base64"""
+    try:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }
+        response = requests.get(image_url, headers=headers, timeout=10)
+        if response.status_code == 200:
+            return base64.b64encode(response.content).decode('utf-8')
+        return None
+    except Exception as e:
+        logger.error(f"Ошибка загрузки картинки: {e}")
+        return None
+
+async def analyze_photo_for_comment(image_url: str) -> Optional[str]:
+    """
+    Анализирует фото и возвращает комментарий о девушке на фото.
+    Используется только в 15% случаев для экономии токенов.
+    """
+    if not DEEPSEEK_API_KEY:
+        return None
+    
+    try:
+        # Кодируем картинку
+        base64_image = encode_image_to_base64_url(image_url)
+        if not base64_image:
+            return None
+        
+        headers = {
+            "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+            "Content-Type": "application/json"
+        }
+        
+        data = {
+            "model": "deepseek-vl-chat",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": """Ты — Анатолий, холостой мужик за 40, который вынужденно свайпнул в Азию.
+
+Опиши девушку на этом фото как обычный мужик в баре. Сделай это с юмором, самоиронией и лёгкой завистью.
+
+Важно:
+- Не пиши длинно, 1-2 предложения максимум
+- Не упоминай точный возраст (только "молодая", "юная")
+- Пиши в стиле: "посмотрите какая милая девушка, наверняка богатая, ухаживает за собой"
+- Не используй оскорбления, только лёгкая ирония
+- Добавь комментарий про то, что она выглядит ухоженно/дорого/стильно
+
+Примеры:
+"посмотрите какая милая девушка, наверняка богатая, ухаживает за собой"
+"красотка, сразу видно — не из дешёвых, ухоженная, улыбка на миллион"
+"вот это стиль, я бы тоже так оделся, но мне уже поздно"
+
+Ответь ТОЛЬКО комментарием, без рассуждений."""
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{base64_image}"
+                            }
+                        }
+                    ]
+                }
+            ],
+            "max_tokens": 150,
+            "temperature": 1.1
+        }
+        
+        response = requests.post(
+            "https://api.deepseek.com/v1/chat/completions",
+            headers=headers,
+            json=data,
+            timeout=30
+        )
+        
+        if response.status_code == 200:
+            result = response.json()
+            comment = result["choices"][0]["message"]["content"].strip()
+            logger.info(f"🖼️ Комментарий к фото: {comment}")
+            return comment
+        else:
+            logger.error(f"Ошибка анализа фото: {response.status_code}")
+            return None
+            
+    except Exception as e:
+        logger.error(f"Ошибка анализа фото: {e}")
+        return None
+
 # ===== СТИЛИ ДЛЯ ГЕНЕРАЦИИ =====
 style_prompts = {
     'short_joke': """
@@ -683,6 +777,8 @@ style_prompts = {
 - Как будто ты выпил пива и решил высказаться
 - Прямо, грубо, но смешно
 - Напоминай, что ты оказался в Азии не от хорошей жизни
+- НЕ называй точный возраст — только "в мои годы", "старый пердун", "скуф" (редко)
+- Если хочешь упомянуть возраст — используй "средних лет" или самоиронично "старый пердун"
 
 Напиши короткий колкий пост.
 
@@ -708,6 +804,7 @@ style_prompts = {
 - РЕДКО вспоминай события из детства или из жизни в России (1-2 раза в неделю максимум)
 - ЕЩЁ РЕЖЕ сравнивай это со своей вынужденной поездкой в Азию
 - Можно спросить у подписчиков: "как у вас там?"
+- НЕ называй точный возраст — используй "в мои годы", "средних лет", изредка "скуф" или "старый пердун"
 
 Твой стиль:
 - Рассказываешь реальную историю
@@ -742,6 +839,7 @@ style_prompts = {
 - РЕДКО вспоминай события из детства или из жизни в России (1-2 раза в неделю максимум)
 - ЕЩЁ РЕЖЕ сравнивай это со своей вынужденной поездкой в Азию
 - Можно задать вопрос подписчикам
+- НЕ называй точный возраст — только "в мои годы", "старый пердун", "скуф" (редко)
 
 Твой стиль:
 - Детальный рассказ
@@ -776,6 +874,7 @@ style_prompts = {
 - РЕДКО вспоминай события из детства или из жизни в России (1-2 раза в неделю максимум)
 - ЕЩЁ РЕЖЕ сравнивай это со своей вынужденной поездкой в Азию
 - Чаще спрашивай у подписчиков в духе: "как там у вас, всё ещё дошираки доедаете?"
+- НЕ называй точный возраст — только "в мои годы", "старый пердун", "скуф" (редко)
 
 Твой стиль:
 - Рассказываешь реальные истории
@@ -809,6 +908,7 @@ style_prompts = {
 - Ты описываешь как путешествия, так и семейную жизнь с азиатками
 - У тебя НЕТ жены, но когда-то она была (НЕ упоминай когда именно и кто это был)
 - РЕДКО вспоминай события из детства или из жизни в России
+- НЕ называй точный возраст — только "в мои годы", "старый пердун", "скуф" (редко)
 
 Твой стиль:
 - Рассказываешь смешные истории
@@ -842,6 +942,7 @@ style_prompts = {
 - Ты описываешь как путешествия, так и семейную жизнь с азиатками
 - У тебя НЕТ жены, но когда-то она была (НЕ упоминай когда именно и кто это был)
 - РЕДКО вспоминай события из детства или из жизни в России
+- НЕ называй точный возраст — только "в мои годы", "старый пердун", "скуф" (редко)
 
 Твой стиль:
 - Рассказываешь о своих чувствах с самоиронией
@@ -876,6 +977,7 @@ style_prompts = {
 - У тебя НЕТ жены, но когда-то она была (НЕ упоминай когда именно и кто это был)
 - ИНОГДА давай советы о жизни в Азии (как секретный разговор)
 - РЕДКО вспоминай события из детства или из жизни в России
+- НЕ называй точный возраст — только "в мои годы", "старый пердун", "скуф" (редко)
 
 Твой стиль:
 - Рассказываешь о том, чему завидуешь, с юмором
@@ -908,6 +1010,7 @@ style_prompts = {
 - Ты описываешь как путешествия, так и семейную жизнь с азиатками
 - У тебя НЕТ жены, но когда-то она была (НЕ упоминай когда именно и кто это был)
 - Можно спросить у подписчиков: "как у вас там?"
+- НЕ называй точный возраст — только "в мои годы", "старый пердун", "скуф" (редко)
 
 Твой стиль:
 - Острые шутки без оскорблений
@@ -939,6 +1042,7 @@ style_prompts = {
 - Сравниваешь свою прошлую жизнь в России с теперешней в Азии
 - Но НЕ ноешь — шутишь над этим
 - Только 1-2 раза в неделю такие посты
+- НЕ называй точный возраст — только "в мои годы", "старый пердун", "скуф" (редко)
 
 Твой стиль:
 - Вспоминаешь прошлое с иронией
@@ -1272,7 +1376,7 @@ def get_fallback_caption() -> str:
     ]
     return random.choice(fallbacks)
 
-# ===== ОБНОВЛЁННАЯ ГЕНЕРАЦИЯ ПОСТОВ (ТЕМПЕРАТУРА 1.1) =====
+# ===== ОБНОВЛЁННАЯ ГЕНЕРАЦИЯ ПОСТОВ =====
 
 def generate_caption() -> str:
     logger.info("Генерирую уникальный пост...")
@@ -1317,6 +1421,7 @@ def generate_caption() -> str:
 Если в промпте про Азию — пиши про Азию.
 Если про Россию — пиши про Россию.
 НЕ МЕШАЙ ТЕМЫ В ОДНОМ ПОСТЕ.
+НЕ НАЗЫВАЙ ТОЧНЫЙ ВОЗРАСТ — только "в мои годы", "средних лет", изредка "скуф" или "старый пердун".
 
 Твой ответ (ТОЛЬКО ПОСТ, БЕЗ РАССУЖДЕНИЙ):"""
     
@@ -1380,6 +1485,7 @@ def generate_caption() -> str:
 Если в промпте про Азию — пиши про Азию.
 Если в промпте про Россию — пиши про Россию.
 Никаких отклонений от темы!
+НЕ НАЗЫВАЙ ТОЧНЫЙ ВОЗРАСТ — используй "в мои годы", "средних лет", изредка "скуф" или "старый пердун".
 
 Твой стиль:
 - Колкий, дерзкий, с чёрным юмором
@@ -1684,6 +1790,79 @@ async def get_random_photo(style: str = "medium"):
     
     logger.error("Не удалось найти подходящее фото!")
     return None
+
+# ===== ОБНОВЛЁННАЯ ФУНКЦИЯ СОЗДАНИЯ ПОСТА (С АНАЛИЗОМ КАРТИНКИ) =====
+
+async def create_post_with_photo(chat_id, user_id=0, skip_moderation=False, style="medium"):
+    """
+    Создаёт пост с фото и текстом. ИНОГДА анализирует картинку и добавляет комментарий.
+    """
+    try:
+        # Ищем фото
+        photo_url = await get_random_photo(style)
+        if not photo_url:
+            logger.error("Не удалось найти фото")
+            return False
+        
+        # Генерируем текст
+        caption = generate_caption()
+        if not caption:
+            logger.error("Не удалось сгенерировать текст")
+            return False
+        
+        # ===== АНАЛИЗ КАРТИНКИ (ТОЛЬКО ИНОГДА) =====
+        # Анализируем только для определённых стилей и с вероятностью 15%
+        analyze_styles = ['romantic', 'funny', 'joke', 'envy', 'everyday']
+        should_analyze = (
+            style in analyze_styles and 
+            random.random() < 0.15 and 
+            DEEPSEEK_API_KEY
+        )
+        
+        photo_comment = None
+        if should_analyze:
+            logger.info(f"🖼️ Анализирую картинку для стиля {style} (15% вероятность)")
+            photo_comment = await analyze_photo_for_comment(photo_url)
+            if photo_comment:
+                # Добавляем комментарий в конец поста
+                caption = caption.rstrip() + "\n\n" + photo_comment
+                logger.info(f"✅ Добавлен комментарий к фото: {photo_comment}")
+            else:
+                logger.info("⚠️ Не удалось получить комментарий к фото")
+        
+        # Сохраняем в историю
+        history.append(photo_url)
+        save_history(history)
+        
+        # Создаём задачу
+        post_id = f"post_{int(time.time())}_{hashlib.md5(caption.encode()).hexdigest()[:8]}"
+        post_data = {
+            'id': post_id,
+            'chat_id': chat_id,
+            'photo_url': photo_url,
+            'caption': caption,
+            'user_id': user_id,
+            'timestamp': time.time(),
+            'needs_moderation': not skip_moderation,
+            'style': style,
+            'has_photo_comment': photo_comment is not None
+        }
+        
+        if skip_moderation:
+            await task_queue.push(QUEUE_NAME, post_data)
+            logger.info(f"Пост {post_id} добавлен в очередь отправки")
+            return True
+        else:
+            await task_queue.push(MODERATION_QUEUE, {
+                'id': post_id,
+                'post_data': post_data
+            })
+            logger.info(f"Пост {post_id} добавлен в очередь модерации")
+            return True
+            
+    except Exception as e:
+        logger.error(f"Ошибка создания поста: {e}")
+        return False
 
 # ===== ОЧЕРЕДЬ ЗАДАЧ =====
 
@@ -2061,38 +2240,8 @@ async def notify_owner_for_moderation(post_id: str, post: PostContent):
         logger.error(f"Ошибка уведомления владельца: {e}")
 
 async def generate_and_queue_post(chat_id: str, user_id: int = 0, skip_moderation: bool = False, style: str = "medium"):
-    try:
-        photo_url = await get_random_photo(style)
-        if not photo_url:
-            logger.error("Не удалось найти фото")
-            return False
-        caption = generate_caption()
-        if not caption:
-            logger.error("Не удалось сгенерировать текст")
-            return False
-        post_id = f"post_{int(time.time())}_{hashlib.md5(caption.encode()).hexdigest()[:8]}"
-        post_data = {
-            'id': post_id,
-            'chat_id': chat_id,
-            'photo_url': photo_url,
-            'caption': caption,
-            'user_id': user_id,
-            'timestamp': time.time(),
-            'needs_moderation': not skip_moderation
-        }
-        if skip_moderation:
-            await task_queue.push(QUEUE_NAME, post_data)
-            logger.info(f"Пост {post_id} добавлен в очередь отправки")
-            return True
-        await task_queue.push(MODERATION_QUEUE, {
-            'id': post_id,
-            'post_data': post_data
-        })
-        logger.info(f"Пост {post_id} добавлен в очередь модерации")
-        return True
-    except Exception as e:
-        logger.error(f"Ошибка генерации поста: {e}")
-        return False
+    """Обёртка для обратной совместимости"""
+    return await create_post_with_photo(chat_id, user_id, skip_moderation, style)
 
 async def send_to_all_users():
     try:
@@ -2124,6 +2273,13 @@ async def send_to_all_users():
             validated, error = validate_caption(caption, min_length=500, max_length=1023)
             if validated:
                 caption = validated
+        
+        # Иногда добавляем комментарий к фото для автоматической рассылки
+        if random.random() < 0.1 and DEEPSEEK_API_KEY:
+            photo_comment = await analyze_photo_for_comment(photo_url)
+            if photo_comment:
+                caption = caption.rstrip() + "\n\n" + photo_comment
+                logger.info(f"✅ Добавлен комментарий к фото в автоматической рассылке")
         
         base_post_id = f"post_{int(time.time())}"
         for chat_id in users_list:
@@ -2229,25 +2385,12 @@ async def photo_command(message: Message):
         if args in styles:
             style = args
         
-        # Ищем фото с учётом стиля
-        photo_url = await get_random_photo(style)
+        # Используем новую функцию с анализом картинки
+        await create_post_with_photo(str(chat_id), user_id, skip_moderation=True, style=style)
         
-        if not photo_url:
-            await message.answer("❌ Не удалось найти подходящее фото. Попробуйте позже.")
-            return
+        await message.answer("✅ Пост с фото отправлен в очередь!\n📸 Ищем и генерируем...")
         
-        caption = generate_caption()
-        
-        history.append(photo_url)
-        save_history(history)
-        
-        await message.answer_photo(
-            photo=photo_url,
-            caption=caption,
-            parse_mode="Markdown"
-        )
-        
-        logger.info(f"📸 Команда /photo от {user_id}, стиль: {style}, фото отправлено")
+        logger.info(f"📸 Команда /photo от {user_id}, стиль: {style}")
         
     except Exception as e:
         logger.error(f"Ошибка в команде photo: {e}", exc_info=True)
@@ -2274,40 +2417,21 @@ async def post_command(message: Message):
         if args in styles:
             style = args
         
-        # Ищем фото с учётом стиля
-        photo_url = await get_random_photo(style)
+        # Создаём пост
+        result = await create_post_with_photo(str(chat_id), user_id, skip_moderation=True, style=style)
         
-        if not photo_url:
-            await message.answer("❌ Не удалось найти подходящее фото. Попробуйте позже.")
-            return
-        
-        caption = generate_caption()
-        
-        history.append(photo_url)
-        save_history(history)
-        
-        await message.answer_photo(
-            photo=photo_url,
-            caption=f"📸 **Пост для канала**\n\n{caption}\n\n━━━━━━━━━━━━━━━━━\n🤖 Сгенерировано AI",
-            parse_mode="Markdown"
-        )
-        
-        if CHANNEL_ID and CHANNEL_ID.strip():
-            try:
-                await bot.send_photo(
-                    chat_id=CHANNEL_ID,
-                    photo=photo_url,
-                    caption=caption
-                )
-                logger.info(f"📝 Пост отправлен в канал {CHANNEL_ID}")
-                await message.answer("✅ Пост также отправлен в канал!")
-            except Exception as e:
-                logger.error(f"Ошибка отправки в канал: {e}")
-                await message.answer("❌ Не удалось отправить пост в канал.")
+        if result:
+            await message.answer("✅ Пост сгенерирован и отправлен в очередь!\n📸 Будет отправлен в ЛС и канал.")
+            
+            # Дублируем в канал
+            if CHANNEL_ID and CHANNEL_ID.strip():
+                # Создаём ещё один пост для канала
+                await create_post_with_photo(str(CHANNEL_ID), user_id, skip_moderation=True, style=style)
+                await message.answer("✅ Пост также добавлен в очередь для канала!")
         else:
-            await message.answer("⚠️ Канал не настроен. Пост отправлен только в ЛС.")
+            await message.answer("❌ Не удалось создать пост. Попробуйте позже.")
         
-        logger.info(f"📝 Команда /post от владельца, стиль: {style}, фото отправлено в ЛС и канал")
+        logger.info(f"📝 Команда /post от владельца, стиль: {style}")
         
     except Exception as e:
         logger.error(f"Ошибка в команде post: {e}", exc_info=True)
@@ -3077,7 +3201,7 @@ async def start(msg: Message):
             users.append(chat_id)
             save_users(users)
             logger.info(f"Добавлен пользователь: {chat_id}")
-        await generate_and_queue_post(str(chat_id), user_id, skip_moderation=True)
+        await create_post_with_photo(str(chat_id), user_id, skip_moderation=True)
         channel_status = f"\n📢 Канал: {'✅ подключён' if CHANNEL_ID and CHANNEL_ID.strip() else '🔄 авто-поиск'}"
         current_schedule = load_schedule()
         times = ", ".join(current_schedule.get("times", ["12:00", "21:00"]))
@@ -3302,6 +3426,7 @@ async def main():
         logger.info("📸 /photo — для всех пользователей")
         logger.info("📝 /post — только для владельца (дублируется в канал)")
         logger.info("📢 /broadcast — платная рассылка с медиа")
+        logger.info("🖼️ Анализ картинок — 15% вероятности для романтичных/смешных постов")
         logger.info("=" * 60)
         
         if FREEKASSA_SHOP_ID and FREEKASSA_SECRET1:
