@@ -332,6 +332,7 @@ MEN_EXCLUDE_WORDS = [
 ]
 
 # ===== ПОИСКОВЫЕ ЗАПРОСЫ =====
+
 SEARCH_QUERIES = [
     "japanese girl friend photo casual",
     "japanese woman everyday life candid",
@@ -416,6 +417,101 @@ SEARCH_QUERIES = [
     "asian woman happy moment",
     "asian girl friend group photo",
     "asian woman friend gathering",
+]
+
+# ===== K-POP ЗАПРОСЫ =====
+
+K_POP_QUERIES = [
+    "blackpink jennie casual photo",
+    "blackpink lisa everyday life",
+    "blackpink rosé street style",
+    "blackpink jisoo natural photo",
+    "twice nayeon casual outfit",
+    "twice sana everyday photo",
+    "twice momo street fashion",
+    "twice dahyun natural shot",
+    "twice tzuyu casual style",
+    "red velvet irene everyday life",
+    "red velvet seulgi street photo",
+    "red velvet wendy casual look",
+    "aespa karina natural photo",
+    "aespa winter street style",
+    "aespa ningning everyday outfit",
+    "aespa giselle casual fashion",
+    "itzy yeji street style",
+    "itzy ryujin casual photo",
+    "itzy chaeryeong everyday life",
+    "itzy yuna natural shot",
+    "itzy lia casual outfit",
+    "newjeans minji everyday photo",
+    "newjeans hanni street style",
+    "newjeans danielle natural shot",
+    "newjeans haerin casual look",
+    "newjeans hyein everyday life",
+    "le sserafim chaewon street photo",
+    "le sserafim sakura casual style",
+    "le sserafim yunjin natural photo",
+    "le sserafim kazuha everyday outfit",
+    "le sserafim eunchae casual shot",
+    "ive yujin street style",
+    "ive wonyoung everyday photo",
+    "ive liz natural casual",
+    "ive rei street fashion",
+    "ive leeseo everyday life",
+    "gidle soyeon casual style",
+    "gidle miyeon street photo",
+    "gidle minnie natural look",
+    "gidle yuqi everyday outfit",
+    "gidle shuhua casual shot",
+    "kpop idol street style",
+    "kpop girl group casual photo",
+    "kpop idol everyday life",
+    "kpop girl natural street fashion",
+    "kpop idol coffee shop casual",
+    "kpop idol shopping street style",
+    "kpop girl group airport fashion",
+    "kpop idol casual outfit daily",
+    "kpop girl natural photo outdoors",
+]
+
+# ===== K-POP ЗАПРОСЫ С КРОП-ТОПАМИ =====
+
+K_POP_CROP_TOP_QUERIES = [
+    "kpop idol crop top street style",
+    "kpop girl group crop top casual",
+    "jennie crop top everyday photo",
+    "lisa crop top street fashion",
+    "rosé crop top casual look",
+    "jisoo crop top natural shot",
+    "nayeon crop top everyday style",
+    "sana crop top street photo",
+    "momo crop top casual outfit",
+    "irene crop top street style",
+    "seulgi crop top everyday photo",
+    "karina crop top casual look",
+    "winter crop top street fashion",
+    "ningning crop top everyday outfit",
+    "yeji crop top street photo",
+    "ryujin crop top casual style",
+    "yuna crop top everyday life",
+    "minji crop top street fashion",
+    "hanni crop top casual photo",
+    "chaewon crop top everyday style",
+    "sakura crop top street look",
+    "yunjin crop top casual outfit",
+    "yujin crop top street style",
+    "wonyoung crop top everyday photo",
+    "soyeon crop top casual fashion",
+    "miyeon crop top street photo",
+    "kpop idol crop top stage outfit",
+    "kpop girl group crop top performance",
+    "kpop idol crop top concert photo",
+    "kpop girl crop top street fashion",
+    "kpop idol crop top summer style",
+    "kpop girl group crop top daily",
+    "kpop idol crop top outdoors",
+    "kpop girl crop top casual street",
+    "kpop idol crop top natural photo",
 ]
 
 FITNESS_QUERIES = [
@@ -543,10 +639,39 @@ def is_photo_valid(url: str) -> bool:
             return False
     return True
 
+# ===== ФУНКЦИЯ ДЛЯ ВЫБОРА ЗАПРОСА В ЗАВИСИМОСТИ ОТ СТИЛЯ =====
+
+def get_search_queries_for_style(style: str) -> List[str]:
+    """
+    Возвращает список поисковых запросов в зависимости от стиля поста.
+    Для романтичных и смешных стилей добавляет K-pop запросы.
+    """
+    base_queries = SEARCH_QUERIES.copy()
+    
+    # Стили, для которых добавляются K-pop запросы
+    kpop_styles = ['romantic', 'funny', 'joke', 'envy']
+    
+    if style in kpop_styles:
+        # Добавляем K-pop запросы с вероятностью 70%
+        if random.random() < 0.7:
+            # Выбираем случайные K-pop запросы
+            all_kpop = K_POP_QUERIES + K_POP_CROP_TOP_QUERIES
+            selected = random.sample(all_kpop, min(5, len(all_kpop)))
+            base_queries.extend(selected)
+            logger.info(f"🎵 Добавлены K-pop запросы для стиля {style}")
+    
+    # Для всех стилей иногда добавляем crop-top запросы (редко, 10%)
+    if random.random() < 0.1:
+        crop_queries = random.sample(K_POP_CROP_TOP_QUERIES, min(3, len(K_POP_CROP_TOP_QUERIES)))
+        base_queries.extend(crop_queries)
+        logger.info("👕 Добавлены crop-top запросы")
+    
+    return base_queries
+
 # ===== СТИЛИ ДЛЯ ГЕНЕРАЦИИ =====
 style_prompts = {
     'short_joke': """
-Ты — Анатолий, холостой мужик за 40, который вынужденно свайпнул в Азию, потому что в России всё пошло по пизде.
+Ты — Анатолий, холостой мужик за 40, который вынужденно свайпнул в Азию.
 
 ВАЖНО:
 - Это КОРОТКИЙ пост (200-350 символов)
@@ -570,7 +695,7 @@ style_prompts = {
 """,
 
     'medium': """
-Ты — Анатолий, холостой мужик за 40, который вынужденно свайпнул в Азию, потому что в России всё пошло по пизде.
+Ты — Анатолий, холостой мужик за 40, который вынужденно свайпнул в Азию.
 
 ВАЖНО:
 - Это СРЕДНИЙ пост (500-700 символов)
@@ -604,7 +729,7 @@ style_prompts = {
 """,
 
     'long': """
-Ты — Анатолий, холостой мужик за 40, который вынужденно свайпнул в Азию, потому что в России всё пошло по пизде.
+Ты — Анатолий, холостой мужик за 40, который вынужденно свайпнул в Азию.
 
 ВАЖНО:
 - Это ДЛИННЫЙ пост (850-1023 символов)
@@ -639,7 +764,7 @@ style_prompts = {
 """,
 
     'everyday': """
-Ты — Анатолий, холостой мужик за 40, который вынужденно свайпнул в Азию, потому что в России всё пошло по пизде.
+Ты — Анатолий, холостой мужик за 40, который вынужденно свайпнул в Азию.
 
 ВАЖНО:
 - Это СРЕДНИЙ пост (500-700 символов)
@@ -806,7 +931,7 @@ style_prompts = {
 """,
 
     'russia': """
-Ты — Анатолий, холостой мужик за 40, который вынужденно свайпнул в Азию, потому что в России всё пошло по пизде.
+Ты — Анатолий, холостой мужик за 40, который вынужденно свайпнул в Азию.
 
 ВАЖНО:
 - Это СРЕДНИЙ пост (500-700 символов)
@@ -1147,7 +1272,7 @@ def get_fallback_caption() -> str:
     ]
     return random.choice(fallbacks)
 
-# ===== ОБНОВЛЁННАЯ ГЕНЕРАЦИЯ ПОСТОВ =====
+# ===== ОБНОВЛЁННАЯ ГЕНЕРАЦИЯ ПОСТОВ (ТЕМПЕРАТУРА 1.1) =====
 
 def generate_caption() -> str:
     logger.info("Генерирую уникальный пост...")
@@ -1182,28 +1307,39 @@ def generate_caption() -> str:
         min_len, max_len = 500, 700
     
     prompt = style_prompts.get(style, style_prompts['medium'])
-    prompt += "\n\nТвой ответ (ТОЛЬКО ПОСТ, БЕЗ РАССУЖДЕНИЙ):"
+    prompt += """
+
+⚠️ ВАЖНОЕ ТРЕБОВАНИЕ: 
+Твой ответ ДОЛЖЕН быть строго по теме, указанной в промпте. 
+НЕ уходи в рассуждения, НЕ переключайся на другие темы.
+НЕ используй штампы, НЕ пиши абстрактных фраз.
+Только конкретная история или ситуация по теме.
+Если в промпте про Азию — пиши про Азию.
+Если про Россию — пиши про Россию.
+НЕ МЕШАЙ ТЕМЫ В ОДНОМ ПОСТЕ.
+
+Твой ответ (ТОЛЬКО ПОСТ, БЕЗ РАССУЖДЕНИЙ):"""
     
     alternative_prompts = {
         'short_joke': [
-            "Напиши короткую колкую шутку про жизнь. 200-350 символов.",
-            "Короткая острая шутка. 200-350 символов.",
-            "Забавное наблюдение с колкостью. 200-350 символов.",
+            "Напиши короткую колкую шутку про жизнь. 200-350 символов. ТОЛЬКО ПО ТЕМЕ.",
+            "Короткая острая шутка. 200-350 символов. БЕЗ ОТСТУПЛЕНИЙ.",
+            "Забавное наблюдение с колкостью. 200-350 символов. НЕ ОТВЛЕКАЙСЯ.",
         ],
         'long': [
-            "Напиши длинный пост с историей. 850-1023 символов.",
-            "Подробный рассказ с колкими шутками. 850-1023 символов.",
-            "Развёрнутая история с чёрным юмором. 850-1023 символов.",
+            "Напиши длинный пост с историей. 850-1023 символов. СТРОГО ПО ТЕМЕ.",
+            "Подробный рассказ с колкими шутками. 850-1023 символов. НЕ ПЕРЕСКАКИВАЙ.",
+            "Развёрнутая история с чёрным юмором. 850-1023 символов. ТОЛЬКО ПО ЗАДАННОЙ ТЕМЕ.",
         ],
         'medium': [
-            "Напиши пост с юмором. 500-700 символов.",
-            "История с острой шуткой. 500-700 символов.",
-            "Забавная ситуация с колким выводом. 500-700 символов.",
+            "Напиши пост с юмором. 500-700 символов. СТРОГО ПО ТЕМЕ.",
+            "История с острой шуткой. 500-700 символов. НЕ УХОДИ В СТОРОНУ.",
+            "Забавная ситуация с колким выводом. 500-700 символов. БЕЗ ОТСТУПЛЕНИЙ.",
         ],
         'russia': [
-            "Напиши пост про жизнь в России из прошлого. 500-700 символов.",
-            "Вспомни свою прошлую жизнь в России с иронией. 500-700 символов.",
-            "Расскажи про Россию с чёрным юмором. 500-700 символов.",
+            "Напиши пост про жизнь в России из прошлого. 500-700 символов. ТОЛЬКО ПРО РОССИЮ.",
+            "Вспомни свою прошлую жизнь в России с иронией. 500-700 символов. НЕ ПРО АЗИЮ.",
+            "Расскажи про Россию с чёрным юмором. 500-700 символов. НЕ СМЕШИВАЙ ТЕМЫ.",
         ]
     }
     
@@ -1227,35 +1363,40 @@ def generate_caption() -> str:
                     alt = random.choice(alternative_prompts['russia'])
                 else:
                     alt = random.choice(alternative_prompts['medium'])
-                current_prompt = alt + "\n\nТвой ответ (ТОЛЬКО ПОСТ, БЕЗ РАССУЖДЕНИЙ):"
+                current_prompt = alt + "\n\n⚠️ НЕ ОТВЛЕКАЙСЯ ОТ ТЕМЫ! Твой ответ (ТОЛЬКО ПОСТ, БЕЗ РАССУЖДЕНИЙ):"
                 logger.info(f"Пробую альтернативный промпт (попытка {attempt})...")
             
             data = {
                 "model": "deepseek-chat",
                 "messages": [
-                    {"role": "system", "content": """Ты — Анатолий, холостой мужик за 40, который вынужденно свайпнул в Азию, потому что в России всё пошло по пизде.
+                    {"role": "system", "content": """Ты — Анатолий, холостой мужик за 40.
+
+⚠️ ГЛАВНОЕ ПРАВИЛО:
+Ты ДОЛЖЕН писать строго по теме, которая указана в промпте.
+НЕ переключайся на другие темы.
+НЕ смешивай Азию и Россию в одном посте.
+НЕ пиши абстрактных рассуждений.
+Только конкретная история или ситуация по теме.
+Если в промпте про Азию — пиши про Азию.
+Если в промпте про Россию — пиши про Россию.
+Никаких отклонений от темы!
 
 Твой стиль:
 - Колкий, дерзкий, с чёрным юмором
 - Рассказываешь реальные истории из жизни
-- Шутишь о жизненных ситуациях и современном кризисе
 - Самоирония и сарказм
-- Пиши так, будто рассказываешь друзьям в баре после второй рюмки
+- Пиши так, будто рассказываешь друзьям в баре
 
 Важно:
-- Посты должны провоцировать пользователей написать комментарий
 - Пиши от первого лица
 - Используй мат для эмоций (не перебарщивай)
 - Обращайся к читателям на "вы"
 - Не упоминай жену
-- Не используй штампы
-- Обязательно заверши мысль - естественный вывод, не мораль
-- Если пишешь шутку — она должна быть острой, но не оскорбительной
-- Никогда не пиши о том, что твой контент запрещён или ты не можешь его создать
-- Отвечай ТОЛЬКО готовым постом. БЕЗ РАССУЖДЕНИЙ. Только текст поста."""},
+- Никогда не пиши о том, что твой контент запрещён
+- Отвечай ТОЛЬКО готовым постом. БЕЗ РАССУЖДЕНИЙ."""},
                     {"role": "user", "content": current_prompt}
                 ],
-                "temperature": 1.4,
+                "temperature": 1.1,
                 "max_tokens": 1500,
             }
             
@@ -1300,6 +1441,10 @@ def generate_caption() -> str:
             
             if caption.lower().startswith(("мы должны", "нужно", "я должен", "напиши", "вот", "давайте", "попробуем", "извините", "к сожалению")):
                 logger.warning("DeepSeek выдал рассуждение или отказ, пробуем другой промпт...")
+                continue
+            
+            if style == 'russia' and 'ази' in caption.lower():
+                logger.warning("Пост про Россию содержит упоминание Азии — отклоняем")
                 continue
             
             if is_similar(caption):
@@ -1481,7 +1626,7 @@ def search_pexels(query):
 
 # ===== АСИНХРОННАЯ ФУНКЦИЯ ПОЛУЧЕНИЯ ФОТО =====
 
-async def get_random_photo():
+async def get_random_photo(style: str = "medium"):
     global history
     
     if len(history) > 80:
@@ -1489,13 +1634,14 @@ async def get_random_photo():
         history = []
         save_history(history)
     
-    queries = SEARCH_QUERIES.copy()
+    # Получаем запросы в зависимости от стиля
+    queries = get_search_queries_for_style(style)
+    random.shuffle(queries)
     
+    # Добавляем фитнес-запросы (редко)
     if random.random() < 0.1:
         queries.extend(FITNESS_QUERIES)
         logger.info("Добавлен фитнес-запрос (редко)")
-    
-    random.shuffle(queries)
     
     search_functions = [
         ('Bing', search_bing),
@@ -1914,9 +2060,9 @@ async def notify_owner_for_moderation(post_id: str, post: PostContent):
     except Exception as e:
         logger.error(f"Ошибка уведомления владельца: {e}")
 
-async def generate_and_queue_post(chat_id: str, user_id: int = 0, skip_moderation: bool = False):
+async def generate_and_queue_post(chat_id: str, user_id: int = 0, skip_moderation: bool = False, style: str = "medium"):
     try:
-        photo_url = await get_random_photo()
+        photo_url = await get_random_photo(style)
         if not photo_url:
             logger.error("Не удалось найти фото")
             return False
@@ -1955,10 +2101,17 @@ async def send_to_all_users():
             logger.warning("Нет пользователей для отправки")
             return
         logger.info(f"Добавление постов в очередь для {len(users_list)} пользователей...")
-        photo_url = await get_random_photo()
+        
+        # Определяем случайный стиль для автоматической рассылки
+        styles = ["medium", "everyday", "funny", "romantic", "joke"]
+        style = random.choice(styles)
+        logger.info(f"Автоматический пост будет в стиле: {style}")
+        
+        photo_url = await get_random_photo(style)
         if not photo_url:
             logger.error("Не удалось найти фото")
             return
+        
         caption = generate_caption()
         caption = clean_text(caption)
         caption = truncate_by_sentences(caption, max_length=1023)
@@ -1971,6 +2124,7 @@ async def send_to_all_users():
             validated, error = validate_caption(caption, min_length=500, max_length=1023)
             if validated:
                 caption = validated
+        
         base_post_id = f"post_{int(time.time())}"
         for chat_id in users_list:
             post_data = {
@@ -1983,6 +2137,7 @@ async def send_to_all_users():
                 'needs_moderation': False
             }
             await task_queue.push(QUEUE_NAME, post_data)
+        
         channel_id = CHANNEL_ID
         if not channel_id or not channel_id.strip():
             channel_id = await get_channel_id()
@@ -1996,7 +2151,8 @@ async def send_to_all_users():
                 'timestamp': time.time(),
                 'needs_moderation': False
             })
-        logger.info(f"{len(users_list)} задач добавлены в очередь")
+        
+        logger.info(f"{len(users_list)} задач добавлены в очередь, стиль: {style}")
     except Exception as e:
         logger.error(f"Ошибка в send_to_all_users: {e}")
 
@@ -2066,7 +2222,15 @@ async def photo_command(message: Message):
             await message.answer("⚠️ Бот не активирован. Напишите /start")
             return
         
-        photo_url = await get_random_photo()
+        # Определяем стиль для поиска (по умолчанию medium)
+        args = message.text.replace("/photo", "").strip().lower()
+        styles = ["short_joke", "medium", "long", "everyday", "funny", "romantic", "envy", "joke", "russia"]
+        style = "medium"
+        if args in styles:
+            style = args
+        
+        # Ищем фото с учётом стиля
+        photo_url = await get_random_photo(style)
         
         if not photo_url:
             await message.answer("❌ Не удалось найти подходящее фото. Попробуйте позже.")
@@ -2083,7 +2247,7 @@ async def photo_command(message: Message):
             parse_mode="Markdown"
         )
         
-        logger.info(f"📸 Команда /photo от {user_id}: фото отправлено")
+        logger.info(f"📸 Команда /photo от {user_id}, стиль: {style}, фото отправлено")
         
     except Exception as e:
         logger.error(f"Ошибка в команде photo: {e}", exc_info=True)
@@ -2103,7 +2267,15 @@ async def post_command(message: Message):
             await message.answer("ℹ️ Используйте команду в личных сообщениях.")
             return
         
-        photo_url = await get_random_photo()
+        # Определяем стиль для поиска
+        args = message.text.replace("/post", "").strip().lower()
+        styles = ["short_joke", "medium", "long", "everyday", "funny", "romantic", "envy", "joke", "russia"]
+        style = "medium"
+        if args in styles:
+            style = args
+        
+        # Ищем фото с учётом стиля
+        photo_url = await get_random_photo(style)
         
         if not photo_url:
             await message.answer("❌ Не удалось найти подходящее фото. Попробуйте позже.")
@@ -2135,7 +2307,7 @@ async def post_command(message: Message):
         else:
             await message.answer("⚠️ Канал не настроен. Пост отправлен только в ЛС.")
         
-        logger.info(f"📝 Команда /post от владельца: фото отправлено в ЛС и канал")
+        logger.info(f"📝 Команда /post от владельца, стиль: {style}, фото отправлено в ЛС и канал")
         
     except Exception as e:
         logger.error(f"Ошибка в команде post: {e}", exc_info=True)
@@ -2385,53 +2557,6 @@ async def broadcast_command(message: Message):
 
 # ===== ОБРАБОТЧИКИ ОПЛАТЫ =====
 
-@dp.callback_query(lambda c: c.data and c.data.startswith('mod_'))
-async def handle_post_moderation(callback: CallbackQuery):
-    try:
-        if callback.from_user.id != OWNER_ID:
-            await callback.answer("⛔ Доступ запрещен", show_alert=True)
-            return
-        parts = callback.data.split('_', 2)
-        # ожидаем формат: mod_approve_<post_id> или mod_reject_<post_id>
-        if len(parts) < 3:
-            await callback.answer("❌ Неверный формат", show_alert=True)
-            return
-        action = parts[1]
-        post_id = parts[2]
-        approved = action == 'approve'
-
-        if post_id not in moderator.pending_posts:
-            await callback.answer("❌ Пост не найден или уже обработан", show_alert=True)
-            return
-
-        post = moderator.pending_posts[post_id]
-        ok = await moderator.manual_moderate(post_id, approved, callback.from_user.id)
-
-        if ok and approved:
-            await task_queue.push(QUEUE_NAME, {
-                'id': post_id,
-                'chat_id': post.chat_id,
-                'photo_url': post.photo_url,
-                'caption': post.caption,
-                'user_id': post.user_id,
-                'timestamp': post.timestamp,
-                'needs_moderation': False
-            })
-            del moderator.pending_posts[post_id]
-            await callback.answer("✅ Пост одобрен и поставлен в очередь")
-            if callback.message:
-                await callback.message.edit_reply_markup(reply_markup=None)
-        elif ok:
-            del moderator.pending_posts[post_id]
-            await callback.answer("❌ Пост отклонён")
-            if callback.message:
-                await callback.message.edit_reply_markup(reply_markup=None)
-        else:
-            await callback.answer("❌ Ошибка обработки", show_alert=True)
-    except Exception as e:
-        logger.error(f"Ошибка модерации поста: {e}")
-        await callback.answer("❌ Ошибка", show_alert=True)
-
 @dp.callback_query(lambda c: c.data and c.data.startswith('pay_stars_'))
 async def pay_with_stars(callback: CallbackQuery):
     try:
@@ -2468,6 +2593,7 @@ async def pay_with_stars(callback: CallbackQuery):
             currency="XTR",
             prices=prices,
             start_parameter="broadcast",
+            chat_id_for_payment=STARS_CHANNEL_ID,
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text=f"⭐ Оплатить {stars_price} звёзд", pay=True)]
             ])
