@@ -65,7 +65,7 @@ FREEKASSA_WEBHOOK_URL = os.getenv("FREEKASSA_WEBHOOK_URL", "")
 # ===== НАСТРОЙКИ AURAPAY =====
 AURAPAY_MERCHANT_ID = os.getenv("AURAPAY_MERCHANT_ID", "6a70ee5492726")
 AURAPAY_API_KEY = os.getenv("AURAPAY_API_KEY", "")
-AURAPAY_API_URL = os.getenv("AURAPAY_API_URL", "https://api.aurapay.tech/v1")
+AURAPAY_API_URL = os.getenv("AURAPAY_API_URL", "https://app.aurapay.tech")
 AURAPAY_WEBHOOK_URL = os.getenv("AURAPAY_WEBHOOK_URL", "")
 AURAPAY_MINIAPP_URL = os.getenv("AURAPAY_MINIAPP_URL", "https://jameshardlp.github.io/asianbot/aura-payment.html")
 
@@ -218,85 +218,100 @@ def create_aurapay_payment(amount: float, order_id: str, user_id: int, method: s
         logger.error("❌ Не указан order_id")
         return None
     
-    try:
-        url = f"{AURAPAY_API_URL}/payment/create"
-        headers = {
-            "Content-Type": "application/json",
-            "X-API-Key": AURAPAY_API_KEY,
-            "X-Merchant-Id": AURAPAY_MERCHANT_ID
-        }
-        
-        payload = {
-            "merchant_id": AURAPAY_MERCHANT_ID,
-            "order_id": order_id,
-            "amount": str(amount),
-            "currency": "RUB",
-            "description": f"Оплата рассылки #{order_id}",
-            "callback_url": f"{AURAPAY_WEBHOOK_URL}/aurapay/webhook",
-            "success_url": f"{AURAPAY_WEBHOOK_URL}/aurapay-success",
-            "fail_url": f"{AURAPAY_WEBHOOK_URL}/aurapay-fail",
-            "payment_methods": [method] if method else ["card", "sbp", "crypto"],
-            "metadata": {
-                "user_id": str(user_id),
-                "order_type": "broadcast"
+    # Список возможных эндпоинтов для проверки (основной - /invoice/create)
+    possible_endpoints = [
+        f"{AURAPAY_API_URL}/invoice/create",  # Правильный эндпоинт
+        f"{AURAPAY_API_URL}/api/invoice/create",
+        f"{AURAPAY_API_URL}/v1/invoice/create",
+        f"{AURAPAY_API_URL}/api/v1/invoice/create",
+        f"{AURAPAY_API_URL}/payment/create",
+        f"{AURAPAY_API_URL}/api/payment/create",
+    ]
+    
+    # Пробуем каждый эндпоинт
+    for endpoint in possible_endpoints:
+        try:
+            headers = {
+                "Content-Type": "application/json",
+                "X-API-Key": AURAPAY_API_KEY,
+                "X-Merchant-Id": AURAPAY_MERCHANT_ID
             }
-        }
-        
-        logger.info(f"📤 Запрос к AuraPay: {url}")
-        logger.info(f"📤 Данные запроса: {payload}")
-        
-        response = requests.post(url, headers=headers, json=payload, timeout=30)
-        
-        logger.info(f"📥 Статус ответа: {response.status_code}")
-        logger.info(f"📥 Тело ответа: {response.text}")
-        
-        if response.status_code in [200, 201]:
-            try:
-                result = response.json()
-            except json.JSONDecodeError:
-                logger.error(f"❌ Не удалось разобрать JSON ответ: {response.text}")
-                return None
             
-            if result.get("payment_url"):
-                logger.info(f"✅ Платёж успешно создан: {order_id}")
-                return {
-                    "payment_url": result["payment_url"],
-                    "payment_id": result.get("payment_id"),
-                    "status": result.get("status", "pending")
+            payload = {
+                "merchant_id": AURAPAY_MERCHANT_ID,
+                "order_id": order_id,
+                "amount": str(amount),
+                "currency": "RUB",
+                "description": f"Оплата рассылки #{order_id}",
+                "callback_url": f"{AURAPAY_WEBHOOK_URL}/aurapay/webhook",
+                "success_url": f"{AURAPAY_WEBHOOK_URL}/aurapay-success",
+                "fail_url": f"{AURAPAY_WEBHOOK_URL}/aurapay-fail",
+                "payment_methods": [method] if method else ["card", "sbp", "crypto"],
+                "metadata": {
+                    "user_id": str(user_id),
+                    "order_type": "broadcast"
                 }
-            elif result.get("redirect_url"):
-                logger.info(f"✅ Платёж создан (редирект): {order_id}")
-                return {
-                    "payment_url": result["redirect_url"],
-                    "payment_id": result.get("payment_id"),
-                    "status": "pending"
-                }
+            }
+            
+            logger.info(f"📤 Пробуем URL: {endpoint}")
+            logger.info(f"📤 Данные запроса: {payload}")
+            
+            response = requests.post(endpoint, headers=headers, json=payload, timeout=30)
+            
+            logger.info(f"📥 Статус ответа: {response.status_code}")
+            logger.info(f"📥 Тело ответа: {response.text}")
+            
+            if response.status_code in [200, 201]:
+                try:
+                    result = response.json()
+                except json.JSONDecodeError:
+                    logger.error(f"❌ Не удалось разобрать JSON ответ: {response.text}")
+                    continue
+                
+                if result.get("payment_url"):
+                    logger.info(f"✅ Платёж успешно создан: {order_id} (URL: {endpoint})")
+                    return {
+                        "payment_url": result["payment_url"],
+                        "payment_id": result.get("payment_id"),
+                        "status": result.get("status", "pending")
+                    }
+                elif result.get("redirect_url"):
+                    logger.info(f"✅ Платёж создан (редирект): {order_id} (URL: {endpoint})")
+                    return {
+                        "payment_url": result["redirect_url"],
+                        "payment_id": result.get("payment_id"),
+                        "status": "pending"
+                    }
+                else:
+                    logger.error(f"❌ Неизвестный формат ответа AuraPay от {endpoint}: {result}")
+                    continue
             else:
-                logger.error(f"❌ Неизвестный формат ответа AuraPay: {result}")
-                return None
-        else:
-            logger.error(f"❌ Ошибка AuraPay: HTTP {response.status_code}")
-            try:
-                error_data = response.json()
-                logger.error(f"❌ Детали ошибки: {error_data}")
-            except:
-                logger.error(f"❌ Текст ошибки: {response.text}")
-            return None
-        
-    except requests.exceptions.Timeout:
-        logger.error(f"❌ Таймаут при запросе к AuraPay (30 секунд)")
-        return None
-    except requests.exceptions.ConnectionError:
-        logger.error(f"❌ Ошибка соединения с AuraPay. Проверьте URL: {AURAPAY_API_URL}")
-        return None
-    except requests.exceptions.RequestException as e:
-        logger.error(f"❌ Ошибка сети при запросе к AuraPay: {e}")
-        return None
-    except Exception as e:
-        logger.error(f"❌ Непредвиденная ошибка при создании платежа AuraPay: {e}")
-        import traceback
-        traceback.print_exc()
-        return None
+                logger.warning(f"⚠️ Ошибка на {endpoint}: HTTP {response.status_code}")
+                try:
+                    error_data = response.json()
+                    logger.warning(f"⚠️ Детали ошибки: {error_data}")
+                except:
+                    logger.warning(f"⚠️ Текст ошибки: {response.text}")
+                continue  # Пробуем следующий эндпоинт
+                
+        except requests.exceptions.Timeout:
+            logger.warning(f"⚠️ Таймаут при запросе к {endpoint}")
+            continue
+        except requests.exceptions.ConnectionError:
+            logger.warning(f"⚠️ Ошибка соединения с {endpoint}")
+            continue
+        except requests.exceptions.RequestException as e:
+            logger.warning(f"⚠️ Ошибка сети при запросе к {endpoint}: {e}")
+            continue
+        except Exception as e:
+            logger.error(f"❌ Непредвиденная ошибка при запросе к {endpoint}: {e}")
+            import traceback
+            traceback.print_exc()
+            continue
+    
+    # Если ни один эндпоинт не сработал
+    logger.error("❌ Все попытки подключения к AuraPay не удались")
+    return None
 
 async def check_aurapay_payment_status(order_id: str) -> Optional[dict]:
     """Проверка статуса платежа через API AuraPay с улучшенной обработкой ошибок"""
@@ -309,7 +324,7 @@ async def check_aurapay_payment_status(order_id: str) -> Optional[dict]:
         return None
     
     try:
-        url = f"{AURAPAY_API_URL}/payment/status"
+        url = f"{AURAPAY_API_URL}/invoice/status"
         headers = {
             "Content-Type": "application/json",
             "X-API-Key": AURAPAY_API_KEY,
