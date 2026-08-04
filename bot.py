@@ -445,9 +445,14 @@ async def aurapay_create_payment_api(request):
             return web.json_response({"success": False, "error": "User not found"}, status=404)
         
         broadcast_info = broadcast_data[user_id_int]
-        if broadcast_info.get('order_id') != order_id:
-            logger.warning(f"⚠️ Неверный order_id для пользователя {user_id_int}: ожидался {broadcast_info.get('order_id')}, получен {order_id}")
-            return web.json_response({"success": False, "error": "Invalid order"}, status=400)
+        
+        # ===== ИСПРАВЛЕНИЕ: Используем актуальный order_id из broadcast_data =====
+        actual_order_id = broadcast_info.get('order_id')
+        
+        # Если переданный order_id не совпадает с актуальным, используем актуальный
+        if order_id != actual_order_id:
+            logger.info(f"🔄 Обновлен order_id: {order_id} → {actual_order_id}")
+            order_id = actual_order_id
         
         try:
             amount_float = float(amount)
@@ -467,7 +472,8 @@ async def aurapay_create_payment_api(request):
                 "success": True,
                 "payment_url": payment['payment_url'],
                 "payment_id": payment.get('payment_id'),
-                "order_id": full_order_id
+                "order_id": full_order_id,
+                "actual_order_id": order_id
             })
         else:
             logger.error(f"❌ Не удалось создать платёж для заказа {full_order_id}")
@@ -3868,7 +3874,6 @@ async def main():
             @web.middleware
             async def cors_middleware(request, handler):
                 """CORS middleware для работы с Mini App"""
-                # Обрабатываем OPTIONS запросы
                 if request.method == 'OPTIONS':
                     return web.Response(
                         status=200,
@@ -3879,20 +3884,16 @@ async def main():
                         }
                     )
                 
-                # Обрабатываем обычные запросы
                 response = await handler(request)
                 
-                # Добавляем CORS заголовки к ответу
                 response.headers['Access-Control-Allow-Origin'] = '*'
                 response.headers['Access-Control-Allow-Methods'] = 'POST, GET, OPTIONS'
                 response.headers['Access-Control-Allow-Headers'] = 'Content-Type, X-Merchant-Id, X-API-Key'
                 
                 return response
             
-            # Подключаем middleware
             app.middlewares.append(cors_middleware)
             
-            # Запускаем сервер
             runner = web.AppRunner(app)
             await runner.setup()
             site = web.TCPSite(runner, '0.0.0.0', port)
