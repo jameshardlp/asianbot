@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="aurapay" content="6a70ee5492726">
     <title>Оплата через AuraPay</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -238,27 +239,37 @@
                     
                     // Проверяем статус каждые 3 секунды
                     let attempts = 0;
-                    const maxAttempts = 60;
+                    const maxAttempts = 60; // 3 минуты
                     const interval = setInterval(async () => {
                         attempts++;
-                        const statusResponse = await fetch('/api/aurapay/status', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ order_id: orderId })
-                        });
-                        const statusData = await statusResponse.json();
-                        
-                        if (statusData.status === 'paid') {
-                            clearInterval(interval);
-                            showStatus('✅ Оплата прошла успешно!', 'success');
-                            btn.textContent = '✅ Оплачено';
-                            btn.disabled = true;
-                            setTimeout(() => closeApp(), 2000);
-                        } else if (attempts >= maxAttempts) {
-                            clearInterval(interval);
-                            showStatus('⏱️ Время ожидания истекло', 'error');
-                            btn.disabled = false;
-                            btn.textContent = '💳 Оплатить';
+                        try {
+                            const statusResponse = await fetch('/api/aurapay/status', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ order_id: orderId })
+                            });
+                            const statusData = await statusResponse.json();
+                            
+                            if (statusData.status === 'paid' || statusData.status === 'success') {
+                                clearInterval(interval);
+                                showStatus('✅ Оплата прошла успешно!', 'success');
+                                btn.textContent = '✅ Оплачено';
+                                btn.disabled = true;
+                                setTimeout(() => closeApp(), 2000);
+                            } else if (attempts >= maxAttempts) {
+                                clearInterval(interval);
+                                showStatus('⏱️ Время ожидания истекло', 'error');
+                                btn.disabled = false;
+                                btn.textContent = '💳 Оплатить';
+                            }
+                        } catch (e) {
+                            console.error('Ошибка проверки статуса:', e);
+                            if (attempts >= maxAttempts) {
+                                clearInterval(interval);
+                                showStatus('⏱️ Время ожидания истекло', 'error');
+                                btn.disabled = false;
+                                btn.textContent = '💳 Оплатить';
+                            }
                         }
                     }, 3000);
                     
