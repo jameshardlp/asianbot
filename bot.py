@@ -15,8 +15,6 @@ from typing import Optional, Tuple, List, Dict, Any
 from dataclasses import dataclass
 from enum import Enum
 import logging
-from functools import lru_cache
-from hashlib import md5
 
 # Настройка логирования
 logging.basicConfig(
@@ -72,6 +70,7 @@ AURAPAY_WEBHOOK_URL = os.getenv("AURAPAY_WEBHOOK_URL", "")
 AURAPAY_MINIAPP_URL = os.getenv("AURAPAY_MINIAPP_URL", "https://jameshardlp.github.io/asianbot/aura-payment.html")
 
 BROADCAST_PRICE_FILE = "broadcast_price.json"
+USAGE_FILE = "usage.json"  # Файл для хранения статистики использования /photo
 
 # Redis настройки
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
@@ -98,6 +97,94 @@ dp = Dispatcher()
 USERS_FILE = "users.json"
 HISTORY_FILE = "history.json"
 SCHEDULE_FILE = "schedule.json"
+
+# ===== РАБОТА С ИСПОЛЬЗОВАНИЕМ КОМАНДЫ /PHOTO =====
+
+def load_usage() -> dict:
+    """Загружает статистику использования /photo"""
+    try:
+        with open(USAGE_FILE, "r") as f:
+            data = json.load(f)
+            # Проверяем структуру и удаляем устаревшие записи (старше 24 часов)
+            current_date = datetime.now().strftime("%Y-%m-%d")
+            for user_id in list(data.keys()):
+                if data[user_id].get("date") != current_date:
+                    del data[user_id]
+            return data
+    except:
+        return {}
+
+def save_usage(usage_data: dict):
+    """Сохраняет статистику использования /photo"""
+    try:
+        with open(USAGE_FILE, "w") as f:
+            json.dump(usage_data, f)
+        return True
+    except Exception as e:
+        logger.error(f"Ошибка сохранения статистики: {e}")
+        return False
+
+def can_use_photo(user_id: int) -> Tuple[bool, int, int]:
+    """
+    Проверяет, может ли пользователь использовать /photo
+    Возвращает: (можно_использовать, использовано_сегодня, лимит)
+    """
+    # Владелец может использовать бесконечно
+    if user_id == OWNER_ID:
+        return True, 0, float('inf')
+    
+    usage_data = load_usage()
+    current_date = datetime.now().strftime("%Y-%m-%d")
+    user_key = str(user_id)
+    limit = 10
+    
+    if user_key not in usage_data:
+        return True, 0, limit
+    
+    user_usage = usage_data.get(user_key, {})
+    last_date = user_usage.get("date")
+    count = user_usage.get("count", 0)
+    
+    # Если дата не совпадает с сегодняшней, сбрасываем счетчик
+    if last_date != current_date:
+        return True, 0, limit
+    
+    # Проверяем, не превышен ли лимит
+    if count >= limit:
+        return False, count, limit
+    
+    return True, count, limit
+
+def increment_photo_usage(user_id: int) -> Tuple[int, int]:
+    """
+    Увеличивает счетчик использования /photo для пользователя
+    Возвращает: (использовано_сегодня, лимит)
+    """
+    # Владелец не учитывается
+    if user_id == OWNER_ID:
+        return 0, float('inf')
+    
+    usage_data = load_usage()
+    current_date = datetime.now().strftime("%Y-%m-%d")
+    user_key = str(user_id)
+    limit = 10
+    
+    if user_key not in usage_data:
+        usage_data[user_key] = {"date": current_date, "count": 0}
+    
+    user_usage = usage_data[user_key]
+    
+    # Если дата изменилась, сбрасываем счетчик
+    if user_usage.get("date") != current_date:
+        user_usage["date"] = current_date
+        user_usage["count"] = 0
+    
+    # Увеличиваем счетчик
+    user_usage["count"] += 1
+    
+    save_usage(usage_data)
+    
+    return user_usage["count"], limit
 
 # ===== КЭШИРОВАНИЕ СИСТЕМНЫХ ПРОМПТОВ =====
 
@@ -141,9 +228,7 @@ def get_style_prompt(style: str) -> str:
     """Возвращает промпт для стиля с кэшированием."""
     cache_key = f"style_prompt_{style}"
     if cache_key not in _system_prompt_cache:
-        # Берем промпт из словаря style_prompts
         base_prompt = style_prompts.get(style, style_prompts['medium'])
-        # Добавляем предупреждение о строгом следовании теме
         _system_prompt_cache[cache_key] = base_prompt + """
 
 ⚠️ ВАЖНОЕ ТРЕБОВАНИЕ: 
@@ -160,7 +245,6 @@ def get_style_prompt(style: str) -> str:
         logger.info(f"💾 Промпт для стиля {style} закэширован")
     return _system_prompt_cache[cache_key]
 
-# Очистка кэша (если потребуется обновить промпты)
 def clear_prompt_cache():
     """Очищает кэш промптов (для обновления)."""
     global _system_prompt_cache
@@ -1831,7 +1915,6 @@ def generate_caption() -> str:
         logger.info(f"Выбран СРЕДНИЙ пост (стиль: {style})")
         min_len, max_len = 500, 700
     
-    # Получаем промпт из кэша
     base_prompt = get_style_prompt(style)
     
     alternative_prompts = {
@@ -1880,7 +1963,6 @@ def generate_caption() -> str:
                 current_prompt = alt + "\n\n⚠️ НЕ ОТВЛЕКАЙСЯ ОТ ТЕМЫ! Твой ответ (ТОЛЬКО ПОСТ, БЕЗ РАССУЖДЕНИЙ):"
                 logger.info(f"Пробую альтернативный промпт (попытка {attempt})...")
             
-            # Получаем системный промпт из кэша
             system_prompt = get_system_prompt()
             
             data = {
@@ -2754,17 +2836,39 @@ async def photo_command(message: Message):
             await message.answer("⚠️ Бот не активирован. Напишите /start")
             return
         
+        # ===== ПРОВЕРКА ЛИМИТА ИСПОЛЬЗОВАНИЯ /photo =====
+        can_use, used_count, limit = can_use_photo(user_id)
+        
+        if not can_use:
+            remaining = 0
+            await message.answer(
+                f"⛔ Вы исчерпали лимит на сегодня ({limit} запросов).\n"
+                f"🔄 Лимит обновится завтра."
+            )
+            logger.info(f"⛔ Пользователь {user_id} превысил лимит /photo")
+            return
+        
+        # Определяем стиль для поиска (по умолчанию medium)
         args = message.text.replace("/photo", "").strip().lower()
         styles = ["short_joke", "medium", "long", "everyday", "funny", "romantic", "envy", "joke", "russia"]
         style = "medium"
         if args in styles:
             style = args
         
+        # Создаем пост
         await create_post_with_photo(str(chat_id), user_id, skip_moderation=True, style=style)
         
-        await message.answer("✅ Пост с фото отправлен в очередь!\n📸 Ищем и генерируем...")
+        # Увеличиваем счетчик использования
+        new_count, limit = increment_photo_usage(user_id)
+        remaining = limit - new_count
         
-        logger.info(f"📸 Команда /photo от {user_id}, стиль: {style}")
+        await message.answer(
+            f"✅ Пост с фото отправлен в очередь!\n"
+            f"📸 Ищем и генерируем...\n\n"
+            f"📊 Осталось запросов на сегодня: {remaining} из {limit}"
+        )
+        
+        logger.info(f"📸 Команда /photo от {user_id}, стиль: {style}, использовано: {new_count}/{limit}")
         
     except Exception as e:
         logger.error(f"Ошибка в команде photo: {e}", exc_info=True)
@@ -3687,7 +3791,7 @@ async def start(msg: Message):
             f"📸 Уникальные посты про молодых азиаток (18-30 лет)\n"
             f"⏰ Расписание: {times}\n"
             f"{channel_status}\n"
-            f"🔄 /photo - получить фото сейчас\n"
+            f"🔄 /photo - получить фото сейчас (до 10 раз в день)\n"
             f"⏰ /schedule - изменить расписание\n"
             f"📢 /broadcast - отправить сообщение всем (⭐ {stars_price} звёзд или 💳 {rub_price} {FREEKASSA_CURRENCY})\n"
             f"🛑 /stop - отписаться"
@@ -3898,7 +4002,7 @@ async def main():
     try:
         logger.info("=" * 60)
         logger.info("🤖 БОТ ЗАПУЩЕН")
-        logger.info("📸 /photo — для всех пользователей")
+        logger.info("📸 /photo — для всех пользователей (до 10 раз в день)")
         logger.info("📝 /post — только для владельца (дублируется в канал)")
         logger.info("📢 /broadcast — платная рассылка с медиа")
         logger.info("🖼️ Анализ картинок — 15% вероятности для романтичных/смешных постов")
