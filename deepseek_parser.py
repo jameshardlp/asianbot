@@ -12,12 +12,14 @@ import requests
 import logging
 from typing import Optional, Tuple, List, Dict, Any
 from urllib.parse import quote
+from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
 # ===== КОНФИГУРАЦИЯ =====
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
 YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY", "")
+MIN_DATE = datetime(2026, 1, 1)  # Минимальная дата публикации - 2026 год
 
 # ===== КЭШ ПОСТОВ =====
 last_posts = []
@@ -451,6 +453,94 @@ def is_similar(text: str) -> bool:
             return True
     return False
 
+# ===== ФУНКЦИИ ПРОВЕРКИ ДАТЫ =====
+
+def parse_date_from_text(text: str) -> Optional[datetime]:
+    """Парсит дату из текста (для видео и фото)"""
+    if not text:
+        return None
+    
+    # Паттерны для поиска даты
+    date_patterns = [
+        r'(\d{4})[-/](\d{1,2})[-/](\d{1,2})',  # 2024-01-15 или 2024/01/15
+        r'(\d{1,2})[-/](\d{1,2})[-/](\d{4})',  # 15-01-2024
+        r'(\d{1,2})\s+(янв|фев|мар|апр|май|июн|июл|авг|сен|окт|ноя|дек)\s+(\d{4})',  # 15 янв 2024
+        r'(\d{4})\s+год',  # 2024 год
+        r'(\d{2})\.(\d{2})\.(\d{4})',  # 15.01.2024
+    ]
+    
+    months_map = {
+        'янв': 1, 'фев': 2, 'мар': 3, 'апр': 4, 'май': 5, 'июн': 6,
+        'июл': 7, 'авг': 8, 'сен': 9, 'окт': 10, 'ноя': 11, 'дек': 12
+    }
+    
+    for pattern in date_patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            groups = match.groups()
+            try:
+                if len(groups) == 3:
+                    # Определяем формат даты
+                    if groups[0].isdigit() and len(groups[0]) == 4:
+                        # ГГГГ-ММ-ДД или ГГГГ/ММ/ДД
+                        year = int(groups[0])
+                        month = int(groups[1])
+                        day = int(groups[2])
+                    elif groups[2].isdigit() and len(groups[2]) == 4:
+                        # ДД-ММ-ГГГГ или ДД/ММ/ГГГГ
+                        day = int(groups[0])
+                        month = int(groups[1])
+                        year = int(groups[2])
+                    elif groups[1].lower() in months_map:
+                        # ДД Месяц ГГГГ
+                        day = int(groups[0])
+                        month = months_map[groups[1].lower()]
+                        year = int(groups[2])
+                    else:
+                        continue
+                    
+                    if 2000 <= year <= 2030 and 1 <= month <= 12 and 1 <= day <= 31:
+                        return datetime(year, month, day)
+            except (ValueError, IndexError):
+                continue
+    
+    return None
+
+def check_date_in_content(content: str, url: str = "") -> bool:
+    """
+    Проверяет, что контент опубликован не раньше 2026 года
+    """
+    # Проверяем URL и описание
+    text_to_check = content
+    if url:
+        text_to_check = f"{text_to_check} {url}"
+    
+    date = parse_date_from_text(text_to_check)
+    if date:
+        return date >= MIN_DATE
+    
+    # Если дата не найдена, проверяем по косвенным признакам
+    # Слова, указывающие на старый контент
+    old_keywords = [
+        '2019', '2020', '2021', '2022', '2023', '2024', '2025',
+        'ретро', 'старый', 'архив', 'давно', 'год назад',
+        'old', 'archive', 'classic', 'vintage', 'retro',
+        'legacy', 'original', 'first', 'early'
+    ]
+    
+    text_lower = text_to_check.lower()
+    for keyword in old_keywords:
+        if keyword in text_lower:
+            # Если есть год из прошлого, считаем контент старым
+            if keyword in ['2019', '2020', '2021', '2022', '2023', '2024', '2025']:
+                return False
+            # Для слов-маркеров проверяем контекст
+            if keyword in ['старый', 'архив', 'давно', 'ретро']:
+                return False
+    
+    # Если нет явных признаков старого контента, считаем допустимым
+    return True
+
 # ===== ФУНКЦИИ DEEPSEEK API =====
 
 def get_system_prompt() -> str:
@@ -730,10 +820,10 @@ def generate_caption_with_validation() -> Tuple[str, Optional[str]]:
                     {"role": "user", "content": current_prompt}
                 ],
                 "temperature": 1.2,
-                "max_tokens": 4000,  # Установлено 4000 токенов
+                "max_tokens": 4000,
             }
             
-            response = requests.post(url, headers=headers, json=data, timeout=60)  # Увеличил таймаут до 60 секунд
+            response = requests.post(url, headers=headers, json=data, timeout=60)
             
             if response.status_code == 400:
                 error_text = response.text.lower()
@@ -775,12 +865,10 @@ def generate_caption_with_validation() -> Tuple[str, Optional[str]]:
             caption = clean_text(caption)
             caption = truncate_by_sentences(caption, max_length=1023)
             
-            # Проверяем только максимальную длину, минимальной нет
             if len(caption) > 1023:
                 logger.warning(f"Слишком длинный ({len(caption)} символов)")
                 continue
             
-            # Проверяем только логику и смысл
             validated, error = validate_caption(caption, max_length=1023)
             
             if not validated:
@@ -939,7 +1027,9 @@ def search_pexels(query):
                 random.shuffle(photos)
                 for photo in photos:
                     url = photo["src"]["large"]
-                    return url
+                    # Проверяем дату фото (если есть)
+                    if check_date_in_content("", url):
+                        return url
         return None
     except Exception as e:
         logger.error(f"Ошибка Pexels: {e}")
@@ -974,8 +1064,10 @@ def search_instagram(streamer_name: str, streamer_display: str) -> Optional[str]
                 if any(ext in img.lower() for ext in ['.jpg', '.jpeg', '.png', '.webp']):
                     if 'instagram.com' in img.lower() or 'cdninstagram.com' in img.lower():
                         if not any(x in img.lower() for x in ['gstatic', 'google', 'favicon', 'logo']):
-                            logger.info(f"✅ Найдено фото из Instagram для {streamer_display}")
-                            return img
+                            # Проверяем дату
+                            if check_date_in_content("", img):
+                                logger.info(f"✅ Найдено фото из Instagram для {streamer_display}")
+                                return img
         
         return None
     except Exception as e:
@@ -1007,8 +1099,10 @@ def search_streamer_screenshot(streamer_key: str, streamer_display: str) -> Opti
                 logger.info(f"Поиск скрина для {streamer_display} в {source_name}: {query}")
                 photo = search_func(query)
                 if photo:
-                    logger.info(f"✅ Найден скрин для {streamer_display}")
-                    return photo
+                    # Проверяем дату фото
+                    if check_date_in_content("", photo):
+                        logger.info(f"✅ Найден скрин для {streamer_display}")
+                        return photo
             except Exception as e:
                 logger.error(f"Ошибка поиска скрина в {source_name}: {e}")
                 continue
@@ -1016,7 +1110,7 @@ def search_streamer_screenshot(streamer_key: str, streamer_display: str) -> Opti
     return None
 
 def search_youtube_clip(streamer_name: str, streamer_display: str) -> Optional[str]:
-    """Ищет клип стримера на YouTube с проверкой на совпадения"""
+    """Ищет клип стримера на YouTube с проверкой на совпадения и дату"""
     if not YOUTUBE_API_KEY:
         logger.warning("⚠️ YouTube API ключ не настроен")
         return None
@@ -1073,6 +1167,18 @@ def search_youtube_clip(streamer_name: str, streamer_display: str) -> Optional[s
                         title = item["snippet"]["title"]
                         channel_title = item["snippet"]["channelTitle"]
                         description = item["snippet"].get("description", "")
+                        published_at = item["snippet"].get("publishedAt", "")
+                        
+                        # Проверяем дату публикации видео
+                        if published_at:
+                            try:
+                                # Парсим дату из формата ISO 8601
+                                pub_date = datetime.fromisoformat(published_at.replace('Z', '+00:00'))
+                                if pub_date < MIN_DATE:
+                                    logger.info(f"⏭️ Пропускаем видео от {pub_date.strftime('%Y-%m-%d')} (старше 2026 года)")
+                                    continue
+                            except:
+                                pass
                         
                         # Проверяем, что видео действительно связано со стримером
                         combined_text = f"{title} {description} {channel_title}".lower()
@@ -1146,8 +1252,10 @@ def get_streamer_photo(streamer_name: str) -> Optional[str]:
                 logger.info(f"Поиск фото для {streamer_name} в {source_name}: {query}")
                 photo = search_func(query)
                 if photo:
-                    logger.info(f"✅ Найдено новое фото для {streamer_name}")
-                    return photo
+                    # Проверяем дату фото
+                    if check_date_in_content("", photo):
+                        logger.info(f"✅ Найдено новое фото для {streamer_name}")
+                        return photo
             except Exception as e:
                 logger.error(f"Ошибка поиска для {streamer_name} в {source_name}: {e}")
                 continue
