@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 # ===== КОНФИГУРАЦИЯ =====
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
 YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY", "")
-MIN_DATE = datetime(2026, 1, 1)  # Минимальная дата публикации - 2026 год
+MIN_DATE = datetime(2026, 1, 1)
 
 # ===== КЭШ ПОСТОВ =====
 last_posts = []
@@ -113,51 +113,75 @@ STREAMER_INFO = {
 # ===== ПРОМПТЫ =====
 style_prompts = {
     'streamer': """
-Ты — уставший мужик, сидишь с пивом и обсуждаешь стримеров.
+Ты — уставший мужик лет 35-40, работяга. Сидишь вечером с пивом, смотришь стримеров и ржешь с них. Твой стиль — как в гараже с мужиками: грубо, с матом, но с юмором.
 
-Напиши пост про стримера/стримеров. Используй грубую лексику, мат, чёрный юмор и локальные мемы.
+Напиши пост про стримера/стримеров. Пост должен быть живым, эмоциональным, с реальными историями и наблюдениями. Не сухой пересказ, а твое мнение, как уставшего зрителя.
+
+⚠️ ПРАВИЛА ИСПОЛЬЗОВАНИЯ ПАДЕЖЕЙ (ЭТО ВАЖНО!):
+- Вудуш: у Вудуша, Вудушу, Вудушем, о Вудуше. НЕ "у Вудуш"!
+- Праден: у Прадена, Прадену, Праденом, о Прадене. НЕ "у Праден"!
+- Братишкин: у Братишкина, Братишкину, Братишкиным, о Братишкине
+- Сасавот: у Сасавота, Сасавоту, Сасавотом, о Сасавоте
+- Алина Рин: у Алины Рин, Алине Рин, Алиной Рин, об Алине Рин (ОНА, женский род!)
+- Ласка: у Ласки, Ласке, Лаской, о Ласке
+- Аравудус: у Аравудуса, Аравудусу, Аравудусом, о Аравудусе
+- Эвелон: у Эвелона, Эвелону, Эвелоном, о Эвелоне
+- Бустер: у Бустера, Бустеру, Бустером, о Бустере
+
+⚠️ МЕСТОИМЕНИЯ:
+- Для мужчин (он, его, ему, им, нём): Вудуш, Праден, Братишкин, Сасавот, Ласка, Аравудус, Эвелон, Бустер
+- Для женщин (она, её, ей, ей, ней): Алина Рин
+
+Примеры правильных падежей:
+❌ НЕПРАВИЛЬНО: "Смотрю на Бустер" 
+✅ ПРАВИЛЬНО: "Смотрю на Бустера"
+
+❌ НЕПРАВИЛЬНО: "У Вудуш опять проблемы"
+✅ ПРАВИЛЬНО: "У Вудуша опять проблемы"
+
+❌ НЕПРАВИЛЬНО: "Дайте Праден"
+✅ ПРАВИЛЬНО: "Дайте Прадену"
+
+❌ НЕПРАВИЛЬНО: "Алина Рин накрутила" 
+✅ ПРАВИЛЬНО: "Алина Рин накрутила" (она, женский род)
 
 ⚠️ ИЗВЕСТНЫЕ МЕМЫ И ШУТКИ ПРО СТРИМЕРОВ:
-- Вудуш: его вечные проблемы с ПК, "Вудуш снова перезагружается", вечные "ладно, я пошёл"
-- Праден: "Праден снова проиграл", его лицо на стриме, "Праден обиделся"
-- Братишкин: лысина, "Братишкин на качалку", "Вова Братишкин опять лысиной светит"
-- Сасавот: его смех, "Сасавот засмеялся так, что микрофон сломал"
-- Алина Рин: её эмоции на стриме, "Алина Рин опять орёт", её реакции
-- Ласка: "Ласка снова забил", его вечные "я сейчас"
-- Аравудус: "Аравудус снова в тильте", его вечные проблемы с игрой
-- Эвелон: "Эвелон крашнулся", его вечные "я устал, я спать"
-- Бустер: "Бустер накрутил", его вечные "смотрите какой я"
+- Вудуш: вечные проблемы с ПК, "Вудуш снова перезагружается", "ладно, я пошёл"
+- Праден: вечно проигрывает, обижается, его лицо на стриме
+- Братишкин: лысина, качалка, "Вова Братишкин лысиной светит"
+- Сасавот: его смех ломает микрофон, угарные моменты
+- Алина Рин: эмоциональная, орёт на стримах, яркие реакции
+- Ласка: "сейчас", "забил", вечные отмазки
+- Аравудус: вечно в тильте, проблемы с игрой
+- Эвелон: "я устал, я спать", крашится
+- Бустер: накрутки, "смотрите какой я"
 
-Требования:
-- Пиши пост любого размера, но сохраняй логику и смысл
-- Мат 2-5 раз (блядь, сука, пиздец, хуйня, нахуй)
+Требования к посту:
+- Пиши от первого лица, как будто ты сидишь с пивом и обсуждаешь
+- Пост должен быть 400-700 символов, содержательный
+- Мат 3-5 раз (блядь, сука, пиздец, хуйня, нахуй, ёбаный)
 - Обязательно используй 1-2 локальных мема про стримера
-- Используй правильные падежи стримеров (у Вудуша, Прадену, Алине Рин и т.д.)
-- Острые шутки и насмешки над стримерами с чёрным юмором
-- Используй "так называемый/ая/ые" по отношению к участникам
-- Не переходи на личности (критика действий, а не внешности)
-- Пиши с юмором, как будто рассказываешь в баре
-- Можно ссылаться на посты Илюхи с @maddysontg
-- Пиши как работяга в гараже
-- Коротко, грубо, по делу, с юмором
+- Используй правильные падежи! Проверь ещё раз перед отправкой!
+- Острые шутки с юмором, без перехода на личности
+- Используй "так называемый/ая/ые" с иронией
+- Можно ссылаться на @maddysontg
 - Не называй своё имя
 - Обращайся к читателям на "вы"
 
-Пример темы: стример накрутил зрителей, стример забанил подписчика, стример поссорился с другим стримером, стример снова проиграл на стриме, очередной скандал.
+Пример хорошего поста:
+"Сижу, пиво пью, смотрю на Вудуша и ржу. Блядь, ну как можно так тупить? Опять ПК перезагружает, опять "ладно, я пошёл". Так называемый стример, сука. У Вудуша вечные проблемы, а он сидит и делает вид, что так и надо. Пиздец, ну хоть посмеяться есть над чем. Илюха с @maddysontg вчера пост кидал про него, так я вообще угарал. В общем, Вудуш — наше всё, без него скучно было бы. Но блядь, сделай уже что-нибудь с ПК!"
 """,
     'asia': """
-Ты — уставший мужик, но иногда вспоминаешь про Азию.
-
-Напиши пост про Азию (редко, 15% постов). С юмором и самоиронией.
+Ты — уставший мужик, работяга. Иногда вспоминаешь про Азию, где всё по-другому. Напиши пост про Азию с юмором и самоиронией.
 
 Требования:
-- Пиши пост любого размера, но сохраняй логику и смысл
+- 300-500 символов
+- От первого лица, как будто рассказываешь друзьям
 - Мат 1-2 раза
-- Одна острая шутка с юмором
-- Используй "так называемый/ая/ые" где уместно
+- Острая шутка с юмором
+- Используй "так называемый/ая/ые" с иронией
 - Не называй своё имя
 - Обращайся к читателям на "вы"
-- Не используй "скуф"
 """,
 }
 
@@ -395,7 +419,6 @@ def clean_text(text: str) -> str:
     return text
 
 def validate_caption(text: str, max_length: int = 1023) -> Tuple[str, Optional[str]]:
-    """Проверяет текст без ограничений по минимальной длине"""
     if not text:
         return '', 'Текст пустой'
     text = clean_text(text)
@@ -456,17 +479,15 @@ def is_similar(text: str) -> bool:
 # ===== ФУНКЦИИ ПРОВЕРКИ ДАТЫ =====
 
 def parse_date_from_text(text: str) -> Optional[datetime]:
-    """Парсит дату из текста (для видео и фото)"""
     if not text:
         return None
     
-    # Паттерны для поиска даты
     date_patterns = [
-        r'(\d{4})[-/](\d{1,2})[-/](\d{1,2})',  # 2024-01-15 или 2024/01/15
-        r'(\d{1,2})[-/](\d{1,2})[-/](\d{4})',  # 15-01-2024
-        r'(\d{1,2})\s+(янв|фев|мар|апр|май|июн|июл|авг|сен|окт|ноя|дек)\s+(\d{4})',  # 15 янв 2024
-        r'(\d{4})\s+год',  # 2024 год
-        r'(\d{2})\.(\d{2})\.(\d{4})',  # 15.01.2024
+        r'(\d{4})[-/](\d{1,2})[-/](\d{1,2})',
+        r'(\d{1,2})[-/](\d{1,2})[-/](\d{4})',
+        r'(\d{1,2})\s+(янв|фев|мар|апр|май|июн|июл|авг|сен|окт|ноя|дек)\s+(\d{4})',
+        r'(\d{4})\s+год',
+        r'(\d{2})\.(\d{2})\.(\d{4})',
     ]
     
     months_map = {
@@ -480,19 +501,15 @@ def parse_date_from_text(text: str) -> Optional[datetime]:
             groups = match.groups()
             try:
                 if len(groups) == 3:
-                    # Определяем формат даты
                     if groups[0].isdigit() and len(groups[0]) == 4:
-                        # ГГГГ-ММ-ДД или ГГГГ/ММ/ДД
                         year = int(groups[0])
                         month = int(groups[1])
                         day = int(groups[2])
                     elif groups[2].isdigit() and len(groups[2]) == 4:
-                        # ДД-ММ-ГГГГ или ДД/ММ/ГГГГ
                         day = int(groups[0])
                         month = int(groups[1])
                         year = int(groups[2])
                     elif groups[1].lower() in months_map:
-                        # ДД Месяц ГГГГ
                         day = int(groups[0])
                         month = months_map[groups[1].lower()]
                         year = int(groups[2])
@@ -507,10 +524,6 @@ def parse_date_from_text(text: str) -> Optional[datetime]:
     return None
 
 def check_date_in_content(content: str, url: str = "") -> bool:
-    """
-    Проверяет, что контент опубликован не раньше 2026 года
-    """
-    # Проверяем URL и описание
     text_to_check = content
     if url:
         text_to_check = f"{text_to_check} {url}"
@@ -519,84 +532,73 @@ def check_date_in_content(content: str, url: str = "") -> bool:
     if date:
         return date >= MIN_DATE
     
-    # Если дата не найдена, проверяем по косвенным признакам
-    # Слова, указывающие на старый контент
     old_keywords = [
         '2019', '2020', '2021', '2022', '2023', '2024', '2025',
         'ретро', 'старый', 'архив', 'давно', 'год назад',
         'old', 'archive', 'classic', 'vintage', 'retro',
-        'legacy', 'original', 'first', 'early'
     ]
     
     text_lower = text_to_check.lower()
     for keyword in old_keywords:
         if keyword in text_lower:
-            # Если есть год из прошлого, считаем контент старым
             if keyword in ['2019', '2020', '2021', '2022', '2023', '2024', '2025']:
                 return False
-            # Для слов-маркеров проверяем контекст
             if keyword in ['старый', 'архив', 'давно', 'ретро']:
                 return False
     
-    # Если нет явных признаков старого контента, считаем допустимым
     return True
 
 # ===== ФУНКЦИИ DEEPSEEK API =====
 
 def get_system_prompt() -> str:
-    """Возвращает системный промпт с кэшированием."""
-    cache_key = "system_prompt_v3"
+    cache_key = "system_prompt_v4"
     if cache_key not in _system_prompt_cache:
-        _system_prompt_cache[cache_key] = """Ты — уставший мужик, который много работает, много пьёт и много смотрит стримеров.
+        _system_prompt_cache[cache_key] = """Ты — уставший мужик лет 35-40, работяга. Сидишь вечером с пивом, смотришь стримеров и ржешь с них. Твой стиль — как в гараже с мужиками: грубо, с матом, но с юмором.
 
-⚠️ ГЛАВНЫЕ ПРАВИЛА:
-- Ты НЕ называешь своё имя
-- Пиши от первого лица, как будто сидишь с пивом и обсуждаешь
-- Используй мат: блядь, сука, пиздец, хуйня, нахуй
-- Говори грубо, прямо, без цензуры
-- Шути над стримерами жёстко, но с юмором
-- Используй "так называемый", "так называемые" часто
-- Не используй "скуф", "средних лет" — ты сам такой же
-- Если нужно упомянуть автора канала @maddysontg — называй его Илюха
+Ты НЕ ИИ, ты НЕ бот, ты — обычный мужик, который устал на работе и отдыхает за просмотром стримов.
 
-⚠️ ВАЖНО: ПРАВИЛЬНЫЕ ПАДЕЖИ ДЛЯ СТРИМЕРОВ:
-- Вудуш: у Вудуша, Вудушу
-- Праден: у Прадена, Прадену
-- Братишкин: у Братишкина, Братишкину
-- Сасавот: у Сасавота, Сасавоту
-- Алина Рин: у Алины Рин, Алине Рин (она/её)
-- Ласка: у Ласки, Ласке
-- Аравудус: у Аравудуса, Аравудусу
-- Эвелон: у Эвелона, Эвелону
-- Бустер: у Бустера, Бустеру
-
-Используй правильные падежи в постах!
+⚠️ ПРАВИЛА РУССКОГО ЯЗЫКА (ЭТО ВАЖНО!):
+1. Все стримеры (кроме Алины Рин) — МУЖСКОГО РОДА. Используй: он, его, ему, им, нём.
+2. Алина Рин — ЖЕНСКОГО РОДА. Используй: она, её, ей, ей, ней.
+3. Падежи для мужских имён (запомни!):
+   - Вудуш → у Вудуша, Вудушу, Вудушем, о Вудуше
+   - Праден → у Прадена, Прадену, Праденом, о Прадене
+   - Братишкин → у Братишкина, Братишкину, Братишкиным, о Братишкине
+   - Сасавот → у Сасавота, Сасавоту, Сасавотом, о Сасавоте
+   - Ласка → у Ласки, Ласке, Лаской, о Ласке
+   - Аравудус → у Аравудуса, Аравудусу, Аравудусом, о Аравудусе
+   - Эвелон → у Эвелона, Эвелону, Эвелоном, о Эвелоне
+   - Бустер → у Бустера, Бустеру, Бустером, о Бустере
+4. Падежи для женских имён:
+   - Алина Рин → у Алины Рин, Алине Рин, Алиной Рин, об Алине Рин
 
 Твой образ:
 - Работяга, который устал от жизни
 - Пьёт пиво каждый вечер
 - Смотрит стримеров и бесится с них, но с юмором
 - Говорит как в гараже с мужиками
+- Любит чёрный юмор и самоиронию
 
 Стиль речи:
-- Мат через слово
+- Мат через слово, но к месту
 - Грубые сравнения с юмором
 - Чёрный юмор
 - Без соплей и сантиментов
-- Коротко и по делу
+- Коротко и по делу, но живо и эмоционально
 
 Важно:
 - Не упоминай своё имя
 - Обращайся к читателям на "вы"
 - Не переходи на личности стримеров (критика действий, а не внешности)
-- Используй "так называемый" для участников
+- Используй "так называемый" с иронией
 - Илюху упоминай ТОЛЬКО по делу
-- Отвечай ТОЛЬКО готовым постом. БЕЗ РАССУЖДЕНИЙ."""
+- Отвечай ТОЛЬКО готовым постом. БЕЗ РАССУЖДЕНИЙ.
+- Пост должен быть живым, эмоциональным, с реальными наблюдениями
+- Используй правильные падежи! Проверь себя перед отправкой!"""
         logger.info("💾 Системный промпт закэширован")
     return _system_prompt_cache[cache_key]
 
 def get_style_prompt(style: str, streamer_key: str = None) -> str:
-    """Возвращает промпт для стиля с кэшированием."""
     cache_key = f"style_prompt_{style}_{streamer_key}"
     
     if cache_key not in _system_prompt_cache:
@@ -608,16 +610,26 @@ def get_style_prompt(style: str, streamer_key: str = None) -> str:
             pronoun = info['pronoun']
             genitive = info['genitive']
             dative = info['dative']
+            accusative = info['accusative']
+            instrumental = info['instrumental']
+            prepositional = info['prepositional']
             
             gender_hint = f"""
-⚠️ ВАЖНО: СТРИМЕР {name} — {pronoun.upper()}
+⚠️ ВАЖНО! СТРИМЕР {name} — {pronoun.upper()}
 
-Правильные падежи для {name}:
-- Именительный (кто?): {name}
-- Родительный (у кого?): у {genitive}
-- Дательный (кому?): {dative}
+Правильные падежи для {name} (ПРОВЕРЬ СЕБЯ!):
+- Именительный (кто? что?): {name}
+- Родительный (кого? чего?): {genitive}
+- Дательный (кому? чему?): {dative}
+- Винительный (кого? что?): {accusative}
+- Творительный (кем? чем?): {instrumental}
+- Предложный (о ком? о чём?): {prepositional}
 
-Используй правильные падежи в тексте!
+Примеры использования:
+- "Смотрю на {accusative}"
+- "У {genitive} проблемы"
+- "Дайте {dative}"
+- "Говорю о {prepositional}"
 """
             _system_prompt_cache[cache_key] = gender_hint + base_prompt + """
 
@@ -688,6 +700,7 @@ def validate_post_with_deepseek(post_text: str) -> Tuple[bool, str]:
 4. Не должно быть призывов к насилию или экстремизму
 5. Пост должен быть грамотным (орфография, пунктуация)
 6. Пост должен быть завершённым
+7. Пост должен быть живым и эмоциональным, не сухим
 
 Если пост соответствует — напиши "APPROVED".
 Если пост НЕ соответствует — напиши "REJECT: причина".
@@ -738,7 +751,6 @@ def get_streamer_for_post() -> Tuple[str, str]:
     return key, name
 
 def generate_caption_with_validation() -> Tuple[str, Optional[str]]:
-    """Генерирует пост и проверяет его через DeepSeek API без fallback'ов"""
     logger.info("Генерирую уникальный пост с проверкой...")
     
     rand = random.random()
@@ -758,7 +770,7 @@ def generate_caption_with_validation() -> Tuple[str, Optional[str]]:
         logger.error("❌ Нет ключа DeepSeek API")
         return "Мне потребуется чуть больше времени на ответ, ожидайте.", streamer_key
     
-    max_attempts = 10
+    max_attempts = 15
     for attempt in range(max_attempts):
         try:
             logger.info(f"Попытка {attempt+1} для {topic}")
@@ -772,21 +784,23 @@ def generate_caption_with_validation() -> Tuple[str, Optional[str]]:
                 pronoun = info['pronoun']
                 genitive = info['genitive']
                 dative = info['dative']
+                accusative = info['accusative']
                 
                 streamer_topics = [
-                    f"Напиши пост про стримера {name}. {pronoun} опять накрутил зрителей. Критикуй {pronoun} с юмором. Используй мат.",
-                    f"Напиши пост про {name} и {pronoun} очередной провал на стриме. С юмором и матом.",
-                    f"Напиши пост про скандал с участием {name}. С юмором и матом.",
+                    f"Напиши живой пост про стримера {name}. Расскажи, как {pronoun} накручивает зрителей или тупит на стриме. Используй мат и юмор.",
+                    f"Напиши пост про {name}. У {genitive} опять проблемы на стриме. Расскажи с юмором и матом.",
+                    f"Напиши пост про скандал с {name}. Используй мат и чёрный юмор.",
                     f"Расскажи смешную историю про {name}. С юмором и матом.",
                     f"Ответь на пост Илюхи про {name}. Согласись или поспорь, но с юмором и матом.",
                     f"Напиши пост про то, как {name} накручивает зрителей. С юмором.",
                     f"Напиши пост про очередную драму с {name}. С юмором и матом.",
                     f"У {genitive} опять проблемы со стримом. Напиши об этом с юмором.",
                     f"Сегодня {dative} снова не повезло. Расскажи об этом с матом.",
+                    f"Смотрю на {accusative} и ржу. Расскажи почему.",
                 ]
             else:
                 streamer_topics = [
-                    "Напиши пост про стримера. Критикуй его действия с юмором. Используй мат.",
+                    "Напиши живой пост про стримера. Критикуй его действия с юмором. Используй мат.",
                     "Напиши пост про стримера и его очередной провал на стриме. С юмором и матом.",
                 ]
             
@@ -802,7 +816,7 @@ def generate_caption_with_validation() -> Tuple[str, Optional[str]]:
                     alt = random.choice(streamer_topics)
                 else:
                     alt = random.choice(asian_topics)
-                current_prompt = alt + "\n\n⚠️ Пиши строго по теме. Только пост без рассуждений."
+                current_prompt = alt + "\n\n⚠️ Пиши строго по теме. Только пост без рассуждений. Пост должен быть живым и эмоциональным."
                 logger.info(f"Пробую альтернативный промпт")
             
             system_prompt = get_system_prompt()
@@ -819,7 +833,7 @@ def generate_caption_with_validation() -> Tuple[str, Optional[str]]:
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": current_prompt}
                 ],
-                "temperature": 1.2,
+                "temperature": 1.3,
                 "max_tokens": 4000,
             }
             
@@ -844,7 +858,7 @@ def generate_caption_with_validation() -> Tuple[str, Optional[str]]:
             generated_content = choice.get("message", {}).get("content", "")
             finish_reason = choice.get("finish_reason", "")
             
-            if not generated_content or len(generated_content.strip()) < 10:
+            if not generated_content or len(generated_content.strip()) < 20:
                 logger.warning("Пустой или короткий ответ")
                 continue
             
@@ -867,6 +881,10 @@ def generate_caption_with_validation() -> Tuple[str, Optional[str]]:
             
             if len(caption) > 1023:
                 logger.warning(f"Слишком длинный ({len(caption)} символов)")
+                continue
+            
+            if len(caption) < 100:
+                logger.warning(f"Слишком короткий ({len(caption)} символов)")
                 continue
             
             validated, error = validate_caption(caption, max_length=1023)
@@ -1027,7 +1045,6 @@ def search_pexels(query):
                 random.shuffle(photos)
                 for photo in photos:
                     url = photo["src"]["large"]
-                    # Проверяем дату фото (если есть)
                     if check_date_in_content("", url):
                         return url
         return None
@@ -1036,7 +1053,6 @@ def search_pexels(query):
         return None
 
 def search_instagram(streamer_name: str, streamer_display: str) -> Optional[str]:
-    """Ищет фото стримера через Instagram (через публичные страницы)"""
     try:
         queries = [
             f"{streamer_display} стрим",
@@ -1064,7 +1080,6 @@ def search_instagram(streamer_name: str, streamer_display: str) -> Optional[str]
                 if any(ext in img.lower() for ext in ['.jpg', '.jpeg', '.png', '.webp']):
                     if 'instagram.com' in img.lower() or 'cdninstagram.com' in img.lower():
                         if not any(x in img.lower() for x in ['gstatic', 'google', 'favicon', 'logo']):
-                            # Проверяем дату
                             if check_date_in_content("", img):
                                 logger.info(f"✅ Найдено фото из Instagram для {streamer_display}")
                                 return img
@@ -1075,7 +1090,6 @@ def search_instagram(streamer_name: str, streamer_display: str) -> Optional[str]
         return None
 
 def search_streamer_screenshot(streamer_key: str, streamer_display: str) -> Optional[str]:
-    """Ищет скрин или фото стримера на стриме"""
     queries = [
         f"{streamer_display} на стриме скрин",
         f"{streamer_display} стрим лицо",
@@ -1099,7 +1113,6 @@ def search_streamer_screenshot(streamer_key: str, streamer_display: str) -> Opti
                 logger.info(f"Поиск скрина для {streamer_display} в {source_name}: {query}")
                 photo = search_func(query)
                 if photo:
-                    # Проверяем дату фото
                     if check_date_in_content("", photo):
                         logger.info(f"✅ Найден скрин для {streamer_display}")
                         return photo
@@ -1110,13 +1123,11 @@ def search_streamer_screenshot(streamer_key: str, streamer_display: str) -> Opti
     return None
 
 def search_youtube_clip(streamer_name: str, streamer_display: str) -> Optional[str]:
-    """Ищет клип стримера на YouTube с проверкой на совпадения и дату"""
     if not YOUTUBE_API_KEY:
         logger.warning("⚠️ YouTube API ключ не настроен")
         return None
     
     try:
-        # Формируем точные запросы на русском
         search_queries = [
             f"{streamer_display} клип стрим",
             f"{streamer_display} момент стрим",
@@ -1124,7 +1135,6 @@ def search_youtube_clip(streamer_name: str, streamer_display: str) -> Optional[s
             f"{streamer_display} стрим",
         ]
         
-        # Добавляем мемные запросы
         meme_queries = {
             'Вудуш': [f"{streamer_display} перезагрузка", f"{streamer_display} ладно я пошёл"],
             'Праден': [f"{streamer_display} проиграл", f"{streamer_display} обиделся"],
@@ -1169,10 +1179,8 @@ def search_youtube_clip(streamer_name: str, streamer_display: str) -> Optional[s
                         description = item["snippet"].get("description", "")
                         published_at = item["snippet"].get("publishedAt", "")
                         
-                        # Проверяем дату публикации видео
                         if published_at:
                             try:
-                                # Парсим дату из формата ISO 8601
                                 pub_date = datetime.fromisoformat(published_at.replace('Z', '+00:00'))
                                 if pub_date < MIN_DATE:
                                     logger.info(f"⏭️ Пропускаем видео от {pub_date.strftime('%Y-%m-%d')} (старше 2026 года)")
@@ -1180,11 +1188,9 @@ def search_youtube_clip(streamer_name: str, streamer_display: str) -> Optional[s
                             except:
                                 pass
                         
-                        # Проверяем, что видео действительно связано со стримером
                         combined_text = f"{title} {description} {channel_title}".lower()
                         streamer_names = [streamer_display.lower(), streamer_name.lower()]
                         
-                        # Дополнительные варианты написания
                         if streamer_display == "Эвелон":
                             streamer_names.extend(["evelon", "эвелон"])
                         elif streamer_display == "Братишкин":
@@ -1206,7 +1212,6 @@ def search_youtube_clip(streamer_name: str, streamer_display: str) -> Optional[s
                         
                         has_streamer_name = any(name in combined_text for name in streamer_names)
                         
-                        # Исключаем не связанные видео
                         exclude_words = ['самолет', 'авиа', 'flight', 'plane', 'avalon', 'airport', 
                                        'автомобиль', 'car', 'auto', 'машина', 'игра', 'game']
                         has_exclude = any(word in combined_text for word in exclude_words)
@@ -1232,7 +1237,6 @@ def search_youtube_clip(streamer_name: str, streamer_display: str) -> Optional[s
         return None
 
 def get_streamer_photo(streamer_name: str) -> Optional[str]:
-    """Ищет фото конкретного стримера"""
     queries = STREAMER_QUERIES.get(streamer_name, [])
     if not queries:
         return None
@@ -1252,7 +1256,6 @@ def get_streamer_photo(streamer_name: str) -> Optional[str]:
                 logger.info(f"Поиск фото для {streamer_name} в {source_name}: {query}")
                 photo = search_func(query)
                 if photo:
-                    # Проверяем дату фото
                     if check_date_in_content("", photo):
                         logger.info(f"✅ Найдено новое фото для {streamer_name}")
                         return photo
@@ -1264,22 +1267,17 @@ def get_streamer_photo(streamer_name: str) -> Optional[str]:
     return None
 
 def get_streamer_media(streamer_key: str, streamer_display: str) -> Tuple[Optional[str], str]:
-    """Получает медиа для стримера: сначала клип, если нет - скрин/фото"""
-    # Сначала ищем клип на YouTube
     logger.info(f"📹 Ищу клип для {streamer_display}...")
     clip = search_youtube_clip(streamer_key, streamer_display)
     if clip:
         return clip, 'clip'
     
-    # Если клип не найден, ищем фото/скрин
     logger.info(f"🖼️ Клип не найден, ищу фото для {streamer_display}...")
     
-    # Сначала ищем скрин со стрима
     screenshot = search_streamer_screenshot(streamer_key, streamer_display)
     if screenshot:
         return screenshot, 'photo'
     
-    # Если скрин не найден, ищем обычное фото
     photo = get_streamer_photo(streamer_key)
     if photo:
         return photo, 'photo'
