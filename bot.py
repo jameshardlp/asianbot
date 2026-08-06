@@ -70,7 +70,7 @@ AURAPAY_WEBHOOK_URL = os.getenv("AURAPAY_WEBHOOK_URL", "")
 AURAPAY_MINIAPP_URL = os.getenv("AURAPAY_MINIAPP_URL", "https://jameshardlp.github.io/asianbot/aura-payment.html")
 
 BROADCAST_PRICE_FILE = "broadcast_price.json"
-USAGE_FILE = "usage.json"  # Файл для хранения статистики использования /photo
+USAGE_FILE = "usage.json"
 
 # Redis настройки
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
@@ -101,11 +101,9 @@ SCHEDULE_FILE = "schedule.json"
 # ===== РАБОТА С ИСПОЛЬЗОВАНИЕМ КОМАНДЫ /PHOTO =====
 
 def load_usage() -> dict:
-    """Загружает статистику использования /photo"""
     try:
         with open(USAGE_FILE, "r") as f:
             data = json.load(f)
-            # Проверяем структуру и удаляем устаревшие записи (старше 24 часов)
             current_date = datetime.now().strftime("%Y-%m-%d")
             for user_id in list(data.keys()):
                 if data[user_id].get("date") != current_date:
@@ -115,7 +113,6 @@ def load_usage() -> dict:
         return {}
 
 def save_usage(usage_data: dict):
-    """Сохраняет статистику использования /photo"""
     try:
         with open(USAGE_FILE, "w") as f:
             json.dump(usage_data, f)
@@ -125,11 +122,6 @@ def save_usage(usage_data: dict):
         return False
 
 def can_use_photo(user_id: int) -> Tuple[bool, int, int]:
-    """
-    Проверяет, может ли пользователь использовать /photo
-    Возвращает: (можно_использовать, использовано_сегодня, лимит)
-    """
-    # Владелец может использовать бесконечно
     if user_id == OWNER_ID:
         return True, 0, float('inf')
     
@@ -145,22 +137,15 @@ def can_use_photo(user_id: int) -> Tuple[bool, int, int]:
     last_date = user_usage.get("date")
     count = user_usage.get("count", 0)
     
-    # Если дата не совпадает с сегодняшней, сбрасываем счетчик
     if last_date != current_date:
         return True, 0, limit
     
-    # Проверяем, не превышен ли лимит
     if count >= limit:
         return False, count, limit
     
     return True, count, limit
 
 def increment_photo_usage(user_id: int) -> Tuple[int, int]:
-    """
-    Увеличивает счетчик использования /photo для пользователя
-    Возвращает: (использовано_сегодня, лимит)
-    """
-    # Владелец не учитывается
     if user_id == OWNER_ID:
         return 0, float('inf')
     
@@ -174,12 +159,10 @@ def increment_photo_usage(user_id: int) -> Tuple[int, int]:
     
     user_usage = usage_data[user_key]
     
-    # Если дата изменилась, сбрасываем счетчик
     if user_usage.get("date") != current_date:
         user_usage["date"] = current_date
         user_usage["count"] = 0
     
-    # Увеличиваем счетчик
     user_usage["count"] += 1
     
     save_usage(usage_data)
@@ -188,38 +171,36 @@ def increment_photo_usage(user_id: int) -> Tuple[int, int]:
 
 # ===== КЭШИРОВАНИЕ СИСТЕМНЫХ ПРОМПТОВ =====
 
-# Кэш для системных промптов (не меняются в процессе работы)
 _system_prompt_cache = {}
 
 def get_system_prompt() -> str:
     """Возвращает системный промпт с кэшированием."""
-    cache_key = "system_prompt_v1"
+    cache_key = "system_prompt_v2"
     if cache_key not in _system_prompt_cache:
-        _system_prompt_cache[cache_key] = """Ты — Анатолий, холостой мужик за 40.
+        _system_prompt_cache[cache_key] = """Ты — автор канала, который пишет про Азию, стримеров и ботоводов.
 
-⚠️ ГЛАВНОЕ ПРАВИЛО:
-Ты ДОЛЖЕН писать строго по теме, которая указана в промпте.
-НЕ переключайся на другие темы.
-НЕ смешивай Азию и Россию в одном посте.
-НЕ пиши абстрактных рассуждений.
-Только конкретная история или ситуация по теме.
-Если в промпте про Азию — пиши про Азию.
-Если в промпте про Россию — пиши про Россию.
-Никаких отклонений от темы!
-НЕ НАЗЫВАЙ ТОЧНЫЙ ВОЗРАСТ — используй "в мои годы", "средних лет", изредка "скуф" или "старый пердун".
+⚠️ ГЛАВНЫЕ ПРАВИЛА:
+- Ты НЕ называешь своё имя
+- Ты пишешь от первого лица
+- Используй мат для эмоций, но не перебарщивай
+- Редко используй слово "скуф" (только в крайнем случае)
+- Редко используй "средних лет" (только если очень нужно)
+- Чаще используй "так называемый", "так называемые", "так называемая"
+- Крайне редко используй "чмодьё" — только в негативном контексте
+- Пиши как будто общаешься с друзьями в баре
 
 Твой стиль:
 - Колкий, дерзкий, с чёрным юмором
-- Рассказываешь реальные истории из жизни
 - Самоирония и сарказм
-- Пиши так, будто рассказываешь друзьям в баре
+- Если про Азию — описывай реальные ситуации
+- Если про стримеров — критикуй, но с фактами
+- Не ной, шути над всем
 
 Важно:
-- Пиши от первого лица
-- Используй мат для эмоций (не перебарщивай)
+- Не упоминай своё имя
 - Обращайся к читателям на "вы"
 - Не упоминай жену
-- Никогда не пиши о том, что твой контент запрещён
+- Никогда не пиши о том, что контент запрещён
 - Отвечай ТОЛЬКО готовым постом. БЕЗ РАССУЖДЕНИЙ."""
         logger.info("💾 Системный промпт закэширован")
     return _system_prompt_cache[cache_key]
@@ -228,25 +209,15 @@ def get_style_prompt(style: str) -> str:
     """Возвращает промпт для стиля с кэшированием."""
     cache_key = f"style_prompt_{style}"
     if cache_key not in _system_prompt_cache:
-        base_prompt = style_prompts.get(style, style_prompts['medium'])
+        base_prompt = style_prompts.get(style, style_prompts['asia'])
         _system_prompt_cache[cache_key] = base_prompt + """
 
-⚠️ ВАЖНОЕ ТРЕБОВАНИЕ: 
-Твой ответ ДОЛЖЕН быть строго по теме, указанной в промпте. 
-НЕ уходи в рассуждения, НЕ переключайся на другие темы.
-НЕ используй штампы, НЕ пиши абстрактных фраз.
-Только конкретная история или ситуация по теме.
-Если в промпте про Азию — пиши про Азию.
-Если про Россию — пиши про Россию.
-НЕ МЕШАЙ ТЕМЫ В ОДНОМ ПОСТЕ.
-НЕ НАЗЫВАЙ ТОЧНЫЙ ВОЗРАСТ — только "в мои годы", "средних лет", изредка "скуф" или "старый пердун".
-
+⚠️ ВАЖНО: Пиши строго по теме. Не переключайся на другие темы.
 Твой ответ (ТОЛЬКО ПОСТ, БЕЗ РАССУЖДЕНИЙ):"""
         logger.info(f"💾 Промпт для стиля {style} закэширован")
     return _system_prompt_cache[cache_key]
 
 def clear_prompt_cache():
-    """Очищает кэш промптов (для обновления)."""
     global _system_prompt_cache
     _system_prompt_cache.clear()
     logger.info("🗑️ Кэш промптов очищен")
@@ -273,13 +244,11 @@ broadcast_prices = load_broadcast_price()
 
 # ===== FREEKASSA =====
 def generate_freekassa_signature(shop_id: str, amount: str, order_id: str) -> str:
-    """Генерация подписи для FreeKassa (использует SECRET1)"""
     sign_str = f"{shop_id}:{amount}:{FREEKASSA_SECRET1}:{FREEKASSA_CURRENCY}:{order_id}"
     logger.info(f"🔑 Подпись сгенерирована для заказа {order_id}")
     return hashlib.md5(sign_str.encode()).hexdigest()
 
 def verify_freekassa_webhook_signature(data: dict) -> bool:
-    """Проверка подписи webhook (использует SECRET2)"""
     required_fields = ['MERCHANT_ID', 'AMOUNT', 'MERCHANT_ORDER_ID', 'SIGN']
     for field in required_fields:
         if field not in data:
@@ -296,7 +265,6 @@ def verify_freekassa_webhook_signature(data: dict) -> bool:
     return sign == expected_sign
 
 def create_freekassa_payment_link(amount: float, order_id: str, description: str = "") -> str:
-    """Создание ссылки для оплаты через FreeKassa"""
     if not FREEKASSA_SHOP_ID or not FREEKASSA_SECRET1:
         logger.error("❌ FreeKassa не настроен")
         return ""
@@ -330,7 +298,6 @@ def create_freekassa_payment_link(amount: float, order_id: str, description: str
     return link
 
 async def check_freekassa_payment_status(order_id: str) -> Optional[dict]:
-    """Проверка статуса платежа через API FreeKassa"""
     if not FREEKASSA_API_KEY:
         return None
     
@@ -355,13 +322,12 @@ async def check_freekassa_payment_status(order_id: str) -> Optional[dict]:
 # ===== ФУНКЦИИ AURAPAY =====
 
 def create_aurapay_payment(amount: float, order_id: str, user_id: int, method: str = "card") -> Optional[dict]:
-    """Создание платежа через AuraPay с улучшенной обработкой ошибок"""
     if not AURAPAY_API_KEY:
-        logger.error("❌ AuraPay API ключ не настроен. Укажите AURAPAY_API_KEY в переменных окружения.")
+        logger.error("❌ AuraPay API ключ не настроен.")
         return None
     
     if not AURAPAY_MERCHANT_ID:
-        logger.error("❌ AuraPay Merchant ID не настроен. Укажите AURAPAY_MERCHANT_ID в переменных окружения.")
+        logger.error("❌ AuraPay Merchant ID не настроен.")
         return None
     
     if amount <= 0:
@@ -372,9 +338,8 @@ def create_aurapay_payment(amount: float, order_id: str, user_id: int, method: s
         logger.error("❌ Не указан order_id")
         return None
     
-    # Список возможных эндпоинтов для проверки (основной - /invoice/create)
     possible_endpoints = [
-        f"{AURAPAY_API_URL}/invoice/create",  # Правильный эндпоинт
+        f"{AURAPAY_API_URL}/invoice/create",
         f"{AURAPAY_API_URL}/api/invoice/create",
         f"{AURAPAY_API_URL}/v1/invoice/create",
         f"{AURAPAY_API_URL}/api/v1/invoice/create",
@@ -382,7 +347,6 @@ def create_aurapay_payment(amount: float, order_id: str, user_id: int, method: s
         f"{AURAPAY_API_URL}/api/payment/create",
     ]
     
-    # Пробуем каждый эндпоинт
     for endpoint in possible_endpoints:
         try:
             headers = {
@@ -408,73 +372,50 @@ def create_aurapay_payment(amount: float, order_id: str, user_id: int, method: s
             }
             
             logger.info(f"📤 Пробуем URL: {endpoint}")
-            logger.info(f"📤 Данные запроса: {payload}")
-            
             response = requests.post(endpoint, headers=headers, json=payload, timeout=30)
-            
-            logger.info(f"📥 Статус ответа: {response.status_code}")
-            logger.info(f"📥 Тело ответа: {response.text}")
             
             if response.status_code in [200, 201]:
                 try:
                     result = response.json()
                 except json.JSONDecodeError:
-                    logger.error(f"❌ Не удалось разобрать JSON ответ: {response.text}")
+                    logger.error(f"❌ Не удалось разобрать JSON ответ")
                     continue
                 
                 if result.get("payment_url"):
-                    logger.info(f"✅ Платёж успешно создан: {order_id} (URL: {endpoint})")
+                    logger.info(f"✅ Платёж успешно создан: {order_id}")
                     return {
                         "payment_url": result["payment_url"],
                         "payment_id": result.get("payment_id"),
                         "status": result.get("status", "pending")
                     }
                 elif result.get("redirect_url"):
-                    logger.info(f"✅ Платёж создан (редирект): {order_id} (URL: {endpoint})")
+                    logger.info(f"✅ Платёж создан (редирект): {order_id}")
                     return {
                         "payment_url": result["redirect_url"],
                         "payment_id": result.get("payment_id"),
                         "status": "pending"
                     }
                 else:
-                    logger.error(f"❌ Неизвестный формат ответа AuraPay от {endpoint}: {result}")
+                    logger.error(f"❌ Неизвестный формат ответа")
                     continue
             else:
                 logger.warning(f"⚠️ Ошибка на {endpoint}: HTTP {response.status_code}")
-                try:
-                    error_data = response.json()
-                    logger.warning(f"⚠️ Детали ошибки: {error_data}")
-                except:
-                    logger.warning(f"⚠️ Текст ошибки: {response.text}")
-                continue  # Пробуем следующий эндпоинт
+                continue
                 
-        except requests.exceptions.Timeout:
-            logger.warning(f"⚠️ Таймаут при запросе к {endpoint}")
-            continue
-        except requests.exceptions.ConnectionError:
-            logger.warning(f"⚠️ Ошибка соединения с {endpoint}")
-            continue
-        except requests.exceptions.RequestException as e:
-            logger.warning(f"⚠️ Ошибка сети при запросе к {endpoint}: {e}")
-            continue
         except Exception as e:
-            logger.error(f"❌ Непредвиденная ошибка при запросе к {endpoint}: {e}")
-            import traceback
-            traceback.print_exc()
+            logger.error(f"❌ Ошибка при запросе к {endpoint}: {e}")
             continue
     
-    # Если ни один эндпоинт не сработал
     logger.error("❌ Все попытки подключения к AuraPay не удались")
     return None
 
 async def check_aurapay_payment_status(order_id: str) -> Optional[dict]:
-    """Проверка статуса платежа через API AuraPay с улучшенной обработкой ошибок"""
     if not AURAPAY_API_KEY:
         logger.error("❌ AuraPay API ключ не настроен")
         return None
     
     if not order_id:
-        logger.error("❌ Не указан order_id для проверки статуса")
+        logger.error("❌ Не указан order_id")
         return None
     
     try:
@@ -495,58 +436,41 @@ async def check_aurapay_payment_status(order_id: str) -> Optional[dict]:
                 logger.info(f"📥 Статус платежа: {result}")
                 return result.get("data") or result
             except json.JSONDecodeError:
-                logger.error(f"❌ Не удалось разобрать JSON ответ статуса: {response.text}")
+                logger.error(f"❌ Не удалось разобрать JSON")
                 return None
         else:
             logger.error(f"❌ Ошибка статуса: HTTP {response.status_code}")
-            try:
-                error_data = response.json()
-                logger.error(f"❌ Детали ошибки: {error_data}")
-            except:
-                logger.error(f"❌ Текст ошибки: {response.text}")
             return None
         
-    except requests.exceptions.Timeout:
-        logger.error(f"❌ Таймаут при проверке статуса AuraPay")
-        return None
-    except requests.exceptions.ConnectionError:
-        logger.error(f"❌ Ошибка соединения при проверке статуса AuraPay")
-        return None
     except Exception as e:
-        logger.error(f"❌ Непредвиденная ошибка при проверке статуса AuraPay: {e}")
+        logger.error(f"❌ Ошибка проверки статуса: {e}")
         return None
 
 async def aurapay_webhook(request):
-    """Обработка вебхуков от AuraPay с улучшенной обработкой ошибок"""
     try:
         data = await request.json()
         logger.info(f"📩 Получен webhook от AuraPay: {data}")
         
         order_id = data.get('order_id') or data.get('merchant_order_id')
         status = data.get('status') or data.get('payment_status')
-        payment_id = data.get('payment_id') or data.get('transaction_id')
         
         if not order_id:
             logger.error("❌ В webhook отсутствует order_id")
             return web.Response(text="Missing order_id", status=400)
         
         if not status:
-            logger.warning(f"⚠️ В webhook отсутствует статус платежа для заказа {order_id}")
+            logger.warning(f"⚠️ В webhook отсутствует статус")
             if data.get('paid') == True or data.get('success') == True:
                 status = 'paid'
-                logger.info(f"✅ Статус определен как 'paid' по полям paid/success")
             else:
-                logger.error(f"❌ Не удалось определить статус платежа для заказа {order_id}")
                 return web.Response(text="Unknown status", status=400)
         
         if status in ['paid', 'success', 'completed']:
             base_order_id = order_id.replace('_aurapay', '')
-            found = False
             
             for uid, info in broadcast_data.items():
                 if info.get('order_id') == base_order_id:
-                    found = True
-                    logger.info(f"✅ Платёж {order_id} подтверждён для пользователя {uid}")
+                    logger.info(f"✅ Платёж {order_id} подтверждён для {uid}")
                     
                     try:
                         await bot.send_message(
@@ -554,38 +478,26 @@ async def aurapay_webhook(request):
                             text="✅ Оплата через AuraPay подтверждена! Ваш заказ обрабатывается."
                         )
                     except Exception as e:
-                        logger.error(f"❌ Ошибка уведомления пользователя {uid}: {e}")
+                        logger.error(f"❌ Ошибка уведомления: {e}")
                     
                     try:
                         await process_successful_payment_broadcast(uid, info, "aurapay")
                     except Exception as e:
-                        logger.error(f"❌ Ошибка обработки успешной оплаты для {uid}: {e}")
+                        logger.error(f"❌ Ошибка обработки оплаты: {e}")
                     
                     break
-            
-            if not found:
-                logger.warning(f"⚠️ Заказ {base_order_id} не найден в broadcast_data")
-        else:
-            logger.info(f"ℹ️ Платёж {order_id} имеет статус: {status} (не оплачен)")
         
         return web.Response(text="OK", status=200)
         
-    except json.JSONDecodeError:
-        logger.error(f"❌ Не удалось разобрать JSON в webhook: {await request.text()}")
-        return web.Response(text="Invalid JSON", status=400)
     except Exception as e:
-        logger.error(f"❌ Непредвиденная ошибка в webhook AuraPay: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.error(f"❌ Ошибка в webhook AuraPay: {e}")
         return web.Response(text="Error", status=500)
 
 async def aurapay_create_payment_api(request):
-    """API для создания платежа через AuraPay (для Mini App) с улучшенной обработкой ошибок"""
     try:
         try:
             data = await request.json()
         except json.JSONDecodeError:
-            logger.error("❌ Неверный JSON в запросе")
             return web.json_response({"success": False, "error": "Invalid JSON"}, status=400)
         
         order_id = data.get('order_id')
@@ -593,32 +505,23 @@ async def aurapay_create_payment_api(request):
         amount = data.get('amount', 100)
         method = data.get('method', 'card')
         
-        logger.info(f"📱 Запрос создания платежа AuraPay: order_id={order_id}, user_id={user_id}, amount={amount}, method={method}")
-        
         if not order_id:
-            logger.error("❌ Отсутствует order_id в запросе")
             return web.json_response({"success": False, "error": "Missing order_id"}, status=400)
         
         if not user_id:
-            logger.error("❌ Отсутствует user_id в запросе")
             return web.json_response({"success": False, "error": "Missing user_id"}, status=400)
         
         try:
             user_id_int = int(user_id)
         except ValueError:
-            logger.error(f"❌ Неверный user_id: {user_id}")
             return web.json_response({"success": False, "error": "Invalid user_id"}, status=400)
         
         if user_id_int not in broadcast_data:
-            logger.warning(f"⚠️ Пользователь {user_id_int} не найден в broadcast_data")
             return web.json_response({"success": False, "error": "User not found"}, status=404)
         
         broadcast_info = broadcast_data[user_id_int]
-        
-        # ===== ИСПРАВЛЕНИЕ: Используем актуальный order_id из broadcast_data =====
         actual_order_id = broadcast_info.get('order_id')
         
-        # Если переданный order_id не совпадает с актуальным, используем актуальный
         if order_id != actual_order_id:
             logger.info(f"🔄 Обновлен order_id: {order_id} → {actual_order_id}")
             order_id = actual_order_id
@@ -626,17 +529,14 @@ async def aurapay_create_payment_api(request):
         try:
             amount_float = float(amount)
             if amount_float <= 0:
-                logger.error(f"❌ Неверная сумма: {amount}")
                 return web.json_response({"success": False, "error": "Invalid amount"}, status=400)
         except ValueError:
-            logger.error(f"❌ Неверный формат суммы: {amount}")
             return web.json_response({"success": False, "error": "Invalid amount format"}, status=400)
         
         full_order_id = f"{order_id}_aurapay"
         payment = create_aurapay_payment(amount_float, full_order_id, user_id_int, method)
         
         if payment and payment.get('payment_url'):
-            logger.info(f"✅ Платёж успешно создан: {full_order_id}")
             return web.json_response({
                 "success": True,
                 "payment_url": payment['payment_url'],
@@ -645,30 +545,22 @@ async def aurapay_create_payment_api(request):
                 "actual_order_id": order_id
             })
         else:
-            logger.error(f"❌ Не удалось создать платёж для заказа {full_order_id}")
             return web.json_response({"success": False, "error": "Payment creation failed"}, status=500)
             
     except Exception as e:
-        logger.error(f"❌ Непредвиденная ошибка в aurapay_create_payment_api: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.error(f"❌ Ошибка: {e}")
         return web.json_response({"success": False, "error": "Internal server error"}, status=500)
 
 async def aurapay_status_api(request):
-    """API для проверки статуса платежа (для Mini App) с улучшенной обработкой ошибок"""
     try:
         try:
             data = await request.json()
         except json.JSONDecodeError:
-            logger.error("❌ Неверный JSON в запросе статуса")
             return web.json_response({"success": False, "error": "Invalid JSON"}, status=400)
         
         order_id = data.get('order_id')
         
-        logger.info(f"📱 Запрос статуса AuraPay: order_id={order_id}")
-        
         if not order_id:
-            logger.error("❌ Отсутствует order_id в запросе статуса")
             return web.json_response({"success": False, "error": "Missing order_id"}, status=400)
         
         full_order_id = f"{order_id}_aurapay"
@@ -676,32 +568,22 @@ async def aurapay_status_api(request):
         
         if status_data:
             payment_status = status_data.get('status', 'pending')
-            if payment_status in ['paid', 'success', 'completed']:
-                logger.info(f"✅ Платёж {full_order_id} успешно оплачен")
-            elif payment_status in ['failed', 'cancelled', 'expired']:
-                logger.warning(f"⚠️ Платёж {full_order_id} имеет статус: {payment_status}")
-            else:
-                logger.info(f"ℹ️ Платёж {full_order_id} в статусе: {payment_status}")
-            
             return web.json_response({
                 "success": True,
                 "status": payment_status,
                 "data": status_data
             })
         else:
-            logger.info(f"ℹ️ Статус платежа {full_order_id} не определен, возвращаем 'pending'")
             return web.json_response({
                 "success": True,
                 "status": "pending"
             })
             
     except Exception as e:
-        logger.error(f"❌ Непредвиденная ошибка в aurapay_status_api: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.error(f"❌ Ошибка: {e}")
         return web.json_response({"success": False, "error": "Internal server error"}, status=500)
 
-# ===== СТРАНИЦЫ ДЛЯ ПОЛЬЗОВАТЕЛЯ (для FreeKassa) =====
+# ===== СТРАНИЦЫ ДЛЯ ПОЛЬЗОВАТЕЛЯ =====
 async def success_page(request):
     html = """
     <!DOCTYPE html>
@@ -810,105 +692,14 @@ ASIAN_NAMES = [
     'aom', 'joong', 'ki', 'hoon', 'jin', 'soo', 'young', 'sun',
 ]
 
-AGE_POSITIVE_KEYWORDS = [
-    '18', '19', '20', '21', '22', '23', '24', '25',
-    '26', '27', '28', '29', '30',
-    '18year', '19year', '20year', '21year', '22year',
-    '18yo', '19yo', '20yo', '21yo', '22yo', '23yo',
-    '20s', 'twenties', 'young', 'college', 'university',
-    'student', 'freshman', 'sophomore', 'junior', 'senior',
-]
-
-TRADITIONAL_EXCLUDE = [
-    'kimono', 'hanbok', 'cheongsam', 'qi pao', 'sari', 'ao dai',
-    'traditional', 'folk costume', 'national dress', 'hanfu',
-    'mongolian traditional', 'tibetan traditional', 'uyghur traditional',
-]
-
-CHILD_EXCLUDE_WORDS = [
-    'child', 'children', 'kid', 'kids', 'baby', 'babies', 'toddler',
-    'infant', 'preschool', 'kindergarten', 'schoolgirl', 'schoolboy',
-    'girl scout', 'boy scout', 'cub scout', 'teen', 'teenager',
-    'minor', 'underage', 'little girl', 'little boy', 'young girl',
-    'young boy', 'daughter', 'son', 'family', 'family photo',
-    'childhood', 'baby girl', 'baby boy', 'newborn', 'cute baby',
-    'child model', 'kid model', 'baby model', 'toddler girl', 'toddler boy',
-]
-
-MEN_EXCLUDE_WORDS = [
-    'man', 'men', 'boy', 'male', 'guy', 'dude', 'brother',
-    'father', 'husband', 'boyfriend', 'gentleman', 'sir',
-    'bloke', 'chap', 'fellow', 'lad', 'young man',
-]
-
-# ===== ПОИСКОВЫЕ ЗАПРОСЫ =====
+# ===== НОВЫЕ ПОИСКОВЫЕ ЗАПРОСЫ (смесь Азии и стримеров) =====
 
 SEARCH_QUERIES = [
     "japanese girl friend photo casual",
     "japanese woman everyday life candid",
-    "japanese girl natural shot street",
-    "japanese woman friend taking picture",
-    "japanese girl candid moment cafe",
-    "japanese woman casual day out",
-    "japanese girl authentic daily life",
-    "japanese woman spontaneous photo",
-    "japanese girl real life snapshot",
-    "japanese woman friend photo outside",
-    "korean girl friend photo casual",
-    "korean woman everyday life candid",
     "korean girl natural shot street",
-    "korean woman friend taking picture",
-    "korean girl candid moment cafe",
-    "korean woman casual day out",
-    "korean girl authentic daily life",
-    "korean woman spontaneous photo",
-    "korean girl real life snapshot",
-    "korean woman friend photo outside",
-    "chinese girl friend photo casual",
-    "chinese woman everyday life candid",
-    "chinese girl natural shot street",
-    "chinese woman friend taking picture",
-    "chinese girl candid moment cafe",
-    "chinese woman casual day out",
-    "chinese girl authentic daily life",
-    "chinese woman spontaneous photo",
-    "chinese girl real life snapshot",
-    "chinese woman friend photo outside",
-    "thai girl friend photo casual",
-    "thai woman everyday life candid",
-    "thai girl natural shot street",
-    "thai woman friend taking picture",
-    "thai girl candid moment cafe",
-    "thai woman casual day out",
-    "thai girl authentic daily life",
-    "thai woman spontaneous photo",
-    "thai girl real life snapshot",
-    "thai woman friend photo outside",
-    "vietnamese girl friend photo casual",
-    "vietnamese woman everyday life candid",
-    "vietnamese girl natural shot street",
+    "thai girl friend photo outside",
     "vietnamese woman friend photo",
-    "vietnamese girl candid moment cafe",
-    "vietnamese woman casual day out",
-    "filipino girl friend photo casual",
-    "filipina woman everyday life candid",
-    "filipino girl natural shot street",
-    "filipina woman friend photo",
-    "filipino girl candid moment cafe",
-    "indonesian girl friend photo casual",
-    "indonesian woman everyday life candid",
-    "indonesian girl natural shot street",
-    "indonesian woman friend photo",
-    "asian girl friend photo outside",
-    "asian woman everyday life candid",
-    "asian girl natural shot street",
-    "asian woman friend taking picture",
-    "asian girl candid moment cafe",
-    "asian woman casual day out",
-    "asian girl authentic daily life",
-    "asian woman spontaneous photo",
-    "asian girl real life snapshot",
-    "asian woman friend photo casual",
     "asian girl laughing with friend",
     "asian woman talking to friend",
     "asian girl walking with friend",
@@ -929,644 +720,101 @@ SEARCH_QUERIES = [
     "asian woman friend gathering",
 ]
 
-# ===== K-POP ЗАПРОСЫ =====
+# ===== НОВЫЕ СТРИМЕРСКИЕ ЗАПРОСЫ =====
+
+STREAMER_QUERIES = [
+    "russian streamer scandal",
+    "twitch streamer drama",
+    "streamer fake viewers",
+    "botting viewers twitch",
+    "streamer cheat scandal",
+    "streamer ban controversy",
+    "twitch streamer conflict",
+    "russian streamer fight",
+    "streamer viewbot exposed",
+    "twitch drama 2026",
+    "streamer scandal reaction",
+    "russian streamer controversy",
+]
 
 K_POP_QUERIES = [
     "blackpink jennie casual photo",
-    "blackpink lisa everyday life",
-    "blackpink rosé street style",
-    "blackpink jisoo natural photo",
     "twice nayeon casual outfit",
-    "twice sana everyday photo",
-    "twice momo street fashion",
-    "twice dahyun natural shot",
-    "twice tzuyu casual style",
-    "red velvet irene everyday life",
-    "red velvet seulgi street photo",
-    "red velvet wendy casual look",
-    "aespa karina natural photo",
-    "aespa winter street style",
-    "aespa ningning everyday outfit",
-    "aespa giselle casual fashion",
-    "itzy yeji street style",
-    "itzy ryujin casual photo",
-    "itzy chaeryeong everyday life",
-    "itzy yuna natural shot",
-    "itzy lia casual outfit",
     "newjeans minji everyday photo",
-    "newjeans hanni street style",
-    "newjeans danielle natural shot",
-    "newjeans haerin casual look",
-    "newjeans hyein everyday life",
-    "le sserafim chaewon street photo",
-    "le sserafim sakura casual style",
-    "le sserafim yunjin natural photo",
-    "le sserafim kazuha everyday outfit",
-    "le sserafim eunchae casual shot",
-    "ive yujin street style",
-    "ive wonyoung everyday photo",
-    "ive liz natural casual",
-    "ive rei street fashion",
-    "ive leeseo everyday life",
-    "gidle soyeon casual style",
-    "gidle miyeon street photo",
-    "gidle minnie natural look",
-    "gidle yuqi everyday outfit",
-    "gidle shuhua casual shot",
+    "aespa karina natural photo",
+    "itzy yeji street style",
     "kpop idol street style",
     "kpop girl group casual photo",
-    "kpop idol everyday life",
-    "kpop girl natural street fashion",
-    "kpop idol coffee shop casual",
-    "kpop idol shopping street style",
-    "kpop girl group airport fashion",
-    "kpop idol casual outfit daily",
-    "kpop girl natural photo outdoors",
-]
-
-# ===== K-POP ЗАПРОСЫ С КРОП-ТОПАМИ =====
-
-K_POP_CROP_TOP_QUERIES = [
-    "kpop idol crop top street style",
-    "kpop girl group crop top casual",
-    "jennie crop top everyday photo",
-    "lisa crop top street fashion",
-    "rosé crop top casual look",
-    "jisoo crop top natural shot",
-    "nayeon crop top everyday style",
-    "sana crop top street photo",
-    "momo crop top casual outfit",
-    "irene crop top street style",
-    "seulgi crop top everyday photo",
-    "karina crop top casual look",
-    "winter crop top street fashion",
-    "ningning crop top everyday outfit",
-    "yeji crop top street photo",
-    "ryujin crop top casual style",
-    "yuna crop top everyday life",
-    "minji crop top street fashion",
-    "hanni crop top casual photo",
-    "chaewon crop top everyday style",
-    "sakura crop top street look",
-    "yunjin crop top casual outfit",
-    "yujin crop top street style",
-    "wonyoung crop top everyday photo",
-    "soyeon crop top casual fashion",
-    "miyeon crop top street photo",
-    "kpop idol crop top stage outfit",
-    "kpop girl group crop top performance",
-    "kpop idol crop top concert photo",
-    "kpop girl crop top street fashion",
-    "kpop idol crop top summer style",
-    "kpop girl group crop top daily",
-    "kpop idol crop top outdoors",
-    "kpop girl crop top casual street",
-    "kpop idol crop top natural photo",
 ]
 
 FITNESS_QUERIES = [
     "japanese fitness girl friend photo",
     "korean gym girl friend photo",
-    "chinese fitness woman friend photo",
-    "thai sport girl friend photo",
     "asian girl gym with friend",
 ]
 
-# ===== ФУНКЦИИ ФИЛЬТРАЦИИ =====
+# ===== НОВЫЕ ПРОМПТЫ =====
 
-def has_man_in_photo(url: str) -> bool:
-    if not url:
-        return False
-    url_lower = url.lower()
-    for word in MEN_EXCLUDE_WORDS:
-        if word in url_lower:
-            return True
-    return False
-
-def is_child_photo(url: str) -> bool:
-    if not url:
-        return False
-    url_lower = url.lower()
-    for word in CHILD_EXCLUDE_WORDS:
-        if word in url_lower:
-            return True
-    child_age_patterns = [
-        r'\b(0|1|2|3|4|5|6|7|8|9|10|11|12|13|14|15|16|17)\b',
-        r'\b(infant|toddler|child|kid|teen)\b',
-        r'\b(grade|class|school)\s+[1-9]\b',
-    ]
-    for pattern in child_age_patterns:
-        if re.search(pattern, url_lower, re.IGNORECASE):
-            return True
-    return False
-
-def is_asian_photo(url: str, additional_context: str = "") -> bool:
-    if not url:
-        return False
-    text_to_check = url.lower()
-    if additional_context:
-        text_to_check += " " + additional_context.lower()
-    for keyword in ASIAN_KEYWORDS:
-        if keyword in text_to_check:
-            return True
-    for keyword in NON_ASIAN_KEYWORDS:
-        if keyword in text_to_check:
-            return False
-    for name in ASIAN_NAMES:
-        if name in text_to_check:
-            return True
-    has_age = False
-    for pattern in AGE_POSITIVE_KEYWORDS:
-        if pattern in text_to_check:
-            has_age = True
-            break
-    if has_age:
-        for keyword in ['blonde', 'blue eyes', 'green eyes', 'redhead', 'ginger']:
-            if keyword in text_to_check:
-                return False
-        return True
-    asian_features = [
-        'slender', 'petite', 'olive skin', 'dark hair', 'black hair',
-        'straight hair', 'bangs', 'double eyelid', 'monolid',
-        'kawaii', 'cute', 'innocent', 'pure', 'delicate',
-        'slender figure', 'small face', 'fair skin',
-    ]
-    for feature in asian_features:
-        if feature in text_to_check:
-            return True
-    asian_domains = ['.jp', '.kr', '.cn', '.tw', '.hk', '.mo', '.sg', '.th', '.vn', '.ph', '.my', '.id']
-    for domain in asian_domains:
-        if domain in url.lower():
-            return True
-    return False
-
-def is_age_appropriate(url: str) -> bool:
-    if not url:
-        return False
-    url_lower = url.lower()
-    if is_child_photo(url):
-        return False
-    for word in AGE_POSITIVE_KEYWORDS:
-        if word in url_lower:
-            return True
-    if re.search(r'\b(age|years?|yo|y/o)\b', url_lower, re.IGNORECASE):
-        for word in AGE_POSITIVE_KEYWORDS:
-            if word in url_lower:
-                return True
-        return False
-    if 'mature' in url_lower or 'old' in url_lower or 'senior' in url_lower:
-        return False
-    return True
-
-def is_traditional_clothing(url: str) -> bool:
-    if not url:
-        return False
-    url_lower = url.lower()
-    for word in TRADITIONAL_EXCLUDE:
-        if word in url_lower:
-            return True
-    if 'traditional dress' in url_lower or 'folk costume' in url_lower:
-        return True
-    return False
-
-def is_photo_valid(url: str) -> bool:
-    """Проверяет фото по всем критериям"""
-    if not url:
-        return False
-    if is_child_photo(url):
-        return False
-    if has_man_in_photo(url):
-        return False
-    if not is_asian_photo(url):
-        return False
-    if not is_age_appropriate(url):
-        return False
-    if is_traditional_clothing(url):
-        return False
-    unwanted = ['naked', 'nude', 'porn', 'xxx', 'sex', 'erotic', 'bikini']
-    for word in unwanted:
-        if word in url.lower():
-            return False
-    return True
-
-# ===== ФУНКЦИЯ ДЛЯ ВЫБОРА ЗАПРОСА В ЗАВИСИМОСТИ ОТ СТИЛЯ =====
-
-def get_search_queries_for_style(style: str) -> List[str]:
-    """
-    Возвращает список поисковых запросов в зависимости от стиля поста.
-    Для романтичных и смешных стилей добавляет K-pop запросы.
-    """
-    base_queries = SEARCH_QUERIES.copy()
-    
-    kpop_styles = ['romantic', 'funny', 'joke', 'envy']
-    
-    if style in kpop_styles:
-        if random.random() < 0.7:
-            all_kpop = K_POP_QUERIES + K_POP_CROP_TOP_QUERIES
-            selected = random.sample(all_kpop, min(5, len(all_kpop)))
-            base_queries.extend(selected)
-            logger.info(f"🎵 Добавлены K-pop запросы для стиля {style}")
-    
-    if random.random() < 0.1:
-        crop_queries = random.sample(K_POP_CROP_TOP_QUERIES, min(3, len(K_POP_CROP_TOP_QUERIES)))
-        base_queries.extend(crop_queries)
-        logger.info("👕 Добавлены crop-top запросы")
-    
-    return base_queries
-
-# ===== ФУНКЦИЯ АНАЛИЗА КАРТИНКИ (ЭКОНОМНАЯ) =====
-
-def encode_image_to_base64_url(image_url: str) -> str:
-    """Загружает картинку по URL и кодирует в base64"""
-    try:
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        }
-        response = requests.get(image_url, headers=headers, timeout=10)
-        if response.status_code == 200:
-            return base64.b64encode(response.content).decode('utf-8')
-        return None
-    except Exception as e:
-        logger.error(f"Ошибка загрузки картинки: {e}")
-        return None
-
-async def analyze_photo_for_comment(image_url: str) -> Optional[str]:
-    """
-    Анализирует фото и возвращает комментарий о девушке на фото.
-    Используется только в 15% случаев для экономии токенов.
-    """
-    if not DEEPSEEK_API_KEY:
-        return None
-    
-    try:
-        base64_image = encode_image_to_base64_url(image_url)
-        if not base64_image:
-            return None
-        
-        headers = {
-            "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
-            "Content-Type": "application/json"
-        }
-        
-        data = {
-            "model": "deepseek-vl-chat",
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": """Ты — Анатолий, холостой мужик за 40, который вынужденно свайпнул в Азию.
-
-Опиши девушку на этом фото как обычный мужик в баре. Сделай это с юмором, самоиронией и лёгкой завистью.
-
-Важно:
-- Не пиши длинно, 1-2 предложения максимум
-- Не упоминай точный возраст (только "молодая", "юная")
-- Пиши в стиле: "посмотрите какая милая девушка, наверняка богатая, ухаживает за собой"
-- Не используй оскорбления, только лёгкая ирония
-- Добавь комментарий про то, что она выглядит ухоженно/дорого/стильно
-
-Примеры:
-"посмотрите какая милая девушка, наверняка богатая, ухаживает за собой"
-"красотка, сразу видно — не из дешёвых, ухоженная, улыбка на миллион"
-"вот это стиль, я бы тоже так оделся, но мне уже поздно"
-
-Ответь ТОЛЬКО комментарием, без рассуждений."""
-                        },
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/jpeg;base64,{base64_image}"
-                            }
-                        }
-                    ]
-                }
-            ],
-            "max_tokens": 150,
-            "temperature": 1.1
-        }
-        
-        response = requests.post(
-            "https://api.deepseek.com/v1/chat/completions",
-            headers=headers,
-            json=data,
-            timeout=30
-        )
-        
-        if response.status_code == 200:
-            result = response.json()
-            comment = result["choices"][0]["message"]["content"].strip()
-            logger.info(f"🖼️ Комментарий к фото: {comment}")
-            return comment
-        else:
-            logger.error(f"Ошибка анализа фото: {response.status_code}")
-            return None
-            
-    except Exception as e:
-        logger.error(f"Ошибка анализа фото: {e}")
-        return None
-
-# ===== СТИЛИ ДЛЯ ГЕНЕРАЦИИ =====
 style_prompts = {
-    'short_joke': """
-Ты — Анатолий, холостой мужик за 40, который вынужденно свайпнул в Азию.
-
-ВАЖНО:
-- Это КОРОТКИЙ пост (200-350 символов)
-- Одна острая шутка про жизнь, кризис, идиотов вокруг
-- Колко, дерзко, с самоиронией
-- Можно спросить у подписчиков: "как у вас там, выжили?"
-
-Твой стиль:
-- Как будто ты выпил пива и решил высказаться
-- Прямо, грубо, но смешно
-- Напоминай, что ты оказался в Азии не от хорошей жизни
-- НЕ называй точный возраст — только "в мои годы", "старый пердун", "скуф" (редко)
-- Если хочешь упомянуть возраст — используй "средних лет" или самоиронично "старый пердун"
-
-Напиши короткий колкий пост.
-
-Требования:
-- 200-350 символов
-- Мат 0-1 раз
-- Одна острая шутка
-- Обращайся к читателям на "вы"
-- Пиши только готовый пост
-""",
-
-    'medium': """
-Ты — Анатолий, холостой мужик за 40, который вынужденно свайпнул в Азию.
-
-ВАЖНО:
-- Это СРЕДНИЙ пост (500-700 символов)
-- Одна история из жизни
-- 70% — ситуация, 30% — колкая шутка
-- Ты НЕ переезжаешь из страны в страну чаще раза в неделю
-- Ты описываешь как путешествия, так и семейную жизнь с азиатками
-- У тебя НЕТ жены, но когда-то она была (НЕ упоминай когда именно и кто это был)
-- ИНОГДА давай советы о жизни в Азии (как секретный разговор)
-- РЕДКО вспоминай события из детства или из жизни в России (1-2 раза в неделю максимум)
-- ЕЩЁ РЕЖЕ сравнивай это со своей вынужденной поездкой в Азию
-- Можно спросить у подписчиков: "как у вас там?"
-- НЕ называй точный возраст — используй "в мои годы", "средних лет", изредка "скуф" или "старый пердун"
-
-Твой стиль:
-- Рассказываешь реальную историю
-- Самоирония и чёрный юмор
-- Добавляй одну острую шутку в конце
-
-Структура:
-1. Зацепка (1 предложение)
-2. История с деталями
-3. Острая шутка или колкий вывод
+    'asia': """
+Ты пишешь пост про Азию. Это может быть история, наблюдение или шутка про жизнь в Азии.
 
 Требования:
 - 500-700 символов
 - Мат 1-2 раза
 - Одна острая шутка
+- Используй "так называемый/ая/ые" где уместно
+- Не называй своё имя
+- Не используй "скуф" и "средних лет" (только если очень нужно)
 - Обращайся к читателям на "вы"
-- НЕ упоминай жену (бывшую тоже)
 - Пиши только готовый пост
 """,
 
-    'long': """
-Ты — Анатолий, холостой мужик за 40, который вынужденно свайпнул в Азию.
-
-ВАЖНО:
-- Это ДЛИННЫЙ пост (850-1023 символов)
-- Полноценная история с несколькими событиями
-- 60% — история, 40% — колкие шутки
-- Ты НЕ переезжаешь из страны в страну чаще раза в неделю
-- Ты описываешь как путешествия, так и семейную жизнь с азиатками
-- У тебя НЕТ жены, но когда-то она была (НЕ упоминай когда именно и кто это был)
-- МОЖНО дать развёрнутый совет о жизни в Азии (как секретный разговор)
-- РЕДКО вспоминай события из детства или из жизни в России (1-2 раза в неделю максимум)
-- ЕЩЁ РЕЖЕ сравнивай это со своей вынужденной поездкой в Азию
-- Можно задать вопрос подписчикам
-- НЕ называй точный возраст — только "в мои годы", "старый пердун", "скуф" (редко)
-
-Твой стиль:
-- Детальный рассказ
-- Самоирония и чёрный юмор
-- Добавляй 2-3 острые шутки
-
-Структура:
-1. Зацепка (1-2 предложения)
-2. Развитие истории с деталями
-3. Неожиданный поворот или шутка
-4. Естественный вывод
+    'streamer': """
+Ты пишешь пост про стримеров, ботоводов или скандалы в русскоязычном твиче.
 
 Требования:
-- 850-1023 символов
+- 500-700 символов
 - Мат 2-3 раза
-- 2-3 острые шутки
-- Обращайся к читателям на "вы"
-- НЕ упоминай жену (бывшую тоже)
-- Пиши только готовый пост
-""",
-
-    'everyday': """
-Ты — Анатолий, холостой мужик за 40, который вынужденно свайпнул в Азию.
-
-ВАЖНО:
-- Это СРЕДНИЙ пост (500-700 символов)
-- Одна история или ситуация
-- Ты НЕ переезжаешь из страны в страну чаще раза в неделю
-- Ты описываешь как путешествия, так и семейную жизнь с азиатками
-- У тебя НЕТ жены, но когда-то она была (НЕ упоминай когда именно и кто это был)
-- ИНОГДА давай советы о выгодной жизни в Азии (как секретный разговор)
-- РЕДКО вспоминай события из детства или из жизни в России (1-2 раза в неделю максимум)
-- ЕЩЁ РЕЖЕ сравнивай это со своей вынужденной поездкой в Азию
-- Чаще спрашивай у подписчиков в духе: "как там у вас, всё ещё дошираки доедаете?"
-- НЕ называй точный возраст — только "в мои годы", "старый пердун", "скуф" (редко)
-
-Твой стиль:
-- Рассказываешь реальные истории
-- Самоирония и чёрный юмор
-- Добавляй одну острую шутку
-
-Напиши пост про реальную ситуацию из жизни.
-
-Структура:
-1. Зацепка
-2. История с деталями
-3. Самоироничные размышления
-4. Естественный вывод (НЕ мораль)
-
-Требования:
-- 500-700 символов
-- Мат 1-2 раза
-- Одна острая шутка
-- Обращайся к читателям на "вы"
-- НЕ упоминай жену (бывшую тоже)
-- Пиши только готовый пост
-""",
-
-    'funny': """
-Ты — Анатолий, холостой мужик за 40, который вынужденно свайпнул в Азию.
-
-ВАЖНО:
-- Это СРЕДНИЙ пост (500-700 символов)
-- Смешная история
-- Ты НЕ переезжаешь из страны в страну чаще раза в неделю
-- Ты описываешь как путешествия, так и семейную жизнь с азиатками
-- У тебя НЕТ жены, но когда-то она была (НЕ упоминай когда именно и кто это был)
-- РЕДКО вспоминай события из детства или из жизни в России
-- НЕ называй точный возраст — только "в мои годы", "старый пердун", "скуф" (редко)
-
-Твой стиль:
-- Рассказываешь смешные истории
-- Главный объект шуток — ты сам
-- Юмор самоироничный с чёрным оттенком
-- Добавляй одну острую шутку
-
-Напиши смешной пост про свою жизнь.
-
-Структура:
-1. Необычная ситуация
-2. Подробности с диалогами
-3. Самоирония
-4. Смешной вывод
-
-Требования:
-- 500-700 символов
-- Мат 1-2 раза
-- Одна острая шутка
-- Обращайся к читателям на "вы"
-- Пиши только готовый пост
-""",
-
-    'romantic': """
-Ты — Анатолий, холостой мужик за 40, который вынужденно свайпнул в Азию.
-
-ВАЖНО:
-- Это СРЕДНИЙ пост (500-700 символов)
-- Романтичная история с чёрным юмором
-- Ты НЕ переезжаешь из страны в страну чаще раза в неделю
-- Ты описываешь как путешествия, так и семейную жизнь с азиатками
-- У тебя НЕТ жены, но когда-то она была (НЕ упоминай когда именно и кто это был)
-- РЕДКО вспоминай события из детства или из жизни в России
-- НЕ называй точный возраст — только "в мои годы", "старый пердун", "скуф" (редко)
-
-Твой стиль:
-- Рассказываешь о своих чувствах с самоиронией
-- Немного романтики, но с чёрным юмором
-- Честно говоришь о своих недостатках
-- Добавляй одну острую шутку (про себя)
-
-Напиши романтичный пост о встрече с азиаткой.
-
-Структура:
-1. Неожиданная встреча
-2. Твои чувства и сомнения
-3. Самоирония над собой
-4. Тёплый вывод
-
-Требования:
-- 500-700 символов
-- Мат 1-2 раза
-- Одна острая шутка
-- Обращайся к читателям на "вы"
-- Пиши только готовый пост
-""",
-
-    'envy': """
-Ты — Анатолий, холостой мужик за 40, который вынужденно свайпнул в Азию.
-
-ВАЖНО:
-- Это СРЕДНИЙ пост (500-700 символов)
-- Зависть с чёрным юмором
-- Ты НЕ переезжаешь из страны в страну чаще раза в неделю
-- Ты описываешь как путешествия, так и семейную жизнь с азиатками
-- У тебя НЕТ жены, но когда-то она была (НЕ упоминай когда именно и кто это был)
-- ИНОГДА давай советы о жизни в Азии (как секретный разговор)
-- РЕДКО вспоминай события из детства или из жизни в России
-- НЕ называй точный возраст — только "в мои годы", "старый пердун", "скуф" (редко)
-
-Твой стиль:
-- Рассказываешь о том, чему завидуешь, с юмором
-- Самоирония
-- Добавляй одну острую шутку
-
-Напиши пост о том, чему ты завидуешь.
-
-Структура:
-1. Что тебя поразило
-2. Твои размышления
-3. Сравнение с собой
-4. Ироничный вывод
-
-Требования:
-- 500-700 символов
-- Мат 1-2 раза
-- Одна острая шутка
-- Обращайся к читателям на "вы"
-- Пиши только готовый пост
-""",
-
-    'joke': """
-Ты — Анатолий, холостой мужик за 40, который вынужденно свайпнул в Азию.
-
-ВАЖНО:
-- Это СРЕДНИЙ пост (500-700 символов)
-- 70% шуток, 30% наблюдений
-- Ты НЕ переезжаешь из страны в страну чаще раза в неделю
-- Ты описываешь как путешествия, так и семейную жизнь с азиатками
-- У тебя НЕТ жены, но когда-то она была (НЕ упоминай когда именно и кто это был)
-- Можно спросить у подписчиков: "как у вас там?"
-- НЕ называй точный возраст — только "в мои годы", "старый пердун", "скуф" (редко)
-
-Твой стиль:
-- Острые шутки без оскорблений
-- Можно использовать мат
-- Пишешь как в баре с мужиками
-
-Напиши пост с острой шуткой.
-
-Структура:
-1. Жизненная ситуация
-2. Острая шутка
-3. Развитие
-4. Ещё одна шутка или вывод
-
-Требования:
-- 500-700 символов
-- Мат 1-3 раза
-- 2-3 шутки, одна острая
+- Острые шутки про стримеров
+- Используй "так называемый/ая/ые" по отношению к участникам
+- Не называй своё имя
+- Не используй "скуф" и "средних лет"
+- Упоминай реальные скандалы или ситуации
 - Обращайся к читателям на "вы"
 - Пиши только готовый пост
 """,
 
     'russia': """
-Ты — Анатолий, холостой мужик за 40, который вынужденно свайпнул в Азию.
-
-ВАЖНО:
-- Это СРЕДНИЙ пост (500-700 символов)
-- История из России, которую ты РЕДКО вспоминаешь
-- Сравниваешь свою прошлую жизнь в России с теперешней в Азии
-- Но НЕ ноешь — шутишь над этим
-- Только 1-2 раза в неделю такие посты
-- НЕ называй точный возраст — только "в мои годы", "старый пердун", "скуф" (редко)
-
-Твой стиль:
-- Вспоминаешь прошлое с иронией
-- Сравниваешь, но без ностальгии
-- Добавляй одну острую шутку
-
-Напиши пост про жизнь в России из прошлого.
-
-Структура:
-1. Воспоминание
-2. Сравнение с Азией
-3. Острая шутка
-4. Вывод
+Ты пишешь пост про жизнь в России из прошлого. Редко, 1-2 раза в неделю.
 
 Требования:
 - 500-700 символов
 - Мат 1-2 раза
 - Одна острая шутка
+- Сравнивай с Азией
+- Не называй своё имя
 - Обращайся к читателям на "вы"
+- Пиши только готовый пост
+""",
+
+    'funny': """
+Ты пишешь смешной пост. Это может быть история про Азию или стримеров.
+
+Требования:
+- 500-700 символов
+- Мат 1-2 раза
+- Одна острая шутка
+- Не называй своё имя
+- Обращайся к читателям на "вы"
+- Пиши только готовый пост
+""",
+
+    'short_joke': """
+Короткая колкая шутка. 200-350 символов.
+- Мат 0-1 раз
+- Одна острая шутка
+- Не называй своё имя
 - Пиши только готовый пост
 """,
 }
@@ -1745,149 +993,81 @@ def clean_text(text: str) -> str:
     text = clean_punctuation(text)
     return text
 
-# ===== РАБОТА С ФАЙЛАМИ =====
+# ===== ФУНКЦИЯ ПРОВЕРКИ ПОСТА ЧЕРЕЗ DEEPSEEK API =====
 
-def load_schedule():
+def validate_post_with_deepseek(post_text: str) -> Tuple[bool, str]:
+    """
+    Проверяет пост через DeepSeek API.
+    Возвращает: (одобрено_ли, причина_или_исправленный_текст)
+    """
+    if not DEEPSEEK_API_KEY:
+        logger.warning("⚠️ Нет DeepSeek API ключа для проверки поста")
+        return True, post_text
+    
     try:
-        with open(SCHEDULE_FILE, "r") as f:
-            data = json.load(f)
-            if not data or not data.get("times"):
-                return {"times": ["12:00", "21:00"]}
-            return data
-    except:
-        return {"times": ["12:00", "21:00"]}
-
-def save_schedule(schedule_data):
-    try:
-        with open(SCHEDULE_FILE, "w") as f:
-            json.dump(schedule_data, f)
-        return True
-    except:
-        return False
-
-schedule_data = load_schedule()
-
-def load_users():
-    try:
-        with open(USERS_FILE, "r") as f:
-            return json.load(f)
-    except:
-        return []
-
-def save_users(users_list):
-    try:
-        with open(USERS_FILE, "w") as f:
-            json.dump(users_list, f)
-    except Exception as e:
-        logger.error(f"Ошибка сохранения пользователей: {e}")
-
-users = load_users()
-
-def load_history():
-    try:
-        with open(HISTORY_FILE, "r") as f:
-            return json.load(f)
-    except:
-        return []
-
-def save_history(history_list):
-    try:
-        if len(history_list) > 100:
-            history_list = history_list[-100:]
-        with open(HISTORY_FILE, "w") as f:
-            json.dump(history_list, f)
-    except Exception as e:
-        logger.error(f"Ошибка сохранения истории: {e}")
-
-history = load_history()
-
-# ===== КЭШ =====
-last_posts = []
-
-def add_to_last_posts(text: str):
-    global last_posts
-    if not text or len(text) < 10:
-        return
-    key = text[:100]
-    last_posts.append(key)
-    if len(last_posts) > 20:
-        last_posts.pop(0)
-
-def is_similar(text: str) -> bool:
-    global last_posts
-    if not text:
-        return False
-    key = text[:150]
-    for post in last_posts:
-        same_chars = sum(1 for a, b in zip(key, post) if a == b)
-        if len(key) > 10 and same_chars / len(key) > 0.65:
-            return True
-    return False
-
-# ===== ПРОДОЛЖЕНИЕ ОБРЕЗАННОГО ТЕКСТА =====
-
-def request_continuation(previous_text: str) -> str:
-    try:
-        url = "https://api.deepseek.com/chat/completions"
         headers = {
             "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
             "Content-Type": "application/json"
         }
-        tail = previous_text[-500:]
+        
         data = {
             "model": "deepseek-chat",
             "messages": [
-                {"role": "system", "content": "Ты стендап-комик Анатолий. Текст поста был обрезан. Допиши ТОЛЬКО концовку — 1-3 завершающих предложения с логическим выводом. Не повторяй уже написанное. Только текст продолжения."},
-                {"role": "user", "content": f"Вот текст, который оборвался:\n\n...{tail}\n\nДопиши концовку (1-3 предложения, завершающих мысль). Не повторяй текст выше."}
+                {"role": "system", "content": """Ты — строгий модератор контента. Проверяй посты на соответствие правилам:
+
+1. Пост должен быть уникальным
+2. Не должно быть оскорблений конкретных людей (кроме критики стримеров по фактам)
+3. Не должно быть призывов к насилию или экстремизму
+4. Пост должен быть грамотным (орфография, пунктуация)
+5. Пост должен быть завершённым (иметь логический конец)
+
+Если пост НЕ соответствует правилам — напиши "REJECT: причина".
+Если пост соответствует — напиши "APPROVED".
+
+Будь максимально строгим."""},
+                {"role": "user", "content": f"Проверь этот пост:\n\n{post_text}"}
             ],
-            "temperature": 0.9,
-            "max_tokens": 400,
+            "temperature": 0.3,
+            "max_tokens": 100,
         }
-        response = requests.post(url, headers=headers, json=data, timeout=30)
+        
+        response = requests.post(
+            "https://api.deepseek.com/v1/chat/completions",
+            headers=headers,
+            json=data,
+            timeout=15
+        )
+        
         if response.status_code == 200:
             result = response.json()
-            if result.get("choices") and len(result["choices"]) > 0:
-                return result["choices"][0].get("message", {}).get("content", "").strip()
-    except Exception as e:
-        logger.error(f"Ошибка запроса продолжения: {e}")
-    return ""
-
-def complete_truncated_text(content: str, finish_reason: str) -> str:
-    if finish_reason == "length" and content:
-        logger.warning(f"Текст обрезан (finish_reason=length, {len(content)} символов). Запрашиваю продолжение...")
-        continuation = request_continuation(content)
-        if continuation:
-            continuation = clean_text(continuation)
-            if continuation:
-                tail_100 = content[-100:].lower()
-                cont_start = continuation[:100].lower()
-                if tail_100 and cont_start and (tail_100 in cont_start or cont_start in tail_100):
-                    logger.warning("Продолжение дублирует хвост, не склеиваю")
-                else:
-                    content = content.rstrip() + " " + continuation.strip()
-                    logger.info(f"Продолжение получено (+{len(continuation)} символов)")
+            verdict = result["choices"][0]["message"]["content"].strip()
+            
+            if verdict.startswith("APPROVED"):
+                logger.info("✅ Пост прошёл проверку DeepSeek")
+                return True, post_text
+            elif verdict.startswith("REJECT:"):
+                reason = verdict.replace("REJECT:", "").strip()
+                logger.warning(f"❌ Пост отклонён: {reason}")
+                return False, reason
+            else:
+                logger.warning(f"⚠️ Неизвестный ответ DeepSeek: {verdict}")
+                return True, post_text
         else:
-            logger.warning("Продолжение не получено, работаю с тем что есть")
-    return content
+            logger.error(f"❌ Ошибка проверки поста: {response.status_code}")
+            return True, post_text
+            
+    except Exception as e:
+        logger.error(f"❌ Ошибка при проверке поста через DeepSeek: {e}")
+        return True, post_text
 
-# ===== РЕЗЕРВНЫЙ ТЕКСТ =====
+# ===== НОВАЯ ФУНКЦИЯ ГЕНЕРАЦИИ ПОСТА С ПРОВЕРКОЙ =====
 
-def get_fallback_caption() -> str:
-    fallbacks = [
-        "Вчера в Бангкоке ко мне подошла стайка тайских девчонок и попросила сфоткаться. Я сразу расправил плечи - ну, думаю, наконец-то заметили мой шарм, мою харизму. Делаю serious face, как будто я важный чел. А они визжат, тычут пальцами. И тут одна тянет мой телефон, начинает листать и показывает на фото какого-то китайского блогера с двумя миллионами подписчиков. Оказалось, я просто попал в кадр, потому что стоял на том же месте, где он снимал своё видосик. Стою, улыбаюсь, а в голове: Анатолий, ну ты и дурак, опять повёлся. Ну и ладно, зато теперь я типа знаменит локально - сегодня меня уже трижды окликнули эй, Толик! на базаре. Вывод один: слава - это когда тебя путают с другим, но ты всё равно рад, что хоть с кем-то перепутали. И это пиздец как греет душу, честно вам скажу.",
-        "Сижу в кафе в Чиангмае, пью кофе, смотрю на прохожих. Вдруг подходит местная девушка и говорит: Вы тот самый блогер? Я сразу напрягся, думаю - неужели узнали? А она показывает на мою футболку с логотипом какой-то группы и говорит, что ей нравится их музыка. Оказалось, она думала, что я участник группы. Я даже не стал её разочаровывать - улыбнулся, сфоткался с ней и пошёл дальше. Теперь я официально музыкант. Хотя на гитаре играю только в голове. Но знаете, приятно, когда тебя замечают, даже если по ошибке. Вот так и живём, ребята.",
-        "Вчера на рынке в Бангкоке продавщица назвала меня красивым иностранным мужчиной. Я чуть не подавился соком. Расправил плечи, уже приготовился торговаться с чувством собственного достоинства. А она оказалась просто вежливая - так она всех мужиков называет, чтобы цену набить. Но осадочек остался, приятный такой. Домой пришёл, в зеркало посмотрел - ну вроде ничего, харизма есть. Наверное, я всё-таки красавчик, просто в этом городе слишком много настоящих красавчиков. Но мы не сдаёмся, коллеги!",
-        "Тайские девушки - это отдельный вид искусства. Вчера одна сказала мне: Ты такой забавный, как мой папа. Я чуть кофе не поперхнулся. Думаю - ну всё, старость пришла. А она потом говорит: Это комплимент, папа у меня крутой! Ну ладно, тогда норм. Буду теперь гордо носить звание папик в Таиланде. Хотя, сука, обидно было первые пять секунд.",
-    ]
-    return random.choice(fallbacks)
-
-# ===== ОБНОВЛЁННАЯ ГЕНЕРАЦИЯ ПОСТОВ С ИСПОЛЬЗОВАНИЕМ КЭША =====
-
-def generate_caption() -> str:
-    logger.info("Генерирую уникальный пост...")
+def generate_caption_with_validation() -> str:
+    """Генерирует пост и проверяет его через DeepSeek API до 5 раз."""
+    logger.info("Генерирую уникальный пост с проверкой...")
     
     if not DEEPSEEK_API_KEY:
-        logger.warning("Нет ключа DeepSeek, использую резерв")
+        logger.warning("Нет ключа DeepSeek, использую резерв без проверки")
         caption = get_fallback_caption()
         caption = clean_text(caption)
         caption = truncate_by_sentences(caption)
@@ -1896,74 +1076,77 @@ def generate_caption() -> str:
             return validated
         return clean_text(truncate_by_sentences(get_fallback_caption()))
     
-    rand = random.random()
-    if rand < 0.05:
-        style = 'russia'
-        logger.info("Выбран РЕДКИЙ пост про Россию")
-        min_len, max_len = 500, 700
-    elif rand < 0.20:
-        style = 'short_joke'
-        logger.info("Выбран КОРОТКИЙ пост (шутка)")
-        min_len, max_len = 200, 400
-    elif rand < 0.40:
-        style = 'long'
-        logger.info("Выбран ДЛИННЫЙ пост")
-        min_len, max_len = 850, 1023
-    else:
-        weighted_styles = ['everyday', 'everyday', 'funny', 'romantic', 'envy', 'joke']
-        style = random.choice(weighted_styles)
-        logger.info(f"Выбран СРЕДНИЙ пост (стиль: {style})")
-        min_len, max_len = 500, 700
-    
-    base_prompt = get_style_prompt(style)
-    
-    alternative_prompts = {
-        'short_joke': [
-            "Напиши короткую колкую шутку про жизнь. 200-350 символов. ТОЛЬКО ПО ТЕМЕ.",
-            "Короткая острая шутка. 200-350 символов. БЕЗ ОТСТУПЛЕНИЙ.",
-            "Забавное наблюдение с колкостью. 200-350 символов. НЕ ОТВЛЕКАЙСЯ.",
-        ],
-        'long': [
-            "Напиши длинный пост с историей. 850-1023 символов. СТРОГО ПО ТЕМЕ.",
-            "Подробный рассказ с колкими шутками. 850-1023 символов. НЕ ПЕРЕСКАКИВАЙ.",
-            "Развёрнутая история с чёрным юмором. 850-1023 символов. ТОЛЬКО ПО ЗАДАННОЙ ТЕМЕ.",
-        ],
-        'medium': [
-            "Напиши пост с юмором. 500-700 символов. СТРОГО ПО ТЕМЕ.",
-            "История с острой шуткой. 500-700 символов. НЕ УХОДИ В СТОРОНУ.",
-            "Забавная ситуация с колким выводом. 500-700 символов. БЕЗ ОТСТУПЛЕНИЙ.",
-        ],
-        'russia': [
-            "Напиши пост про жизнь в России из прошлого. 500-700 символов. ТОЛЬКО ПРО РОССИЮ.",
-            "Вспомни свою прошлую жизнь в России с иронией. 500-700 символов. НЕ ПРО АЗИЮ.",
-            "Расскажи про Россию с чёрным юмором. 500-700 символов. НЕ СМЕШИВАЙ ТЕМЫ.",
-        ]
-    }
-    
-    attempt = 0
-    while True:
-        attempt += 1
+    max_attempts = 5
+    for attempt in range(max_attempts):
         try:
+            # 50% Азия, 50% Стримеры
+            rand = random.random()
+            if rand < 0.50:
+                style = 'asia'
+                topic = "Азия"
+                min_len, max_len = 500, 700
+            else:
+                style = 'streamer'
+                topic = "стримеры и скандалы"
+                min_len, max_len = 500, 700
+            
+            # Редкие стили (5% шанс)
+            if random.random() < 0.05:
+                style = 'russia'
+                topic = "Россия"
+                min_len, max_len = 500, 700
+            elif random.random() < 0.10:
+                style = 'funny'
+                topic = "смешное"
+                min_len, max_len = 500, 700
+            elif random.random() < 0.15:
+                style = 'short_joke'
+                topic = "короткая шутка"
+                min_len, max_len = 200, 400
+            
+            logger.info(f"Попытка {attempt+1}: стиль {style}, тема {topic}")
+            
+            # Получаем промпт из кэша
+            base_prompt = get_style_prompt(style)
+            
+            # Альтернативные промпты
+            alternative_prompts = {
+                'asia': [
+                    "Напиши пост про Азию. 500-700 символов. С юмором и самоиронией.",
+                    "История из жизни в Азии. 500-700 символов. Острая шутка в конце.",
+                    "Наблюдение про азиатскую жизнь. 500-700 символов. С колкостью.",
+                ],
+                'streamer': [
+                    "Напиши пост про скандал со стримером. 500-700 символов. Критика по фактам.",
+                    "История про ботоводов на Twitch. 500-700 символов. Острые шутки.",
+                    "Разбор ситуации с русским стримером. 500-700 символов. С матом.",
+                ],
+                'russia': [
+                    "Напиши пост про жизнь в России из прошлого. 500-700 символов.",
+                    "Вспомни Россию с юмором. 500-700 символов. Без ностальгии.",
+                ],
+                'funny': [
+                    "Смешной пост про жизнь. 500-700 символов. Хорошая шутка.",
+                ],
+                'short_joke': [
+                    "Короткая колкая шутка. 200-350 символов. Только шутка.",
+                ]
+            }
+            
+            current_prompt = base_prompt
+            if attempt > 0:
+                alt = random.choice(alternative_prompts.get(style, alternative_prompts['asia']))
+                current_prompt = alt + "\n\n⚠️ Пиши строго по теме. Только пост без рассуждений."
+                logger.info(f"Пробую альтернативный промпт...")
+            
+            # Получаем системный промпт
+            system_prompt = get_system_prompt()
+            
             url = "https://api.deepseek.com/chat/completions"
             headers = {
                 "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
                 "Content-Type": "application/json"
             }
-            
-            current_prompt = base_prompt
-            if attempt > 1:
-                if style == 'short_joke':
-                    alt = random.choice(alternative_prompts['short_joke'])
-                elif style == 'long':
-                    alt = random.choice(alternative_prompts['long'])
-                elif style == 'russia':
-                    alt = random.choice(alternative_prompts['russia'])
-                else:
-                    alt = random.choice(alternative_prompts['medium'])
-                current_prompt = alt + "\n\n⚠️ НЕ ОТВЛЕКАЙСЯ ОТ ТЕМЫ! Твой ответ (ТОЛЬКО ПОСТ, БЕЗ РАССУЖДЕНИЙ):"
-                logger.info(f"Пробую альтернативный промпт (попытка {attempt})...")
-            
-            system_prompt = get_system_prompt()
             
             data = {
                 "model": "deepseek-chat",
@@ -1980,7 +1163,7 @@ def generate_caption() -> str:
             if response.status_code == 400:
                 error_text = response.text.lower()
                 if "извините" in error_text or "не могу" in error_text or "не разрешено" in error_text:
-                    logger.warning(f"Контент заблокирован, пробую другой промпт (попытка {attempt})...")
+                    logger.warning(f"Контент заблокирован, пробую другой промпт...")
                     continue
             
             if response.status_code != 200:
@@ -1996,65 +1179,211 @@ def generate_caption() -> str:
             generated_content = choice.get("message", {}).get("content", "")
             finish_reason = choice.get("finish_reason", "")
             usage = result.get("usage", {})
-            logger.info(f"finish_reason={finish_reason} | tokens={usage.get('completion_tokens', '?')} | chars={len(generated_content)}")
-            
-            if not generated_content:
-                logger.warning("Пустой ответ")
-                continue
-            
-            if finish_reason == "length":
-                generated_content = complete_truncated_text(generated_content, finish_reason)
+            logger.info(f"finish_reason={finish_reason} | chars={len(generated_content)}")
             
             if not generated_content or len(generated_content.strip()) < 20:
                 logger.warning("Пустой или короткий ответ")
                 continue
+            
+            if finish_reason == "length":
+                continuation = request_continuation(generated_content)
+                if continuation:
+                    generated_content = generated_content.rstrip() + " " + continuation.strip()
             
             caption = generated_content.strip().strip('"').strip("'")
             
             if not caption:
                 continue
             
+            # Проверка на рассуждения вместо поста
             if caption.lower().startswith(("мы должны", "нужно", "я должен", "напиши", "вот", "давайте", "попробуем", "извините", "к сожалению")):
-                logger.warning("DeepSeek выдал рассуждение или отказ, пробуем другой промпт...")
+                logger.warning("DeepSeek выдал рассуждение, пробуем другой промпт...")
                 continue
             
-            if style == 'russia' and 'ази' in caption.lower():
-                logger.warning("Пост про Россию содержит упоминание Азии — отклоняем")
-                continue
-            
-            if is_similar(caption):
-                logger.info("Пост похож на недавний, пробуем ещё...")
-                continue
-            
+            # Очистка текста
             caption = clean_text(caption)
             caption = truncate_by_sentences(caption, max_length=1023)
             
+            # Проверка длины
             if len(caption) < min_len:
-                logger.warning(f"Пост слишком короткий ({len(caption)} символов, нужно {min_len}), пробуем ещё...")
+                logger.warning(f"Слишком короткий ({len(caption)} символов, нужно {min_len})")
                 continue
             
             if len(caption) > max_len + 50:
-                logger.warning(f"Пост слишком длинный ({len(caption)} символов, нужно {max_len}), пробуем ещё...")
+                logger.warning(f"Слишком длинный ({len(caption)} символов, нужно {max_len})")
                 continue
             
+            # Валидация структуры
             if style == 'short_joke':
                 validated, error = validate_caption(caption, min_length=100, max_length=400)
             else:
                 validated, error = validate_caption(caption, min_length=min_len, max_length=max_len)
             
-            if validated:
-                logger.info(f"Сгенерирован уникальный пост ({len(validated)} символов, тип: {style}, попытка {attempt})")
-                add_to_last_posts(validated)
-                return validated
+            if not validated:
+                logger.warning(f"Текст не прошёл проверку: {error}")
+                continue
+            
+            # ===== ПРОВЕРКА ЧЕРЕЗ DEEPSEEK API =====
+            approved, result = validate_post_with_deepseek(caption)
+            
+            if approved:
+                logger.info(f"✅ Пост одобрен! (попытка {attempt+1})")
+                add_to_last_posts(caption)
+                return caption
             else:
-                logger.warning(f"Текст не прошёл проверку: {error}, пробуем ещё...")
+                logger.warning(f"❌ Пост не прошёл проверку: {result}")
                 continue
             
         except Exception as e:
-            logger.error(f"Ошибка генерации (попытка {attempt}): {e}")
+            logger.error(f"Ошибка генерации (попытка {attempt+1}): {e}")
             continue
+    
+    # Если все попытки не удались
+    logger.warning("⚠️ Все попытки генерации не удались, использую резервный текст")
+    fallback = get_fallback_caption()
+    fallback = clean_text(fallback)
+    fallback = truncate_by_sentences(fallback, max_length=1023)
+    validated, error = validate_caption(fallback, min_length=500, max_length=1023)
+    if validated:
+        return validated
+    return clean_text(truncate_by_sentences(get_fallback_caption()))
 
-# ===== ПОИСК ФОТО =====
+# ===== ПРОДОЛЖЕНИЕ ТЕКСТА (для обрезанных постов) =====
+
+def request_continuation(previous_text: str) -> str:
+    try:
+        url = "https://api.deepseek.com/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+            "Content-Type": "application/json"
+        }
+        tail = previous_text[-500:]
+        data = {
+            "model": "deepseek-chat",
+            "messages": [
+                {"role": "system", "content": "Ты автор канала. Текст поста был обрезан. Допиши ТОЛЬКО концовку — 1-3 завершающих предложения с логическим выводом. Не повторяй уже написанное. Только текст продолжения."},
+                {"role": "user", "content": f"Вот текст, который оборвался:\n\n...{tail}\n\nДопиши концовку (1-3 предложения)."}
+            ],
+            "temperature": 0.9,
+            "max_tokens": 400,
+        }
+        response = requests.post(url, headers=headers, json=data, timeout=30)
+        if response.status_code == 200:
+            result = response.json()
+            if result.get("choices") and len(result["choices"]) > 0:
+                return result["choices"][0].get("message", {}).get("content", "").strip()
+    except Exception as e:
+        logger.error(f"Ошибка запроса продолжения: {e}")
+    return ""
+
+# ===== РЕЗЕРВНЫЙ ТЕКСТ =====
+
+def get_fallback_caption() -> str:
+    fallbacks = [
+        "Вчера в Бангкоке ко мне подошла стайка тайских девчонок и попросила сфоткаться. Я сразу расправил плечи - ну, думаю, наконец-то заметили мой шарм, мою харизму. Делаю serious face, как будто я важный чел. А они визжат, тычут пальцами. И тут одна тянет мой телефон, начинает листать и показывает на фото какого-то китайского блогера с двумя миллионами подписчиков. Оказалось, я просто попал в кадр, потому что стоял на том же месте, где он снимал своё видосик. Стою, улыбаюсь, а в голове: ну ты и дурак, опять повёлся. Ну и ладно, зато теперь я типа знаменит локально - сегодня меня уже трижды окликнули на базаре. Вывод один: слава - это когда тебя путают с другим, но ты всё равно рад, что хоть с кем-то перепутали. И это пиздец как греет душу.",
+        "Сижу в кафе в Чиангмае, пью кофе, смотрю на прохожих. Вдруг подходит местная девушка и говорит: Вы тот самый блогер? Я сразу напрягся, думаю - неужели узнали? А она показывает на мою футболку с логотипом какой-то группы и говорит, что ей нравится их музыка. Оказалось, она думала, что я участник группы. Я даже не стал её разочаровывать - улыбнулся, сфоткался с ней и пошёл дальше. Теперь я официально музыкант. Хотя на гитаре играю только в голове. Но знаете, приятно, когда тебя замечают, даже если по ошибке.",
+        "Вчера на рынке в Бангкоке продавщица назвала меня красивым иностранным мужчиной. Я чуть не подавился соком. Расправил плечи, уже приготовился торговаться с чувством собственного достоинства. А она оказалась просто вежливая - так она всех мужиков называет, чтобы цену набить. Но осадочек остался, приятный такой. Домой пришёл, в зеркало посмотрел - ну вроде ничего, харизма есть. Наверное, я всё-таки красавчик, просто в этом городе слишком много настоящих красавчиков.",
+        "Тайские девушки - это отдельный вид искусства. Вчера одна сказала мне: Ты такой забавный, как мой папа. Я чуть кофе не поперхнулся. Думаю - ну всё, старость пришла. А она потом говорит: Это комплимент, папа у меня крутой! Ну ладно, тогда норм. Буду теперь гордо носить звание папик в Таиланде. Хотя, сука, обидно было первые пять секунд.",
+    ]
+    return random.choice(fallbacks)
+
+# ===== ФУНКЦИИ ДЛЯ ПОИСКА ФОТО =====
+
+def get_search_queries_for_style(style: str) -> List[str]:
+    """Возвращает запросы в зависимости от стиля."""
+    base_queries = SEARCH_QUERIES.copy()
+    
+    if style == 'streamer':
+        # Для стримерских постов используем стримерские запросы + немного азиатских
+        streamer_queries = STREAMER_QUERIES.copy()
+        random.shuffle(streamer_queries)
+        base_queries.extend(streamer_queries[:3])
+        # Добавляем немного азиатских
+        asian_part = random.sample(SEARCH_QUERIES, min(3, len(SEARCH_QUERIES)))
+        base_queries.extend(asian_part)
+    
+    # Иногда добавляем K-pop запросы
+    if random.random() < 0.3:
+        kpop_queries = random.sample(K_POP_QUERIES, min(2, len(K_POP_QUERIES)))
+        base_queries.extend(kpop_queries)
+    
+    # Редко фитнес
+    if random.random() < 0.1:
+        base_queries.extend(FITNESS_QUERIES)
+    
+    return base_queries
+
+def encode_image_to_base64_url(image_url: str) -> str:
+    try:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }
+        response = requests.get(image_url, headers=headers, timeout=10)
+        if response.status_code == 200:
+            return base64.b64encode(response.content).decode('utf-8')
+        return None
+    except Exception as e:
+        logger.error(f"Ошибка загрузки картинки: {e}")
+        return None
+
+async def analyze_photo_for_comment(image_url: str) -> Optional[str]:
+    if not DEEPSEEK_API_KEY:
+        return None
+    
+    try:
+        base64_image = encode_image_to_base64_url(image_url)
+        if not base64_image:
+            return None
+        
+        headers = {
+            "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+            "Content-Type": "application/json"
+        }
+        
+        data = {
+            "model": "deepseek-vl-chat",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": """Опиши девушку на этом фото коротко и с юмором. 1-2 предложения. Не называй возраст, используй "молодая" или "юная". Пиши в стиле: "посмотрите какая милая девушка, наверняка богатая, ухаживает за собой". Без оскорблений, только лёгкая ирония."""
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{base64_image}"
+                            }
+                        }
+                    ]
+                }
+            ],
+            "max_tokens": 150,
+            "temperature": 1.1
+        }
+        
+        response = requests.post(
+            "https://api.deepseek.com/v1/chat/completions",
+            headers=headers,
+            json=data,
+            timeout=30
+        )
+        
+        if response.status_code == 200:
+            result = response.json()
+            comment = result["choices"][0]["message"]["content"].strip()
+            logger.info(f"🖼️ Комментарий к фото: {comment}")
+            return comment
+        else:
+            logger.error(f"Ошибка анализа фото: {response.status_code}")
+            return None
+            
+    except Exception as e:
+        logger.error(f"Ошибка анализа фото: {e}")
+        return None
+
+# ===== ФУНКЦИИ ПОИСКА ФОТО =====
 
 def search_bing(query):
     if not query:
@@ -2199,9 +1528,155 @@ def search_pexels(query):
         logger.error(f"Ошибка Pexels: {e}")
         return None
 
-# ===== АСИНХРОННАЯ ФУНКЦИЯ ПОЛУЧЕНИЯ ФОТО =====
+# ===== ФИЛЬТРЫ ФОТО =====
 
-async def get_random_photo(style: str = "medium"):
+CHILD_EXCLUDE_WORDS = [
+    'child', 'children', 'kid', 'kids', 'baby', 'babies', 'toddler',
+    'infant', 'preschool', 'kindergarten', 'schoolgirl', 'schoolboy',
+    'girl scout', 'boy scout', 'cub scout', 'teen', 'teenager',
+    'minor', 'underage', 'little girl', 'little boy', 'young girl',
+    'young boy', 'daughter', 'son', 'family', 'family photo',
+    'childhood', 'baby girl', 'baby boy', 'newborn', 'cute baby',
+    'child model', 'kid model', 'baby model', 'toddler girl', 'toddler boy',
+]
+
+MEN_EXCLUDE_WORDS = [
+    'man', 'men', 'boy', 'male', 'guy', 'dude', 'brother',
+    'father', 'husband', 'boyfriend', 'gentleman', 'sir',
+    'bloke', 'chap', 'fellow', 'lad', 'young man',
+]
+
+AGE_POSITIVE_KEYWORDS = [
+    '18', '19', '20', '21', '22', '23', '24', '25',
+    '26', '27', '28', '29', '30',
+    '18year', '19year', '20year', '21year', '22year',
+    '18yo', '19yo', '20yo', '21yo', '22yo', '23yo',
+    '20s', 'twenties', 'young', 'college', 'university',
+    'student', 'freshman', 'sophomore', 'junior', 'senior',
+]
+
+TRADITIONAL_EXCLUDE = [
+    'kimono', 'hanbok', 'cheongsam', 'qi pao', 'sari', 'ao dai',
+    'traditional', 'folk costume', 'national dress', 'hanfu',
+]
+
+def has_man_in_photo(url: str) -> bool:
+    if not url:
+        return False
+    url_lower = url.lower()
+    for word in MEN_EXCLUDE_WORDS:
+        if word in url_lower:
+            return True
+    return False
+
+def is_child_photo(url: str) -> bool:
+    if not url:
+        return False
+    url_lower = url.lower()
+    for word in CHILD_EXCLUDE_WORDS:
+        if word in url_lower:
+            return True
+    child_age_patterns = [
+        r'\b(0|1|2|3|4|5|6|7|8|9|10|11|12|13|14|15|16|17)\b',
+        r'\b(infant|toddler|child|kid|teen)\b',
+        r'\b(grade|class|school)\s+[1-9]\b',
+    ]
+    for pattern in child_age_patterns:
+        if re.search(pattern, url_lower, re.IGNORECASE):
+            return True
+    return False
+
+def is_asian_photo(url: str, additional_context: str = "") -> bool:
+    if not url:
+        return False
+    text_to_check = url.lower()
+    if additional_context:
+        text_to_check += " " + additional_context.lower()
+    for keyword in ASIAN_KEYWORDS:
+        if keyword in text_to_check:
+            return True
+    for keyword in NON_ASIAN_KEYWORDS:
+        if keyword in text_to_check:
+            return False
+    for name in ASIAN_NAMES:
+        if name in text_to_check:
+            return True
+    has_age = False
+    for pattern in AGE_POSITIVE_KEYWORDS:
+        if pattern in text_to_check:
+            has_age = True
+            break
+    if has_age:
+        for keyword in ['blonde', 'blue eyes', 'green eyes', 'redhead', 'ginger']:
+            if keyword in text_to_check:
+                return False
+        return True
+    asian_features = [
+        'slender', 'petite', 'olive skin', 'dark hair', 'black hair',
+        'straight hair', 'bangs', 'double eyelid', 'monolid',
+        'kawaii', 'cute', 'innocent', 'pure', 'delicate',
+        'slender figure', 'small face', 'fair skin',
+    ]
+    for feature in asian_features:
+        if feature in text_to_check:
+            return True
+    asian_domains = ['.jp', '.kr', '.cn', '.tw', '.hk', '.mo', '.sg', '.th', '.vn', '.ph', '.my', '.id']
+    for domain in asian_domains:
+        if domain in url.lower():
+            return True
+    return False
+
+def is_age_appropriate(url: str) -> bool:
+    if not url:
+        return False
+    url_lower = url.lower()
+    if is_child_photo(url):
+        return False
+    for word in AGE_POSITIVE_KEYWORDS:
+        if word in url_lower:
+            return True
+    if re.search(r'\b(age|years?|yo|y/o)\b', url_lower, re.IGNORECASE):
+        for word in AGE_POSITIVE_KEYWORDS:
+            if word in url_lower:
+                return True
+        return False
+    if 'mature' in url_lower or 'old' in url_lower or 'senior' in url_lower:
+        return False
+    return True
+
+def is_traditional_clothing(url: str) -> bool:
+    if not url:
+        return False
+    url_lower = url.lower()
+    for word in TRADITIONAL_EXCLUDE:
+        if word in url_lower:
+            return True
+    if 'traditional dress' in url_lower or 'folk costume' in url_lower:
+        return True
+    return False
+
+def is_photo_valid(url: str) -> bool:
+    if not url:
+        return False
+    if is_child_photo(url):
+        return False
+    if has_man_in_photo(url):
+        return False
+    if not is_asian_photo(url):
+        return False
+    if not is_age_appropriate(url):
+        return False
+    if is_traditional_clothing(url):
+        return False
+    unwanted = ['naked', 'nude', 'porn', 'xxx', 'sex', 'erotic', 'bikini']
+    for word in unwanted:
+        if word in url.lower():
+            return False
+    return True
+
+# ===== АСИНХРОННЫЕ ФУНКЦИИ =====
+
+async def get_random_photo(style: str = "asia"):
     global history
     
     if len(history) > 80:
@@ -2211,10 +1686,6 @@ async def get_random_photo(style: str = "medium"):
     
     queries = get_search_queries_for_style(style)
     random.shuffle(queries)
-    
-    if random.random() < 0.1:
-        queries.extend(FITNESS_QUERIES)
-        logger.info("Добавлен фитнес-запрос (редко)")
     
     search_functions = [
         ('Bing', search_bing),
@@ -2258,24 +1729,21 @@ async def get_random_photo(style: str = "medium"):
     logger.error("Не удалось найти подходящее фото!")
     return None
 
-# ===== ОБНОВЛЁННАЯ ФУНКЦИЯ СОЗДАНИЯ ПОСТА (С АНАЛИЗОМ КАРТИНКИ) =====
-
-async def create_post_with_photo(chat_id, user_id=0, skip_moderation=False, style="medium"):
-    """
-    Создаёт пост с фото и текстом. ИНОГДА анализирует картинку и добавляет комментарий.
-    """
+async def create_post_with_photo(chat_id, user_id=0, skip_moderation=False, style="asia"):
     try:
         photo_url = await get_random_photo(style)
         if not photo_url:
             logger.error("Не удалось найти фото")
             return False
         
-        caption = generate_caption()
+        # Используем новую функцию с проверкой
+        caption = generate_caption_with_validation()
         if not caption:
             logger.error("Не удалось сгенерировать текст")
             return False
         
-        analyze_styles = ['romantic', 'funny', 'joke', 'envy', 'everyday']
+        # Анализ картинки (редко)
+        analyze_styles = ['asia', 'streamer', 'funny']
         should_analyze = (
             style in analyze_styles and 
             random.random() < 0.15 and 
@@ -2284,11 +1752,11 @@ async def create_post_with_photo(chat_id, user_id=0, skip_moderation=False, styl
         
         photo_comment = None
         if should_analyze:
-            logger.info(f"🖼️ Анализирую картинку для стиля {style} (15% вероятность)")
+            logger.info(f"🖼️ Анализирую картинку (15% вероятность)")
             photo_comment = await analyze_photo_for_comment(photo_url)
             if photo_comment:
                 caption = caption.rstrip() + "\n\n" + photo_comment
-                logger.info(f"✅ Добавлен комментарий к фото: {photo_comment}")
+                logger.info(f"✅ Добавлен комментарий к фото")
             else:
                 logger.info("⚠️ Не удалось получить комментарий к фото")
         
@@ -2310,14 +1778,14 @@ async def create_post_with_photo(chat_id, user_id=0, skip_moderation=False, styl
         
         if skip_moderation:
             await task_queue.push(QUEUE_NAME, post_data)
-            logger.info(f"Пост {post_id} добавлен в очередь отправки")
+            logger.info(f"Пост {post_id} добавлен в очередь")
             return True
         else:
             await task_queue.push(MODERATION_QUEUE, {
                 'id': post_id,
                 'post_data': post_data
             })
-            logger.info(f"Пост {post_id} добавлен в очередь модерации")
+            logger.info(f"Пост {post_id} отправлен на модерацию")
             return True
             
     except Exception as e:
@@ -2551,7 +2019,7 @@ async def send_post(chat_id, photo_url=None, caption=None):
             return False
         
         if not caption:
-            caption = generate_caption()
+            caption = generate_caption_with_validation()
             caption = clean_text(caption)
             caption = truncate_by_sentences(caption, max_length=1023)
             validated, error = validate_caption(caption, min_length=500, max_length=1023)
@@ -2587,11 +2055,92 @@ async def send_post(chat_id, photo_url=None, caption=None):
             if chat_id in users_list:
                 users_list.remove(chat_id)
                 save_users(users_list)
-                logger.info(f"Пользователь {chat_id} удалён из-за ошибки")
+                logger.info(f"Пользователь {chat_id} удалён")
         return False
     except Exception as e:
         logger.error(f"Ошибка отправки в {chat_id}: {e}")
         return False
+
+# ===== РАБОТА С ФАЙЛАМИ =====
+
+def load_schedule():
+    try:
+        with open(SCHEDULE_FILE, "r") as f:
+            data = json.load(f)
+            if not data or not data.get("times"):
+                return {"times": ["12:00", "21:00"]}
+            return data
+    except:
+        return {"times": ["12:00", "21:00"]}
+
+def save_schedule(schedule_data):
+    try:
+        with open(SCHEDULE_FILE, "w") as f:
+            json.dump(schedule_data, f)
+        return True
+    except:
+        return False
+
+schedule_data = load_schedule()
+
+def load_users():
+    try:
+        with open(USERS_FILE, "r") as f:
+            return json.load(f)
+    except:
+        return []
+
+def save_users(users_list):
+    try:
+        with open(USERS_FILE, "w") as f:
+            json.dump(users_list, f)
+    except Exception as e:
+        logger.error(f"Ошибка сохранения пользователей: {e}")
+
+users = load_users()
+
+def load_history():
+    try:
+        with open(HISTORY_FILE, "r") as f:
+            return json.load(f)
+    except:
+        return []
+
+def save_history(history_list):
+    try:
+        if len(history_list) > 100:
+            history_list = history_list[-100:]
+        with open(HISTORY_FILE, "w") as f:
+            json.dump(history_list, f)
+    except Exception as e:
+        logger.error(f"Ошибка сохранения истории: {e}")
+
+history = load_history()
+
+# ===== КЭШ =====
+last_posts = []
+
+def add_to_last_posts(text: str):
+    global last_posts
+    if not text or len(text) < 10:
+        return
+    key = text[:100]
+    last_posts.append(key)
+    if len(last_posts) > 20:
+        last_posts.pop(0)
+
+def is_similar(text: str) -> bool:
+    global last_posts
+    if not text:
+        return False
+    key = text[:150]
+    for post in last_posts:
+        same_chars = sum(1 for a, b in zip(key, post) if a == b)
+        if len(key) > 10 and same_chars / len(key) > 0.65:
+            return True
+    return False
+
+# ===== ОСТАЛЬНЫЕ ФУНКЦИИ (кэш, продолжение, команды и т.д.) =====
 
 async def queue_processor():
     logger.info("Запущен обработчик очереди...")
@@ -2620,8 +2169,6 @@ async def queue_processor():
             await asyncio.sleep(1)
         except Exception as e:
             logger.error(f"Ошибка в обработчике очереди: {e}")
-            import traceback
-            traceback.print_exc()
             await asyncio.sleep(5)
 
 async def process_post_task(data: Dict[str, Any]):
@@ -2653,7 +2200,7 @@ async def process_moderation_task(data: Dict[str, Any]):
         approved, reason = await moderator.moderate_content(post)
         if approved is True:
             post.status = ModerationStatus.AUTO_APPROVED
-            logger.info(f"Пост {post_id} автоматически одобрен: {reason}")
+            logger.info(f"Пост {post_id} автоматически одобрен")
             await task_queue.push(QUEUE_NAME, {
                 'id': post_id,
                 'chat_id': post.chat_id,
@@ -2673,8 +2220,6 @@ async def process_moderation_task(data: Dict[str, Any]):
             logger.info(f"Пост {post_id} отклонен: {reason}")
     except Exception as e:
         logger.error(f"Ошибка модерации: {e}")
-        import traceback
-        traceback.print_exc()
 
 async def notify_owner_for_moderation(post_id: str, post: PostContent):
     if not OWNER_ID:
@@ -2699,10 +2244,6 @@ async def notify_owner_for_moderation(post_id: str, post: PostContent):
     except Exception as e:
         logger.error(f"Ошибка уведомления владельца: {e}")
 
-async def generate_and_queue_post(chat_id: str, user_id: int = 0, skip_moderation: bool = False, style: str = "medium"):
-    """Обёртка для обратной совместимости"""
-    return await create_post_with_photo(chat_id, user_id, skip_moderation, style)
-
 async def send_to_all_users():
     try:
         users_list = load_users()
@@ -2711,7 +2252,8 @@ async def send_to_all_users():
             return
         logger.info(f"Добавление постов в очередь для {len(users_list)} пользователей...")
         
-        styles = ["medium", "everyday", "funny", "romantic", "joke"]
+        # 50% Азия, 50% Стримеры
+        styles = ["asia", "streamer", "asia", "streamer", "funny"]
         style = random.choice(styles)
         logger.info(f"Автоматический пост будет в стиле: {style}")
         
@@ -2720,7 +2262,7 @@ async def send_to_all_users():
             logger.error("Не удалось найти фото")
             return
         
-        caption = generate_caption()
+        caption = generate_caption_with_validation()
         caption = clean_text(caption)
         caption = truncate_by_sentences(caption, max_length=1023)
         validated, error = validate_caption(caption, min_length=500, max_length=1023)
@@ -2737,7 +2279,6 @@ async def send_to_all_users():
             photo_comment = await analyze_photo_for_comment(photo_url)
             if photo_comment:
                 caption = caption.rstrip() + "\n\n" + photo_comment
-                logger.info(f"✅ Добавлен комментарий к фото в автоматической рассылке")
         
         base_post_id = f"post_{int(time.time())}"
         for chat_id in users_list:
@@ -2836,11 +2377,9 @@ async def photo_command(message: Message):
             await message.answer("⚠️ Бот не активирован. Напишите /start")
             return
         
-        # ===== ПРОВЕРКА ЛИМИТА ИСПОЛЬЗОВАНИЯ /photo =====
         can_use, used_count, limit = can_use_photo(user_id)
         
         if not can_use:
-            remaining = 0
             await message.answer(
                 f"⛔ Вы исчерпали лимит на сегодня ({limit} запросов).\n"
                 f"🔄 Лимит обновится завтра."
@@ -2848,17 +2387,14 @@ async def photo_command(message: Message):
             logger.info(f"⛔ Пользователь {user_id} превысил лимит /photo")
             return
         
-        # Определяем стиль для поиска (по умолчанию medium)
         args = message.text.replace("/photo", "").strip().lower()
-        styles = ["short_joke", "medium", "long", "everyday", "funny", "romantic", "envy", "joke", "russia"]
-        style = "medium"
+        styles = ["asia", "streamer", "funny", "russia"]
+        style = "asia"
         if args in styles:
             style = args
         
-        # Создаем пост
         await create_post_with_photo(str(chat_id), user_id, skip_moderation=True, style=style)
         
-        # Увеличиваем счетчик использования
         new_count, limit = increment_photo_usage(user_id)
         remaining = limit - new_count
         
@@ -2871,7 +2407,7 @@ async def photo_command(message: Message):
         logger.info(f"📸 Команда /photo от {user_id}, стиль: {style}, использовано: {new_count}/{limit}")
         
     except Exception as e:
-        logger.error(f"Ошибка в команде photo: {e}", exc_info=True)
+        logger.error(f"Ошибка в команде photo: {e}")
         await message.answer("❌ Произошла ошибка. Попробуйте позже.")
 
 @dp.message(Command("post"))
@@ -2889,8 +2425,8 @@ async def post_command(message: Message):
             return
         
         args = message.text.replace("/post", "").strip().lower()
-        styles = ["short_joke", "medium", "long", "everyday", "funny", "romantic", "envy", "joke", "russia"]
-        style = "medium"
+        styles = ["asia", "streamer", "funny", "russia"]
+        style = "asia"
         if args in styles:
             style = args
         
@@ -2908,7 +2444,7 @@ async def post_command(message: Message):
         logger.info(f"📝 Команда /post от владельца, стиль: {style}")
         
     except Exception as e:
-        logger.error(f"Ошибка в команде post: {e}", exc_info=True)
+        logger.error(f"Ошибка в команде post: {e}")
         await message.answer("❌ Произошла ошибка. Попробуйте позже.")
 
 @dp.message(Command("price"))
@@ -2956,7 +2492,7 @@ async def set_price(message: Message):
         logger.error(f"Ошибка в команде price: {e}")
         await message.answer("❌ Произошла ошибка. Попробуйте позже.")
 
-# ===== КОМАНДА /BROADCAST (с поддержкой медиа) =====
+# ===== КОМАНДА /BROADCAST =====
 
 broadcast_data = {}
 pending_broadcasts = {}
@@ -3148,10 +2684,10 @@ async def broadcast_command(message: Message):
                 parse_mode="Markdown"
             )
         
-        logger.info(f"📢 Рассылка создана для {user_id}, заказ {order_id}, медиа: {has_media}")
+        logger.info(f"📢 Рассылка создана для {user_id}, заказ {order_id}")
         
     except Exception as e:
-        logger.error(f"Ошибка в команде broadcast: {e}", exc_info=True)
+        logger.error(f"Ошибка в команде broadcast: {e}")
         await message.answer("❌ Произошла ошибка. Попробуйте позже.")
 
 # ===== ОБРАБОТЧИКИ ОПЛАТЫ =====
@@ -3292,8 +2828,6 @@ async def check_rub_payment(callback: CallbackQuery):
     except Exception as e:
         logger.error(f"Ошибка проверки оплаты: {e}")
         await callback.answer("❌ Ошибка", show_alert=True)
-
-# ===== ОБРАБОТЧИКИ AURAPAY =====
 
 @dp.callback_query(lambda c: c.data and c.data.startswith('pay_aurapay_'))
 async def pay_with_aurapay(callback: CallbackQuery):
@@ -3595,7 +3129,7 @@ async def handle_broadcast_moderation(callback: CallbackQuery):
         if approved:
             await callback.answer("✅ Сообщение одобрено. Будет опубликовано через 5 минут.", show_alert=True)
             await callback.message.edit_text(
-                callback.message.text + "\n\n✅ ОДОБРЕНО (будет опубликовано через 5 минут)",
+                callback.message.text + "\n\n✅ ОДОБРЕНО",
                 reply_markup=None
             )
             await asyncio.sleep(300)
@@ -3788,10 +3322,10 @@ async def start(msg: Message):
         rub_price = broadcast_prices.get("rub", 100)
         await msg.answer(
             f"✅ Вы подписаны на рассылку!\n"
-            f"📸 Уникальные посты про молодых азиаток (18-30 лет)\n"
+            f"📸 Уникальные посты про Азию и стримеров\n"
             f"⏰ Расписание: {times}\n"
             f"{channel_status}\n"
-            f"🔄 /photo - получить фото сейчас (до 10 раз в день)\n"
+            f"🔄 /photo - получить пост сейчас (до 10 раз в день)\n"
             f"⏰ /schedule - изменить расписание\n"
             f"📢 /broadcast - отправить сообщение всем (⭐ {stars_price} звёзд или 💳 {rub_price} {FREEKASSA_CURRENCY})\n"
             f"🛑 /stop - отписаться"
@@ -3927,7 +3461,7 @@ async def check_channel(message: Message):
 async def scheduler():
     global is_sending, last_post_time
     await asyncio.sleep(10)
-    logger.info("Планировщик запущен с случайным временем отправки (не чаще 1 раза в 2 часа)")
+    logger.info("Планировщик запущен")
     while True:
         try:
             current_time = time.time()
@@ -3939,8 +3473,7 @@ async def scheduler():
                 continue
             random_delay = random.randint(3600, 14400)
             post_time = datetime.now() + timedelta(seconds=random_delay)
-            logger.info(f"Следующий пост запланирован на {post_time.strftime('%Y-%m-%d %H:%M:%S')} "
-                       f"(через {random_delay // 3600} часов {random_delay % 3600 // 60} минут)")
+            logger.info(f"Следующий пост запланирован на {post_time.strftime('%Y-%m-%d %H:%M:%S')}")
             await asyncio.sleep(random_delay)
             if time.time() - last_post_time < MIN_POST_INTERVAL:
                 logger.info("Пост уже был отправлен, пропускаем")
@@ -3951,7 +3484,7 @@ async def scheduler():
                     logger.info("Отправка запланированного поста...")
                     await send_to_all_users()
                     last_post_time = time.time()
-                    logger.info(f"Пост отправлен! Следующий не ранее чем через {MIN_POST_INTERVAL // 3600} часов")
+                    logger.info(f"Пост отправлен!")
                 except Exception as e:
                     logger.error(f"Ошибка отправки: {e}")
                 finally:
@@ -4002,33 +3535,28 @@ async def main():
     try:
         logger.info("=" * 60)
         logger.info("🤖 БОТ ЗАПУЩЕН")
-        logger.info("📸 /photo — для всех пользователей (до 10 раз в день)")
-        logger.info("📝 /post — только для владельца (дублируется в канал)")
-        logger.info("📢 /broadcast — платная рассылка с медиа")
-        logger.info("🖼️ Анализ картинок — 15% вероятности для романтичных/смешных постов")
+        logger.info("📸 /photo — для всех (до 10 раз в день)")
+        logger.info("📝 /post — только для владельца")
+        logger.info("📢 /broadcast — платная рассылка")
         logger.info("=" * 60)
         
         if FREEKASSA_SHOP_ID and FREEKASSA_SECRET1:
             port = int(os.getenv("PORT", 8080))
             app = web.Application()
             
-            # ===== МАРШРУТЫ =====
             app.router.add_get("/", health_check)
             app.router.add_get("/success", success_page)
             app.router.add_get("/fail", fail_page)
             app.router.add_post('/freekassa/webhook', freekassa_webhook)
             
-            # Маршруты для AuraPay
             app.router.add_post('/aurapay/webhook', aurapay_webhook)
             app.router.add_post('/api/aurapay/create', aurapay_create_payment_api)
             app.router.add_post('/api/aurapay/status', aurapay_status_api)
             app.router.add_get('/aurapay-success', success_page)
             app.router.add_get('/aurapay-fail', fail_page)
             
-            # ===== ПРАВИЛЬНЫЙ CORS MIDDLEWARE =====
             @web.middleware
             async def cors_middleware(request, handler):
-                """CORS middleware для работы с Mini App"""
                 if request.method == 'OPTIONS':
                     return web.Response(
                         status=200,
@@ -4040,11 +3568,9 @@ async def main():
                     )
                 
                 response = await handler(request)
-                
                 response.headers['Access-Control-Allow-Origin'] = '*'
                 response.headers['Access-Control-Allow-Methods'] = 'POST, GET, OPTIONS'
                 response.headers['Access-Control-Allow-Headers'] = 'Content-Type, X-Merchant-Id, X-API-Key'
-                
                 return response
             
             app.middlewares.append(cors_middleware)
@@ -4071,15 +3597,13 @@ async def main():
         
     except Exception as e:
         logger.error(f"❌ Критическая ошибка: {e}")
-        import traceback
-        traceback.print_exc()
         sys.exit(1)
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        logger.info("🛑 Бот остановлен пользователем")
+        logger.info("🛑 Бот остановлен")
     except Exception as e:
         logger.error(f"❌ Фатальная ошибка: {e}")
         sys.exit(1)
