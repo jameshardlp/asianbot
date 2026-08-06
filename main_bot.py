@@ -13,8 +13,6 @@ import logging
 import base64
 from datetime import datetime, timedelta
 from typing import Optional, Tuple, Dict, Any, List
-from dataclasses import dataclass
-from enum import Enum
 
 import requests
 from aiogram import Bot, Dispatcher, types
@@ -23,20 +21,43 @@ from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, C
 from aiogram.exceptions import TelegramAPIError
 from aiohttp import web
 
-# Импорты из модулей
+# ===== ИМПОРТЫ ИЗ МОДУЛЕЙ =====
 from deepseek_parser import (
-    generate_caption_with_validation, get_streamer_media, get_streamer_photo,
-    get_streamer_for_post, validate_caption, clean_text, truncate_by_sentences,
-    STREAMER_INFO, ASIAN_QUERIES, is_photo_valid, search_bing, search_google_direct,
-    search_yandex, search_pexels, search_youtube_clip, get_streamer_media,
-    add_to_last_posts, is_similar, clear_prompt_cache, check_date_in_content
+    generate_caption_with_validation, 
+    get_streamer_media, 
+    get_streamer_photo,
+    get_streamer_for_post, 
+    validate_caption, 
+    clean_text, 
+    truncate_by_sentences,
+    STREAMER_INFO, 
+    ASIAN_QUERIES, 
+    is_photo_valid, 
+    search_bing, 
+    search_google_direct,
+    search_yandex, 
+    search_pexels, 
+    search_youtube_clip, 
+    add_to_last_posts, 
+    is_similar, 
+    clear_prompt_cache, 
+    check_date_in_content,
+    get_random_photo,
+    analyze_photo_for_comment
 )
 from payment_system import (
-    broadcast_prices, save_broadcast_price, load_broadcast_price,
-    create_freekassa_payment_link, check_freekassa_payment_status,
-    create_aurapay_payment, check_aurapay_payment_status,
-    aurapay_webhook, freekassa_webhook,
-    broadcast_data, pending_broadcasts, AURAPAY_MINIAPP_URL
+    broadcast_prices, 
+    save_broadcast_price, 
+    load_broadcast_price,
+    create_freekassa_payment_link, 
+    check_freekassa_payment_status,
+    create_aurapay_payment, 
+    check_aurapay_payment_status,
+    aurapay_webhook, 
+    freekassa_webhook,
+    broadcast_data, 
+    pending_broadcasts, 
+    AURAPAY_MINIAPP_URL
 )
 
 # ===== НАСТРОЙКА ЛОГИРОВАНИЯ =====
@@ -153,140 +174,6 @@ users = load_users()
 history = load_history()
 schedule_data = load_schedule()
 
-# ===== ФУНКЦИИ РАБОТЫ С ФОТО (с историей) =====
-
-async def get_random_photo(style: str = "streamer", streamer_key: str = None) -> Optional[str]:
-    """Получает случайное фото с проверкой истории и даты"""
-    global history
-    
-    if len(history) > 80:
-        logger.info("История переполнена, очищаю...")
-        history = []
-        save_history(history)
-    
-    if streamer_key:
-        photo = get_streamer_photo(streamer_key)
-        if photo and photo not in history:
-            if check_date_in_content("", photo):
-                history.append(photo)
-                save_history(history)
-                return photo
-        elif photo and photo in history:
-            logger.info("⏭️ Фото уже использовалось")
-            return None
-    
-    if style == 'streamer':
-        streamers = ['voodoosh', 'praden', 'bratishkinoff', 'sasavot', 
-                     'alina_rin', 'lasqa', 'arrowwoods', 'evelone', 'buster']
-        random.shuffle(streamers)
-        
-        for streamer in streamers:
-            photo = get_streamer_photo(streamer)
-            if photo and photo not in history:
-                if check_date_in_content("", photo):
-                    history.append(photo)
-                    save_history(history)
-                    return photo
-        
-        logger.warning("⚠️ Не найдены фото стримеров, пробую общий поиск")
-        fallback_queries = ["russian streamer face", "twitch streamer russian", "streamer portrait"]
-        random.shuffle(fallback_queries)
-        
-        search_functions = [search_bing, search_google_direct, search_yandex]
-        random.shuffle(search_functions)
-        
-        for query in fallback_queries[:2]:
-            for search_func in search_functions[:2]:
-                try:
-                    photo = search_func(query)
-                    if photo and photo not in history:
-                        if check_date_in_content("", photo):
-                            history.append(photo)
-                            save_history(history)
-                            return photo
-                except Exception as e:
-                    continue
-    
-    queries = ASIAN_QUERIES.copy()
-    random.shuffle(queries)
-    
-    search_functions = [search_bing, search_google_direct, search_yandex, search_pexels]
-    random.shuffle(search_functions)
-    
-    for query in queries[:3]:
-        for search_func in search_functions[:2]:
-            try:
-                photo = search_func(query)
-                if photo and photo not in history and is_photo_valid(photo):
-                    if check_date_in_content("", photo):
-                        history.append(photo)
-                        save_history(history)
-                        return photo
-            except Exception as e:
-                continue
-    
-    logger.error("❌ Не удалось найти подходящее фото!")
-    return None
-
-async def analyze_photo_for_comment(image_url: str) -> Optional[str]:
-    if not DEEPSEEK_API_KEY:
-        return None
-    
-    try:
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-        }
-        response = requests.get(image_url, headers=headers, timeout=10)
-        if response.status_code != 200:
-            return None
-        
-        base64_image = base64.b64encode(response.content).decode('utf-8')
-        
-        headers = {
-            "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
-            "Content-Type": "application/json"
-        }
-        
-        data = {
-            "model": "deepseek-vl-chat",
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": "Коротко опиши что на фото. 1-2 предложения. Грубо, с юмором. Используй мат."
-                        },
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/jpeg;base64,{base64_image}"
-                            }
-                        }
-                    ]
-                }
-            ],
-            "max_tokens": 150,
-            "temperature": 1.1
-        }
-        
-        response = requests.post(
-            "https://api.deepseek.com/v1/chat/completions",
-            headers=headers,
-            json=data,
-            timeout=30
-        )
-        
-        if response.status_code == 200:
-            result = response.json()
-            comment = result["choices"][0]["message"]["content"].strip()
-            logger.info(f"🖼️ Комментарий к фото: {comment}")
-            return comment
-        return None
-    except Exception as e:
-        logger.error(f"Ошибка анализа фото: {e}")
-        return None
-
 # ===== ФУНКЦИИ ОТПРАВКИ =====
 
 async def send_post(chat_id, photo_url=None, caption=None, media_type='photo', clip_url=None):
@@ -382,7 +269,9 @@ async def create_post_with_photo(chat_id, user_id=0, skip_moderation=False, styl
             'streamer_key': streamer_key
         }
         
-        logger.info(f"✅ Пост создан для {chat_id}")
+        # Отправляем пост
+        await send_post(chat_id, media_url, caption, media_type, clip_url)
+        logger.info(f"✅ Пост отправлен в {chat_id}")
         return True
         
     except Exception as e:
@@ -432,17 +321,36 @@ async def send_to_all_users():
             logger.error("Не удалось найти медиа")
             return
         
-        # Отправляем всем пользователям
-        for chat_id in users_list:
-            await send_post(chat_id, media_url, caption, media_type, clip_url)
-            await asyncio.sleep(0.3)
+        # Отправляем в канал (если он есть)
+        channel_id = None
+        if CHANNEL_ID and CHANNEL_ID.strip():
+            channel_id = CHANNEL_ID
+        else:
+            channel_id = await get_channel_id()
         
-        # Отправляем в канал
-        channel_id = CHANNEL_ID
         if channel_id:
-            await send_post(channel_id, media_url, caption, media_type, clip_url)
+            try:
+                logger.info(f"📢 Отправка в канал {channel_id}")
+                await send_post(channel_id, media_url, caption, media_type, clip_url)
+                logger.info(f"✅ Пост отправлен в канал {channel_id}")
+            except Exception as e:
+                logger.error(f"❌ Ошибка отправки в канал: {e}")
+        else:
+            logger.info("ℹ️ Канал не найден, отправка только пользователям")
         
-        logger.info(f"✅ Пост отправлен {len(users_list)} пользователям")
+        # Отправляем всем пользователям
+        sent_count = 0
+        failed_count = 0
+        for chat_id in users_list:
+            try:
+                await send_post(chat_id, media_url, caption, media_type, clip_url)
+                sent_count += 1
+                await asyncio.sleep(0.3)
+            except Exception as e:
+                logger.error(f"Ошибка отправки пользователю {chat_id}: {e}")
+                failed_count += 1
+        
+        logger.info(f"✅ Пост отправлен: {sent_count} пользователям, {failed_count} ошибок")
     except Exception as e:
         logger.error(f"Ошибка в send_to_all_users: {e}")
 
@@ -564,26 +472,42 @@ def increment_photo_usage(user_id: int) -> Tuple[int, int]:
 async def start(msg: Message):
     try:
         chat_id = msg.chat.id
+        user_id = msg.from_user.id
+        
         if chat_id not in users:
             users.append(chat_id)
             save_users(users)
+            logger.info(f"👤 Добавлен пользователь: {chat_id}")
         
         current_schedule = load_schedule()
         times = ", ".join(current_schedule.get("times", ["12:00", "21:00"]))
         stars_price = broadcast_prices.get("stars", 100)
         rub_price = broadcast_prices.get("rub", 100)
         
+        channel_status = "❌ не найден"
+        channel_id = CHANNEL_ID
+        if channel_id and channel_id.strip():
+            channel_status = f"✅ {channel_id}"
+        else:
+            found_channel = await get_channel_id()
+            if found_channel:
+                channel_status = f"✅ {found_channel} (авто-найден)"
+        
         await msg.answer(
-            f"✅ Вы подписаны на рассылку!\n"
+            f"✅ Бот активирован!\n\n"
             f"📸 Посты про стримеров и Азию\n"
             f"⏰ Расписание: {times}\n"
+            f"📢 Канал: {channel_status}\n\n"
             f"🔄 /photo - получить пост сейчас (до 10 раз в день)\n"
-            f"⏰ /schedule - изменить расписание\n"
+            f"⏰ /schedule - изменить расписание (только для владельца)\n"
             f"📢 /broadcast - отправить сообщение всем (⭐ {stars_price} звёзд или 💳 {rub_price} RUB)\n"
-            f"🛑 /stop - отписаться"
+            f"🛑 /stop - отписаться\n"
+            f"📊 /status - статус бота"
         )
+        
     except Exception as e:
         logger.error(f"Ошибка в команде start: {e}")
+        await msg.answer("❌ Произошла ошибка. Попробуйте позже.")
 
 @dp.message(Command("photo"))
 async def photo_command(message: Message):
@@ -610,7 +534,7 @@ async def photo_command(message: Message):
         remaining = limit - new_count
         
         await message.answer(
-            f"✅ Пост отправлен в очередь!\n"
+            f"✅ Пост отправлен!\n"
             f"📊 Осталось запросов на сегодня: {remaining} из {limit}"
         )
     except Exception as e:
@@ -624,8 +548,20 @@ async def post_command(message: Message):
             await message.answer("⛔ Доступ запрещён")
             return
         
+        channel_id = CHANNEL_ID
+        if channel_id and channel_id.strip():
+            await create_post_with_photo(str(channel_id), message.from_user.id, skip_moderation=True)
+            await message.answer("✅ Пост создан для канала!")
+        else:
+            channel_id = await get_channel_id()
+            if channel_id:
+                await create_post_with_photo(str(channel_id), message.from_user.id, skip_moderation=True)
+                await message.answer(f"✅ Пост создан для канала {channel_id}!")
+            else:
+                await message.answer("⚠️ Канал не найден. Укажите CHANNEL_ID в переменных окружения.")
+        
         await create_post_with_photo(str(message.chat.id), message.from_user.id, skip_moderation=True)
-        await message.answer("✅ Пост создан!")
+        await message.answer("✅ Пост создан в ЛС!")
     except Exception as e:
         logger.error(f"Ошибка в команде post: {e}")
 
@@ -726,50 +662,93 @@ async def status(msg: Message):
         users_list = load_users()
         current_schedule = load_schedule()
         times = ", ".join(current_schedule.get("times", ["12:00", "21:00"]))
+        channel_id = CHANNEL_ID or await get_channel_id()
         
         await msg.answer(
             f"📊 Статус бота:\n"
             f"• Подписчиков: {len(users_list)}\n"
             f"• Фото в истории: {len(history)}\n"
             f"• Расписание: {times}\n"
-            f"• Канал: {'✅' if CHANNEL_ID else '❌'}"
+            f"• Канал: {'✅ ' + channel_id if channel_id else '❌ не найден'}"
         )
     except Exception as e:
         logger.error(f"Ошибка в команде status: {e}")
+
+@dp.message(Command("check_channel"))
+async def check_channel(message: Message):
+    try:
+        if message.from_user.id != OWNER_ID:
+            await message.answer("⛔ Доступ запрещён")
+            return
+        try:
+            chat_member = await bot.get_chat_member(STARS_CHANNEL_ID, bot.id)
+            status_text = f"📊 Статус бота в канале {STARS_CHANNEL_ID}:\n"
+            status_text += f"• Статус: {chat_member.status}\n"
+            status_text += f"• Может отправлять: {chat_member.can_send_messages}\n"
+            status_text += f"• Может управлять: {chat_member.can_manage_chat}\n"
+            status_text += f"• Может публиковать: {chat_member.can_post_messages}\n"
+            status_text += f"• Может управлять видеочатами: {chat_member.can_manage_video_chats}\n"
+            await message.answer(status_text)
+        except Exception as e:
+            await message.answer(f"❌ Ошибка: {e}\n\nУбедитесь, что бот добавлен в канал {STARS_CHANNEL_ID} как администратор.")
+    except Exception as e:
+        logger.error(f"Ошибка проверки канала: {e}")
+        await message.answer("❌ Произошла ошибка")
 
 # ===== ЗАДАЧИ ПО РАСПИСАНИЮ =====
 
 async def scheduler():
     global is_sending, last_post_time
     await asyncio.sleep(10)
-    logger.info("Планировщик запущен")
+    logger.info("🔄 Планировщик запущен")
+    logger.info(f"📅 Расписание: {schedule_data.get('times', ['12:00', '21:00'])}")
+    logger.info(f"⏱️ Минимальный интервал между постами: {MIN_POST_INTERVAL//3600} часов")
     
     while True:
         try:
             current_time = time.time()
+            
             if current_time - last_post_time < MIN_POST_INTERVAL:
-                await asyncio.sleep(1800)
+                wait_time = random.randint(1800, 3600)
+                logger.info(f"⏳ Следующая проверка через {wait_time//60} минут")
+                await asyncio.sleep(wait_time)
                 continue
             
             now = datetime.now()
             current_time_str = now.strftime("%H:%M")
             
             schedule_times = schedule_data.get("times", ["12:00", "21:00"])
+            
             if current_time_str in schedule_times:
                 if not is_sending:
                     is_sending = True
                     try:
-                        logger.info(f"📢 Отправка по расписанию {current_time_str}")
-                        await send_to_all_users()
-                        last_post_time = time.time()
+                        random_delay = random.randint(0, 2700)
+                        logger.info(f"🎲 Случайная задержка {random_delay//60} минут")
+                        await asyncio.sleep(random_delay)
+                        
+                        if time.time() - last_post_time >= MIN_POST_INTERVAL:
+                            if random.random() < 0.05:
+                                logger.info("🎲 Случайный пропуск отправки (5%)")
+                                last_post_time = time.time()
+                            else:
+                                logger.info(f"📢 Отправка по расписанию {current_time_str}")
+                                await send_to_all_users()
+                                last_post_time = time.time()
+                                logger.info(f"✅ Пост отправлен в {datetime.now().strftime('%H:%M')}")
+                        else:
+                            logger.info("⏭️ Пост уже был отправлен, пропускаем")
                     except Exception as e:
-                        logger.error(f"Ошибка отправки: {e}")
+                        logger.error(f"❌ Ошибка отправки: {e}")
                     finally:
                         is_sending = False
+                else:
+                    logger.warning("⚠️ Отправка уже идёт, пропускаем")
             
             await asyncio.sleep(60)
+            
         except Exception as e:
-            logger.error(f"Ошибка в планировщике: {e}")
+            logger.error(f"❌ Ошибка в планировщике: {e}")
             await asyncio.sleep(60)
 
 # ===== КОМАНДА /BROADCAST =====
@@ -1573,7 +1552,6 @@ async def main():
         logger.info("📸 85% постов про стримеров, 15% про Азию")
         logger.info("=" * 60)
         
-        # Запускаем веб-сервер для webhook
         if FREEKASSA_SHOP_ID and FREEKASSA_SECRET1:
             port = int(os.getenv("PORT", 8080))
             app = web.Application()
@@ -1586,10 +1564,8 @@ async def main():
             await site.start()
             logger.info(f"🌐 Webhook сервер на порту {port}")
         
-        # Запускаем планировщик
         asyncio.create_task(scheduler())
         
-        # Запускаем бота
         await bot.delete_webhook(drop_pending_updates=True)
         await dp.start_polling(
             bot,
