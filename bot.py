@@ -50,6 +50,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 CHANNEL_ID = os.getenv("CHANNEL_ID")
 OWNER_ID = int(os.getenv("OWNER_ID", 0))
+YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY", "")  # Добавляем YouTube API ключ
 
 # Настройки для Stars
 STARS_CHANNEL_ID = -1003893727881
@@ -746,58 +747,79 @@ async def fail_page(request):
 async def health_check(request):
     return web.Response(text="Bot is running! ✅")
 
-# ===== КЛЮЧЕВЫЕ СЛОВА ДЛЯ СТРИМЕРОВ (ИСПРАВЛЕННЫЕ НИКИ) =====
+# ===== КЛЮЧЕВЫЕ СЛОВА ДЛЯ СТРИМЕРОВ =====
 
 STREAMER_QUERIES = {
     'voodoosh': [
         "voodoosh stream",
-        "voodoosh russian streamer",
+        "voodoosh twitch",
         "вудуш стрим",
         "вудуш стример",
+        "voodoosh face",
+        "вудуш лицо",
     ],
     'praden': [
         "praden stream",
-        "praden russian streamer",
+        "praden twitch",
         "праден стрим",
         "праден стример",
+        "praden face",
+        "праден лицо",
     ],
     'bratishkinoff': [
         "bratishkinoff stream",
-        "bratishkinoff russian",
+        "bratishkinoff twitch",
         "братишкин стрим",
         "братишкин стример",
+        "bratishkinoff face",
+        "вова братишкин",
+        "братишкин лицо",
     ],
     'sasavot': [
         "sasavot stream",
-        "sasavot russian streamer",
+        "sasavot twitch",
         "сасавот стрим",
+        "сасавот стример",
+        "sasavot face",
     ],
     'alina_rin': [
         "alina rin stream",
-        "alina rin russian",
+        "alina rin twitch",
         "алина рин стрим",
+        "алина рин стример",
+        "alina rin face",
+        "алина рин лицо",
     ],
     'lasqa': [
         "lasqa stream",
-        "lasqa russian streamer",
+        "lasqa twitch",
         "ласка стрим",
+        "ласка стример",
+        "lasqa face",
+        "ласка лицо",
     ],
     'arrowwoods': [
         "arrowwoods stream",
-        "arrowwoods russian",
+        "arrowwoods twitch",
         "аравудус стрим",
+        "аравудус стример",
+        "arrowwoods face",
     ],
     'evelone': [
         "evelone stream",
-        "evelone russian streamer",
+        "evelone twitch",
         "эвелон стрим",
         "эвелон стример",
+        "evelone face",
+        "эвелон лицо",
     ],
     'buster': [
         "buster stream",
-        "buster russian streamer",
+        "buster twitch",
         "бустер стрим",
         "бустер стример",
+        "buster face",
+        "бустер лицо",
     ],
 }
 
@@ -1194,73 +1216,88 @@ def clean_text(text: str) -> str:
     text = clean_punctuation(text)
     return text
 
-# ===== ФУНКЦИЯ ПРОВЕРКИ ПОСТА ЧЕРЕЗ DEEPSEEK API =====
+# ===== ФУНКЦИЯ ПОИСКА КЛИПОВ НА YOUTUBE =====
 
-def validate_post_with_deepseek(post_text: str) -> Tuple[bool, str]:
-    """
-    Проверяет пост через DeepSeek API.
-    Возвращает: (одобрено_ли, причина_или_исправленный_текст)
-    """
-    if not DEEPSEEK_API_KEY:
-        logger.warning("⚠️ Нет DeepSeek API ключа для проверки поста")
-        return True, post_text
+def search_youtube_clip(streamer_name: str, streamer_display: str) -> Optional[str]:
+    """Ищет клип стримера на YouTube и возвращает ссылку на видео"""
+    if not YOUTUBE_API_KEY:
+        logger.warning("⚠️ YouTube API ключ не настроен")
+        return None
     
     try:
-        headers = {
-            "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
-            "Content-Type": "application/json"
-        }
+        # Формируем поисковый запрос
+        search_queries = [
+            f"{streamer_display} клип",
+            f"{streamer_name} clip",
+            f"{streamer_display} стрим момент",
+            f"{streamer_display} прикол",
+            f"{streamer_name} best moment",
+            f"{streamer_display} смешной момент",
+        ]
         
-        data = {
-            "model": "deepseek-chat",
-            "messages": [
-                {"role": "system", "content": """Ты — строгий модератор контента. Проверяй посты на соответствие правилам:
-
-1. Пост должен быть о стримерах или Азии (по теме)
-2. Допускается грубая лексика и мат (это стиль автора)
-3. Не должно быть личных оскорблений (критика действий, а не внешности)
-4. Не должно быть призывов к насилию или экстремизму
-5. Пост должен быть грамотным (орфография, пунктуация)
-6. Пост должен быть завершённым
-
-Если пост соответствует — напиши "APPROVED".
-Если пост НЕ соответствует — напиши "REJECT: причина".
-
-Будь строгим."""},
-                {"role": "user", "content": f"Проверь этот пост:\n\n{post_text}"}
-            ],
-            "temperature": 0.3,
-            "max_tokens": 100,
-        }
+        random.shuffle(search_queries)
         
-        response = requests.post(
-            "https://api.deepseek.com/v1/chat/completions",
-            headers=headers,
-            json=data,
-            timeout=15
-        )
-        
-        if response.status_code == 200:
-            result = response.json()
-            verdict = result["choices"][0]["message"]["content"].strip()
+        for query in search_queries[:3]:
+            url = "https://www.googleapis.com/youtube/v3/search"
+            params = {
+                "part": "snippet",
+                "q": query,
+                "type": "video",
+                "order": "relevance",
+                "maxResults": 5,
+                "videoDuration": "short",
+                "key": YOUTUBE_API_KEY
+            }
             
-            if verdict.startswith("APPROVED"):
-                logger.info("✅ Пост прошёл проверку DeepSeek")
-                return True, post_text
-            elif verdict.startswith("REJECT:"):
-                reason = verdict.replace("REJECT:", "").strip()
-                logger.warning(f"❌ Пост отклонён: {reason}")
-                return False, reason
+            logger.info(f"🔍 Поиск клипа для {streamer_display}: {query}")
+            response = requests.get(url, params=params, timeout=10)
+            
+            if response.status_code == 200:
+                data = response.json()
+                
+                if data.get("items") and len(data["items"]) > 0:
+                    for item in data["items"]:
+                        video_id = item["id"]["videoId"]
+                        title = item["snippet"]["title"]
+                        
+                        # Исключаем подкасты и длинные видео
+                        if "подкаст" in title.lower() or "podcast" in title.lower():
+                            continue
+                        
+                        video_url = f"https://www.youtube.com/watch?v={video_id}"
+                        logger.info(f"✅ Найден клип для {streamer_display}: {title[:50]}...")
+                        return video_url
             else:
-                logger.warning(f"⚠️ Неизвестный ответ DeepSeek: {verdict}")
-                return True, post_text
-        else:
-            logger.error(f"❌ Ошибка проверки поста: {response.status_code}")
-            return True, post_text
-            
+                logger.error(f"❌ Ошибка YouTube API: {response.status_code}")
+                continue
+        
+        return None
+        
     except Exception as e:
-        logger.error(f"❌ Ошибка при проверке поста через DeepSeek: {e}")
-        return True, post_text
+        logger.error(f"❌ Ошибка поиска клипа: {e}")
+        return None
+
+# ===== ФУНКЦИЯ ПОЛУЧЕНИЯ МЕДИА ДЛЯ СТРИМЕРА =====
+
+def get_streamer_media(streamer_key: str, streamer_display: str) -> Tuple[Optional[str], str]:
+    """
+    Получает медиа для стримера (сначала фото, если нет - клип)
+    Возвращает: (url, тип_медиа) где тип_медиа: 'photo' или 'clip'
+    """
+    # Сначала пробуем найти фото
+    photo = get_streamer_photo(streamer_key)
+    if photo:
+        return photo, 'photo'
+    
+    # Если фото нет, ищем клип
+    logger.info(f"📹 Фото не найдено для {streamer_display}, ищу клип...")
+    clip = search_youtube_clip(streamer_key, streamer_display)
+    if clip:
+        return clip, 'clip'
+    
+    # Если ничего не найдено, возвращаем None
+    logger.warning(f"⚠️ Не найдено ни фото, ни клипа для {streamer_display}")
+    return None, 'none'
 
 # ===== ПОИСК ФОТО =====
 
@@ -1426,8 +1463,9 @@ def get_streamer_photo(streamer_name: str) -> Optional[str]:
                 logger.info(f"Поиск фото для {streamer_name} в {source_name}: {query}")
                 photo = search_func(query)
                 if photo and photo not in history:
-                    logger.info(f"✅ Найдено новое фото для {streamer_name}")
-                    return photo
+                    if not any(x in photo.lower() for x in ['logo', 'icon', 'avatar', 'default']):
+                        logger.info(f"✅ Найдено новое фото для {streamer_name}")
+                        return photo
                 elif photo and photo in history:
                     logger.info(f"⏭️ Фото для {streamer_name} уже использовалось")
                     continue
@@ -1460,7 +1498,6 @@ def generate_caption_with_validation() -> Tuple[str, Optional[str]]:
     """Генерирует пост и проверяет его через DeepSeek API до 5 раз."""
     logger.info("Генерирую уникальный пост с проверкой...")
     
-    # Определяем тему: 85% стримеры, 15% Азия
     rand = random.random()
     if rand < 0.85:
         style = 'streamer'
@@ -1662,9 +1699,77 @@ def get_fallback_caption(streamer_name: str = None) -> str:
         ]
     return random.choice(fallbacks)
 
+# ===== ФУНКЦИЯ ПРОВЕРКИ ПОСТА ЧЕРЕЗ DEEPSEEK API =====
+
+def validate_post_with_deepseek(post_text: str) -> Tuple[bool, str]:
+    """
+    Проверяет пост через DeepSeek API.
+    Возвращает: (одобрено_ли, причина_или_исправленный_текст)
+    """
+    if not DEEPSEEK_API_KEY:
+        logger.warning("⚠️ Нет DeepSeek API ключа для проверки поста")
+        return True, post_text
+    
+    try:
+        headers = {
+            "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+            "Content-Type": "application/json"
+        }
+        
+        data = {
+            "model": "deepseek-chat",
+            "messages": [
+                {"role": "system", "content": """Ты — строгий модератор контента. Проверяй посты на соответствие правилам:
+
+1. Пост должен быть о стримерах или Азии (по теме)
+2. Допускается грубая лексика и мат (это стиль автора)
+3. Не должно быть личных оскорблений (критика действий, а не внешности)
+4. Не должно быть призывов к насилию или экстремизму
+5. Пост должен быть грамотным (орфография, пунктуация)
+6. Пост должен быть завершённым
+
+Если пост соответствует — напиши "APPROVED".
+Если пост НЕ соответствует — напиши "REJECT: причина".
+
+Будь строгим."""},
+                {"role": "user", "content": f"Проверь этот пост:\n\n{post_text}"}
+            ],
+            "temperature": 0.3,
+            "max_tokens": 100,
+        }
+        
+        response = requests.post(
+            "https://api.deepseek.com/v1/chat/completions",
+            headers=headers,
+            json=data,
+            timeout=15
+        )
+        
+        if response.status_code == 200:
+            result = response.json()
+            verdict = result["choices"][0]["message"]["content"].strip()
+            
+            if verdict.startswith("APPROVED"):
+                logger.info("✅ Пост прошёл проверку DeepSeek")
+                return True, post_text
+            elif verdict.startswith("REJECT:"):
+                reason = verdict.replace("REJECT:", "").strip()
+                logger.warning(f"❌ Пост отклонён: {reason}")
+                return False, reason
+            else:
+                logger.warning(f"⚠️ Неизвестный ответ DeepSeek: {verdict}")
+                return True, post_text
+        else:
+            logger.error(f"❌ Ошибка проверки поста: {response.status_code}")
+            return True, post_text
+            
+    except Exception as e:
+        logger.error(f"❌ Ошибка при проверке поста через DeepSeek: {e}")
+        return True, post_text
+
 # ===== АСИНХРОННЫЕ ФУНКЦИИ ДЛЯ РАБОТЫ С ФОТО =====
 
-async def get_random_photo(style: str = "streamer") -> Optional[str]:
+async def get_random_photo(style: str = "streamer", streamer_key: str = None) -> Optional[str]:
     """Получает фото в зависимости от стиля поста"""
     global history
     
@@ -1673,6 +1778,15 @@ async def get_random_photo(style: str = "streamer") -> Optional[str]:
         history = []
         save_history(history)
     
+    # Если указан конкретный стример - ищем его фото
+    if streamer_key:
+        photo = get_streamer_photo(streamer_key)
+        if photo:
+            history.append(photo)
+            save_history(history)
+            return photo
+    
+    # Для стримерских постов (общий поиск)
     if style == 'streamer':
         streamers = ['voodoosh', 'praden', 'bratishkinoff', 'sasavot', 
                      'alina_rin', 'lasqa', 'arrowwoods', 'evelone', 'buster']
@@ -1685,11 +1799,13 @@ async def get_random_photo(style: str = "streamer") -> Optional[str]:
                 save_history(history)
                 return photo
         
+        # Если не нашлось фото стримера, используем общий поиск
         logger.warning("⚠️ Не найдены фото стримеров, пробую общий поиск")
         fallback_queries = [
             "russian streamer face",
             "twitch streamer russian",
             "streamer portrait",
+            "russian gamer face",
         ]
         random.shuffle(fallback_queries)
         
@@ -1706,14 +1822,16 @@ async def get_random_photo(style: str = "streamer") -> Optional[str]:
                     logger.info(f"Поиск общего фото стримера: {query}")
                     photo = search_func(query)
                     if photo and photo not in history:
-                        history.append(photo)
-                        save_history(history)
-                        logger.info(f"✅ Найдено запасное фото стримера")
-                        return photo
+                        if not any(x in photo.lower() for x in ['logo', 'icon', 'avatar']):
+                            history.append(photo)
+                            save_history(history)
+                            logger.info(f"✅ Найдено запасное фото стримера")
+                            return photo
                 except Exception as e:
                     logger.error(f"Ошибка общего поиска: {e}")
                     continue
     
+    # Для азиатских постов
     queries = ASIAN_QUERIES.copy()
     random.shuffle(queries)
     
@@ -1813,48 +1931,123 @@ async def analyze_photo_for_comment(image_url: str) -> Optional[str]:
         logger.error(f"Ошибка анализа фото: {e}")
         return None
 
-# ===== СОЗДАНИЕ ПОСТА =====
+# ===== ОБНОВЛЕННАЯ ФУНКЦИЯ ОТПРАВКИ ПОСТА =====
+
+async def send_post(chat_id, photo_url=None, caption=None, media_type='photo'):
+    try:
+        if not photo_url and not caption:
+            return False
+        
+        if not photo_url:
+            # Отправляем только текст
+            if caption:
+                await bot.send_message(chat_id=chat_id, text=caption)
+                logger.info(f"📝 Текст (без медиа) отправлен в чат {chat_id}")
+            return True
+        
+        if not caption:
+            caption, _ = generate_caption_with_validation()
+            caption = clean_text(caption)
+            caption = truncate_by_sentences(caption, max_length=1023)
+            validated, error = validate_caption(caption, min_length=500, max_length=1023)
+            if validated:
+                caption = validated
+        
+        # Отправляем в зависимости от типа медиа
+        if media_type == 'clip':
+            text = f"{caption}\n\n🎬 Клип: {photo_url}"
+            await bot.send_message(chat_id=chat_id, text=text)
+            logger.info(f"🎬 Клип отправлен в чат {chat_id}")
+        else:
+            if len(caption) > 1024:
+                caption = truncate_by_sentences(caption, max_length=1023)
+            
+            await bot.send_photo(
+                chat_id=chat_id,
+                photo=photo_url,
+                caption=caption
+            )
+            logger.info(f"📸 Пост отправлен в чат {chat_id}")
+        
+        return True
+        
+    except TelegramAPIError as e:
+        logger.error(f"❌ Ошибка Telegram при отправке в {chat_id}: {e}")
+        if "forbidden" in str(e).lower() or "chat not found" in str(e).lower():
+            users_list = load_users()
+            if chat_id in users_list:
+                users_list.remove(chat_id)
+                save_users(users_list)
+                logger.info(f"👤 Пользователь {chat_id} удалён")
+        return False
+    except Exception as e:
+        logger.error(f"❌ Ошибка отправки в {chat_id}: {e}")
+        return False
+
+# ===== ОБНОВЛЕННАЯ ФУНКЦИЯ СОЗДАНИЯ ПОСТА =====
 
 async def create_post_with_photo(chat_id, user_id=0, skip_moderation=False, style="streamer"):
     try:
         caption, streamer_key = generate_caption_with_validation()
         if not caption:
-            logger.error("Не удалось сгенерировать текст")
+            logger.error("❌ Не удалось сгенерировать текст")
             return False
+        
+        media_url = None
+        media_type = 'photo'
         
         if streamer_key:
-            photo_url = get_streamer_photo(streamer_key)
-            if not photo_url:
-                logger.warning(f"Не найдено фото для {streamer_key}, пробую общий поиск")
-                photo_url = await get_random_photo("streamer")
-        else:
-            photo_url = await get_random_photo("asia")
+            streamer_names = {
+                'voodoosh': 'Вудуш',
+                'praden': 'Праден',
+                'bratishkinoff': 'Братишкин',
+                'sasavot': 'Сасавот',
+                'alina_rin': 'Алина Рин',
+                'lasqa': 'Ласка',
+                'arrowwoods': 'Аравудус',
+                'evelone': 'Эвелон',
+                'buster': 'Бустер',
+            }
+            streamer_display = streamer_names.get(streamer_key, streamer_key)
+            
+            media_url, media_type = get_streamer_media(streamer_key, streamer_display)
+            
+            if not media_url:
+                photo_url = await get_random_photo("streamer", None)
+                if photo_url:
+                    media_url = photo_url
+                    media_type = 'photo'
         
-        if not photo_url:
-            logger.error("Не удалось найти фото")
-            return False
+        if not media_url:
+            photo_url = await get_random_photo("asia", None)
+            if photo_url:
+                media_url = photo_url
+                media_type = 'photo'
         
-        should_analyze = random.random() < 0.1 and DEEPSEEK_API_KEY and streamer_key is None
+        if not media_url:
+            logger.error("❌ Не удалось найти медиа")
+            await send_post(chat_id, None, caption)
+            return True
         
         photo_comment = None
-        if should_analyze:
+        if media_type == 'photo' and random.random() < 0.1 and DEEPSEEK_API_KEY:
             logger.info(f"🖼️ Анализирую картинку (10% вероятность)")
-            photo_comment = await analyze_photo_for_comment(photo_url)
+            photo_comment = await analyze_photo_for_comment(media_url)
             if photo_comment:
                 caption = caption.rstrip() + "\n\n" + photo_comment
                 logger.info(f"✅ Добавлен комментарий к фото")
-            else:
-                logger.info("⚠️ Не удалось получить комментарий к фото")
         
-        if photo_url not in history:
-            history.append(photo_url)
+        if media_type == 'photo' and media_url not in history:
+            history.append(media_url)
             save_history(history)
         
         post_id = f"post_{int(time.time())}_{hashlib.md5(caption.encode()).hexdigest()[:8]}"
         post_data = {
             'id': post_id,
             'chat_id': chat_id,
-            'photo_url': photo_url,
+            'photo_url': media_url if media_type == 'photo' else None,
+            'clip_url': media_url if media_type == 'clip' else None,
+            'media_type': media_type,
             'caption': caption,
             'user_id': user_id,
             'timestamp': time.time(),
@@ -1866,18 +2059,18 @@ async def create_post_with_photo(chat_id, user_id=0, skip_moderation=False, styl
         
         if skip_moderation:
             await task_queue.push(QUEUE_NAME, post_data)
-            logger.info(f"Пост {post_id} добавлен в очередь")
+            logger.info(f"✅ Пост {post_id} добавлен в очередь (медиа: {media_type})")
             return True
         else:
             await task_queue.push(MODERATION_QUEUE, {
                 'id': post_id,
                 'post_data': post_data
             })
-            logger.info(f"Пост {post_id} отправлен на модерацию")
+            logger.info(f"📋 Пост {post_id} отправлен на модерацию (медиа: {media_type})")
             return True
             
     except Exception as e:
-        logger.error(f"Ошибка создания поста: {e}")
+        logger.error(f"❌ Ошибка создания поста: {e}")
         return False
 
 # ===== ОЧЕРЕДЬ ЗАДАЧ =====
@@ -2093,62 +2286,6 @@ moderator = ContentModerator()
 
 # ===== ОБРАБОТЧИК ОЧЕРЕДИ =====
 
-async def send_post(chat_id, photo_url=None, caption=None):
-    try:
-        if not photo_url:
-            photo_url = await get_random_photo()
-        
-        if not photo_url:
-            logger.error("Не удалось найти фото")
-            return False
-        
-        if not is_photo_valid(photo_url):
-            logger.warning(f"Фото не прошло проверку: {photo_url[:60]}...")
-            return False
-        
-        if not caption:
-            caption, _ = generate_caption_with_validation()
-            caption = clean_text(caption)
-            caption = truncate_by_sentences(caption, max_length=1023)
-            validated, error = validate_caption(caption, min_length=500, max_length=1023)
-            if validated:
-                caption = validated
-            else:
-                caption = clean_text(get_fallback_caption())
-                caption = truncate_by_sentences(caption, max_length=1023)
-                validated, error = validate_caption(caption, min_length=500, max_length=1023)
-                if validated:
-                    caption = validated
-        
-        if not caption:
-            await bot.send_photo(chat_id=chat_id, photo=photo_url)
-            logger.info(f"Фото (без подписи) отправлено в чат {chat_id}")
-            return True
-        
-        if len(caption) > 1024:
-            caption = truncate_by_sentences(caption, max_length=1023)
-        
-        await bot.send_photo(
-            chat_id=chat_id,
-            photo=photo_url,
-            caption=caption
-        )
-        logger.info(f"Пост отправлен в чат {chat_id}")
-        return True
-        
-    except TelegramAPIError as e:
-        logger.error(f"Ошибка Telegram при отправке в {chat_id}: {e}")
-        if "forbidden" in str(e).lower() or "chat not found" in str(e).lower():
-            users_list = load_users()
-            if chat_id in users_list:
-                users_list.remove(chat_id)
-                save_users(users_list)
-                logger.info(f"Пользователь {chat_id} удалён")
-        return False
-    except Exception as e:
-        logger.error(f"Ошибка отправки в {chat_id}: {e}")
-        return False
-
 async def queue_processor():
     logger.info("Запущен обработчик очереди...")
     while True:
@@ -2182,11 +2319,16 @@ async def process_post_task(data: Dict[str, Any]):
     try:
         chat_id = data.get('chat_id')
         photo_url = data.get('photo_url')
+        clip_url = data.get('clip_url')
         caption = data.get('caption')
+        media_type = data.get('media_type', 'photo')
+        
         if not chat_id:
             logger.error("Нет chat_id в задаче")
             return
-        await send_post(chat_id, photo_url, caption)
+        
+        media_url = clip_url if media_type == 'clip' else photo_url
+        await send_post(chat_id, media_url, caption, media_type)
         logger.info(f"Пост отправлен в {chat_id}")
     except Exception as e:
         logger.error(f"Ошибка обработки задачи: {e}")
@@ -2211,11 +2353,14 @@ async def process_moderation_task(data: Dict[str, Any]):
             await task_queue.push(QUEUE_NAME, {
                 'id': post_id,
                 'chat_id': post.chat_id,
-                'photo_url': post.photo_url,
+                'photo_url': post_data.get('photo_url'),
+                'clip_url': post_data.get('clip_url'),
+                'media_type': post_data.get('media_type', 'photo'),
                 'caption': post.caption,
                 'user_id': post.user_id,
                 'timestamp': post.timestamp,
-                'needs_moderation': False
+                'needs_moderation': False,
+                'streamer_key': post_data.get('streamer_key')
             })
         elif approved is None:
             post.status = ModerationStatus.PENDING
@@ -2280,19 +2425,42 @@ async def send_to_all_users():
             if validated:
                 caption = validated
         
-        if streamer_key:
-            photo_url = get_streamer_photo(streamer_key)
-            if not photo_url:
-                photo_url = await get_random_photo("streamer")
-        else:
-            photo_url = await get_random_photo("asia")
+        media_url = None
+        media_type = 'photo'
         
-        if not photo_url:
-            logger.error("Не удалось найти фото")
+        if streamer_key:
+            streamer_names = {
+                'voodoosh': 'Вудуш',
+                'praden': 'Праден',
+                'bratishkinoff': 'Братишкин',
+                'sasavot': 'Сасавот',
+                'alina_rin': 'Алина Рин',
+                'lasqa': 'Ласка',
+                'arrowwoods': 'Аравудус',
+                'evelone': 'Эвелон',
+                'buster': 'Бустер',
+            }
+            streamer_display = streamer_names.get(streamer_key, streamer_key)
+            media_url, media_type = get_streamer_media(streamer_key, streamer_display)
+            
+            if not media_url:
+                photo_url = await get_random_photo("streamer", None)
+                if photo_url:
+                    media_url = photo_url
+                    media_type = 'photo'
+        
+        if not media_url:
+            photo_url = await get_random_photo("asia", None)
+            if photo_url:
+                media_url = photo_url
+                media_type = 'photo'
+        
+        if not media_url:
+            logger.error("Не удалось найти медиа")
             return
         
         if random.random() < 0.1 and DEEPSEEK_API_KEY and streamer_key is None:
-            photo_comment = await analyze_photo_for_comment(photo_url)
+            photo_comment = await analyze_photo_for_comment(media_url)
             if photo_comment:
                 caption = caption.rstrip() + "\n\n" + photo_comment
         
@@ -2301,7 +2469,9 @@ async def send_to_all_users():
             post_data = {
                 'id': f"{base_post_id}_{chat_id}",
                 'chat_id': chat_id,
-                'photo_url': photo_url,
+                'photo_url': media_url if media_type == 'photo' else None,
+                'clip_url': media_url if media_type == 'clip' else None,
+                'media_type': media_type,
                 'caption': caption,
                 'user_id': 0,
                 'timestamp': time.time(),
@@ -2317,7 +2487,9 @@ async def send_to_all_users():
             await task_queue.push(QUEUE_NAME, {
                 'id': f"{base_post_id}_channel",
                 'chat_id': channel_id,
-                'photo_url': photo_url,
+                'photo_url': media_url if media_type == 'photo' else None,
+                'clip_url': media_url if media_type == 'clip' else None,
+                'media_type': media_type,
                 'caption': caption,
                 'user_id': 0,
                 'timestamp': time.time(),
@@ -3555,6 +3727,7 @@ async def main():
         logger.info("🤖 БОТ ЗАПУЩЕН")
         logger.info("📸 85% постов про стримеров, 15% про Азию")
         logger.info("📝 Грубый стиль, мат, чёрный юмор")
+        logger.info("🎬 Если нет фото - ищем клип на YouTube")
         logger.info("=" * 60)
         
         if FREEKASSA_SHOP_ID and FREEKASSA_SECRET1:
