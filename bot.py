@@ -295,7 +295,7 @@ def get_system_prompt() -> str:
 - Пиши от первого лица, как будто сидишь с пивом и обсуждаешь
 - Используй много мата: блядь, сука, пиздец, хуйня, нахуй, ебаный
 - Говори грубо, прямо, без цензуры
-- Шути над стримерами жёстко, но без личных оскорблений
+- Шути над стримерами жёстко, но с юмором
 - Используй "так называемый", "так называемые" часто
 - Не используй "скуф", "средних лет" — ты сам такой же
 - Если нужно упомянуть автора канала @maddysontg — называй его Илюха (только когда действительно нужно, не в каждом посте)
@@ -304,12 +304,12 @@ def get_system_prompt() -> str:
 Твой образ:
 - Работяга, который устал от жизни
 - Пьёт пиво каждый вечер
-- Смотрит стримеров и бесится с них
+- Смотрит стримеров и бесится с них, но с юмором
 - Говорит как в гараже с мужиками
 
 Стиль речи:
 - Мат через слово
-- Грубые сравнения
+- Грубые сравнения с юмором
 - Чёрный юмор
 - Без соплей и сантиментов
 - Коротко и по делу
@@ -746,12 +746,12 @@ async def fail_page(request):
 async def health_check(request):
     return web.Response(text="Bot is running! ✅")
 
-# ===== КЛЮЧЕВЫЕ СЛОВА ДЛЯ СТРИМЕРОВ (для поиска фото) =====
+# ===== КЛЮЧЕВЫЕ СЛОВА ДЛЯ СТРИМЕРОВ (ИСПРАВЛЕННЫЕ НИКИ) =====
 
 STREAMER_QUERIES = {
-    'voodush': [
-        "voodush stream",
-        "voodush russian streamer",
+    'voodoosh': [
+        "voodoosh stream",
+        "voodoosh russian streamer",
         "вудуш стрим",
         "вудуш стример",
     ],
@@ -761,10 +761,10 @@ STREAMER_QUERIES = {
         "праден стрим",
         "праден стример",
     ],
-    'vova_bratishkin': [
-        "vova bratishkin stream",
-        "vova bratishkin russian",
-        "вова братишкин стрим",
+    'bratishkinoff': [
+        "bratishkinoff stream",
+        "bratishkinoff russian",
+        "братишкин стрим",
         "братишкин стример",
     ],
     'sasavot': [
@@ -772,25 +772,32 @@ STREAMER_QUERIES = {
         "sasavot russian streamer",
         "сасавот стрим",
     ],
-    'nenormova': [
-        "nenormova stream",
-        "nenormova russian",
-        "ненормова стрим",
-    ],
     'alina_rin': [
         "alina rin stream",
         "alina rin russian",
         "алина рин стрим",
     ],
-    'laska': [
-        "laska stream",
-        "laska russian streamer",
+    'lasqa': [
+        "lasqa stream",
+        "lasqa russian streamer",
         "ласка стрим",
     ],
-    'aravudus': [
-        "aravudus stream",
-        "aravudus russian",
+    'arrowwoods': [
+        "arrowwoods stream",
+        "arrowwoods russian",
         "аравудус стрим",
+    ],
+    'evelone': [
+        "evelone stream",
+        "evelone russian streamer",
+        "эвелон стрим",
+        "эвелон стример",
+    ],
+    'buster': [
+        "buster stream",
+        "buster russian streamer",
+        "бустер стрим",
+        "бустер стример",
     ],
 }
 
@@ -973,7 +980,7 @@ def is_photo_valid(url: str) -> bool:
             return False
     return True
 
-# ===== НОВЫЕ ПРОМПТЫ (85% стримеры, 15% Азия) =====
+# ===== ОБНОВЛЕННЫЕ ПРОМПТЫ С ЮМОРОМ =====
 
 style_prompts = {
     'streamer': """
@@ -984,12 +991,13 @@ style_prompts = {
 Требования:
 - 500-700 символов
 - Мат 3-5 раз (блядь, сука, пиздец, хуйня, нахуй)
-- Острые шутки и насмешки над стримерами
+- Острые шутки и насмешки над стримерами с юмором
 - Используй "так называемый/ая/ые" по отношению к участникам
 - Не переходи на личности (критика действий, а не внешности)
+- Пиши с юмором, как будто рассказываешь в баре
 - Можно ссылаться на посты Илюхи с @maddysontg
 - Пиши как работяга в гараже
-- Коротко, грубо, по делу
+- Коротко, грубо, по делу, с юмором
 - Не называй своё имя
 - Обращайся к читателям на "вы"
 
@@ -1004,7 +1012,7 @@ style_prompts = {
 Требования:
 - 500-700 символов
 - Мат 1-2 раза
-- Одна острая шутка
+- Одна острая шутка с юмором
 - Используй "так называемый/ая/ые" где уместно
 - Не называй своё имя
 - Обращайся к читателям на "вы"
@@ -1395,7 +1403,7 @@ def search_pexels(query):
         logger.error(f"Ошибка Pexels: {e}")
         return None
 
-# ===== ФУНКЦИЯ ПОЛУЧЕНИЯ ФОТО ДЛЯ СТРИМЕРОВ =====
+# ===== ФУНКЦИЯ ПОЛУЧЕНИЯ ФОТО ДЛЯ КОНКРЕТНОГО СТРИМЕРА =====
 
 def get_streamer_photo(streamer_name: str) -> Optional[str]:
     """Ищет фото конкретного стримера"""
@@ -1403,89 +1411,113 @@ def get_streamer_photo(streamer_name: str) -> Optional[str]:
     if not queries:
         return None
     
-    search_functions = [
-        search_bing,
-        search_google_direct,
-        search_yandex,
-    ]
-    
     random.shuffle(queries)
+    
+    search_functions = [
+        (search_bing, "Bing"),
+        (search_google_direct, "Google"),
+        (search_yandex, "Yandex"),
+    ]
     random.shuffle(search_functions)
     
     for query in queries:
-        for search_func in search_functions:
+        for search_func, source_name in search_functions:
             try:
-                logger.info(f"Поиск фото для {streamer_name}: {query}")
+                logger.info(f"Поиск фото для {streamer_name} в {source_name}: {query}")
                 photo = search_func(query)
-                if photo:
-                    logger.info(f"✅ Найдено фото для {streamer_name}")
+                if photo and photo not in history:
+                    logger.info(f"✅ Найдено новое фото для {streamer_name}")
                     return photo
+                elif photo and photo in history:
+                    logger.info(f"⏭️ Фото для {streamer_name} уже использовалось")
+                    continue
             except Exception as e:
-                logger.error(f"Ошибка поиска для {streamer_name}: {e}")
+                logger.error(f"Ошибка поиска для {streamer_name} в {source_name}: {e}")
                 continue
     
+    logger.warning(f"⚠️ Не найдено фото для {streamer_name}")
     return None
 
 # ===== ФУНКЦИЯ ГЕНЕРАЦИИ ПОСТА =====
 
-def generate_caption_with_validation() -> str:
+def get_streamer_for_post() -> Tuple[str, str]:
+    """Выбирает случайного стримера для поста и возвращает его имя и ключ"""
+    streamers = [
+        ('voodoosh', 'Вудуш'),
+        ('praden', 'Праден'),
+        ('bratishkinoff', 'Братишкин'),
+        ('sasavot', 'Сасавот'),
+        ('alina_rin', 'Алина Рин'),
+        ('lasqa', 'Ласка'),
+        ('arrowwoods', 'Аравудус'),
+        ('evelone', 'Эвелон'),
+        ('buster', 'Бустер'),
+    ]
+    key, name = random.choice(streamers)
+    return key, name
+
+def generate_caption_with_validation() -> Tuple[str, Optional[str]]:
     """Генерирует пост и проверяет его через DeepSeek API до 5 раз."""
     logger.info("Генерирую уникальный пост с проверкой...")
     
+    # Определяем тему: 85% стримеры, 15% Азия
+    rand = random.random()
+    if rand < 0.85:
+        style = 'streamer'
+        streamer_key, streamer_display = get_streamer_for_post()
+        topic = f"стример {streamer_display}"
+        min_len, max_len = 500, 700
+        logger.info(f"Генерация поста про {streamer_display}")
+    else:
+        style = 'asia'
+        streamer_key = None
+        streamer_display = None
+        topic = "Азия"
+        min_len, max_len = 500, 700
+        logger.info(f"Генерация поста про Азию")
+    
     if not DEEPSEEK_API_KEY:
-        logger.warning("Нет ключа DeepSeek, использую резерв без проверки")
-        caption = get_fallback_caption()
+        logger.warning("Нет ключа DeepSeek, использую резерв")
+        caption = get_fallback_caption(streamer_display)
         caption = clean_text(caption)
         caption = truncate_by_sentences(caption)
         validated, error = validate_caption(caption, min_length=500, max_length=1023)
         if validated:
-            return validated
-        return clean_text(truncate_by_sentences(get_fallback_caption()))
+            return caption, streamer_key
+        return clean_text(truncate_by_sentences(get_fallback_caption(streamer_display))), streamer_key
     
     max_attempts = 5
     for attempt in range(max_attempts):
         try:
-            # 85% стримеры, 15% Азия
-            rand = random.random()
-            if rand < 0.85:
-                style = 'streamer'
-                topic = "стримеры и скандалы"
-                min_len, max_len = 500, 700
-            else:
-                style = 'asia'
-                topic = "Азия"
-                min_len, max_len = 500, 700
+            logger.info(f"Попытка {attempt+1} для {topic}")
             
-            logger.info(f"Попытка {attempt+1}: стиль {style}, тема {topic}")
-            
-            # Получаем промпт из кэша
             base_prompt = get_style_prompt(style)
             
-            # Альтернативные промпты для стримеров
             streamer_topics = [
-                "Напиши пост про стримера, который накрутил зрителей. Критикуй, используй мат.",
-                "Напиши пост про скандал между стримерами. Грубо, с матом, с насмешками.",
-                "Напиши пост про стримера, который забанил подписчика. Критика действий.",
-                "Напиши пост про очередной провал стримера на стриме. С матом и чёрным юмором.",
-                "Напиши пост про ботоводов на Twitch. Критикуй так называемых накрутчиков.",
-                "Напиши пост про стримера Вудуш. Что он опять сделал не так.",
-                "Напиши пост про Прадена. Почему он бесит своей игрой.",
-                "Напиши пост про братишкина. Его лысина и попытки выглядеть молодо.",
-                "Напиши пост про сасавота. Очередной скандал.",
-                "Напиши пост про ненормову. Что она опять устроила.",
-                "Напиши пост про Алину Рин. Почему она бесит.",
-                "Напиши пост про Ласку. Очередная драма.",
-                "Напиши пост про аравудуса. Что он опять натворил.",
-                "Илюха опять написал пост про стримеров. Ответь ему, но грубо и по делу.",
+                f"Напиши пост про стримера {streamer_display}. Критикуй его действия с юмором. Используй мат.",
+                f"Напиши пост про {streamer_display} и его очередной провал на стриме. С юмором и матом.",
+                f"Напиши пост про скандал с участием {streamer_display}. С юмором и матом.",
+                f"Расскажи смешную историю про {streamer_display}. С юмором и матом.",
+                f"Ответь на пост Илюхи про {streamer_display}. Согласись или поспорь, но с юмором и матом.",
+                f"Напиши пост про то, как {streamer_display} накручивает зрителей. С юмором.",
+                f"Напиши пост про очередную драму с {streamer_display}. С юмором и матом.",
+            ]
+            
+            asian_topics = [
+                "Напиши пост про жизнь в Азии. С юмором и самоиронией.",
+                "Напиши смешную историю из Азии. С юмором и матом.",
+                "Напиши пост про азиатскую жизнь. С юмором.",
             ]
             
             current_prompt = base_prompt
             if attempt > 0:
-                alt = random.choice(streamer_topics)
+                if style == 'streamer':
+                    alt = random.choice(streamer_topics)
+                else:
+                    alt = random.choice(asian_topics)
                 current_prompt = alt + "\n\n⚠️ Пиши строго по теме. Только пост без рассуждений."
-                logger.info(f"Пробую альтернативный промпт: {alt[:50]}...")
+                logger.info(f"Пробую альтернативный промпт")
             
-            # Получаем системный промпт
             system_prompt = get_system_prompt()
             
             url = "https://api.deepseek.com/chat/completions"
@@ -1541,16 +1573,13 @@ def generate_caption_with_validation() -> str:
             if not caption:
                 continue
             
-            # Проверка на рассуждения вместо поста
             if caption.lower().startswith(("мы должны", "нужно", "я должен", "напиши", "вот", "давайте", "попробуем", "извините", "к сожалению")):
                 logger.warning("DeepSeek выдал рассуждение, пробуем другой промпт...")
                 continue
             
-            # Очистка текста
             caption = clean_text(caption)
             caption = truncate_by_sentences(caption, max_length=1023)
             
-            # Проверка длины
             if len(caption) < min_len:
                 logger.warning(f"Слишком короткий ({len(caption)} символов, нужно {min_len})")
                 continue
@@ -1559,20 +1588,18 @@ def generate_caption_with_validation() -> str:
                 logger.warning(f"Слишком длинный ({len(caption)} символов, нужно {max_len})")
                 continue
             
-            # Валидация структуры
             validated, error = validate_caption(caption, min_length=min_len, max_length=max_len)
             
             if not validated:
                 logger.warning(f"Текст не прошёл проверку: {error}")
                 continue
             
-            # ===== ПРОВЕРКА ЧЕРЕЗ DEEPSEEK API =====
             approved, result = validate_post_with_deepseek(caption)
             
             if approved:
                 logger.info(f"✅ Пост одобрен! (попытка {attempt+1})")
                 add_to_last_posts(caption)
-                return caption
+                return caption, streamer_key
             else:
                 logger.warning(f"❌ Пост не прошёл проверку: {result}")
                 continue
@@ -1581,15 +1608,14 @@ def generate_caption_with_validation() -> str:
             logger.error(f"Ошибка генерации (попытка {attempt+1}): {e}")
             continue
     
-    # Если все попытки не удались
     logger.warning("⚠️ Все попытки генерации не удались, использую резервный текст")
-    fallback = get_fallback_caption()
+    fallback = get_fallback_caption(streamer_display)
     fallback = clean_text(fallback)
     fallback = truncate_by_sentences(fallback, max_length=1023)
     validated, error = validate_caption(fallback, min_length=500, max_length=1023)
     if validated:
-        return validated
-    return clean_text(truncate_by_sentences(get_fallback_caption()))
+        return fallback, streamer_key
+    return clean_text(truncate_by_sentences(get_fallback_caption(streamer_display))), streamer_key
 
 # ===== ПРОДОЛЖЕНИЕ ТЕКСТА =====
 
@@ -1621,16 +1647,22 @@ def request_continuation(previous_text: str) -> str:
 
 # ===== РЕЗЕРВНЫЙ ТЕКСТ =====
 
-def get_fallback_caption() -> str:
-    fallbacks = [
-        "Блядь, опять эти стримеры накручивают зрителей. Сидят, пиздят, а толку ноль. Так называемые ботоводы, сука, только портят всё. Хуйня какая-то, а не стриминг. Ну хоть посмеяться есть над чем, потому что пиздец полный. Идите нахуй со своей накруткой, нормальные люди так не делают.",
-        "Вова братишкин опять лысиной светит на стриме. Блядь, Вова, ты бы в качалку пошёл, а не страдал херней. Бабы смотрят не на лысину твою, а на мускулы. Но ты так и будешь сидеть, накручивать зрителей и думать, что ты крутой. Пиздец, сука, обидно за индустрию.",
-        "Праден опять проиграл на стриме. Сидит, лицо кислое, будто лимон съел. Так называемый геймер, блядь. На кого ты играешь? На детей в песочнице? Хуйня полная. Сделай что-нибудь нормальное, а не позорься на всю платформу.",
-        "Смотрю на этих стримеров и думаю: ебаный вы стыд. Накручиваете зрителей, ссоритесь друг с другом, а контент как был говном, так и остался. Ну и кому это надо? Сидели бы тихо, работали над контентом, а не скандалы устраивали. Пиздец, сука, обидно.",
-    ]
+def get_fallback_caption(streamer_name: str = None) -> str:
+    if streamer_name:
+        fallbacks = [
+            f"Блядь, опять этот {streamer_name} накручивает зрителей. Сидит, пиздит, а толку ноль. Так называемый стример, сука, только портит всё. Хуйня какая-то, а не стриминг. Ну хоть посмеяться есть над чем, потому что пиздец полный.",
+            f"Смотрю на {streamer_name} и думаю: ебаный ты стыд. Накручиваешь зрителей, ссоришься со всеми, а контент как был говном, так и остался. Ну и кому это надо? Сидел бы тихо, работал над контентом, а не скандалы устраивал.",
+            f"{streamer_name} опять проиграл на стриме. Сидит, лицо кислое, будто лимон съел. Так называемый геймер, блядь. На кого ты играешь? На детей в песочнице? Хуйня полная.",
+        ]
+    else:
+        fallbacks = [
+            "Вчера в Бангкоке ко мне подошла стайка тайских девчонок и попросила сфоткаться. Я сразу расправил плечи - ну, думаю, наконец-то заметили. А они визжат, тычут пальцами. Оказалось, я просто попал в кадр. Ну и ладно, зато теперь я типа знаменит локально.",
+            "Сижу в кафе в Чиангмае, пью кофе, смотрю на прохожих. Вдруг подходит местная девушка и говорит: Вы тот самый блогер? Оказалось, она думала, что я участник группы. Я даже не стал её разочаровывать - улыбнулся, сфоткался с ней и пошёл дальше. Теперь я официально музыкант.",
+            "Вчера на рынке в Бангкоке продавщица назвала меня красивым иностранным мужчиной. Я чуть не подавился соком. А она оказалась просто вежливая - так она всех мужиков называет, чтобы цену набить. Но осадочек остался, приятный такой.",
+        ]
     return random.choice(fallbacks)
 
-# ===== ФУНКЦИЯ ДЛЯ ПОЛУЧЕНИЯ ФОТО =====
+# ===== АСИНХРОННЫЕ ФУНКЦИИ ДЛЯ РАБОТЫ С ФОТО =====
 
 async def get_random_photo(style: str = "streamer") -> Optional[str]:
     """Получает фото в зависимости от стиля поста"""
@@ -1641,44 +1673,47 @@ async def get_random_photo(style: str = "streamer") -> Optional[str]:
         history = []
         save_history(history)
     
-    # Для стримерских постов выбираем конкретного стримера
     if style == 'streamer':
-        # Список стримеров
-        streamers = ['voodush', 'praden', 'vova_bratishkin', 'sasavot', 
-                     'nenormova', 'alina_rin', 'laska', 'aravudus']
+        streamers = ['voodoosh', 'praden', 'bratishkinoff', 'sasavot', 
+                     'alina_rin', 'lasqa', 'arrowwoods', 'evelone', 'buster']
         random.shuffle(streamers)
         
         for streamer in streamers:
             photo = get_streamer_photo(streamer)
-            if photo and photo not in history:
+            if photo:
                 history.append(photo)
                 save_history(history)
-                logger.info(f"✅ Найдено фото для стримера {streamer}")
                 return photo
         
-        # Если не нашлось фото стримера, используем общий поиск
+        logger.warning("⚠️ Не найдены фото стримеров, пробую общий поиск")
         fallback_queries = [
             "russian streamer face",
             "twitch streamer russian",
-            "russian streamer photo",
+            "streamer portrait",
         ]
-        search_functions = [search_bing, search_google_direct, search_yandex]
         random.shuffle(fallback_queries)
+        
+        search_functions = [
+            search_bing,
+            search_google_direct,
+            search_yandex,
+        ]
         random.shuffle(search_functions)
         
-        for query in fallback_queries:
-            for search_func in search_functions:
+        for query in fallback_queries[:2]:
+            for search_func in search_functions[:2]:
                 try:
+                    logger.info(f"Поиск общего фото стримера: {query}")
                     photo = search_func(query)
                     if photo and photo not in history:
                         history.append(photo)
                         save_history(history)
                         logger.info(f"✅ Найдено запасное фото стримера")
                         return photo
-                except:
+                except Exception as e:
+                    logger.error(f"Ошибка общего поиска: {e}")
                     continue
     
-    # Для азиатских постов
     queries = ASIAN_QUERIES.copy()
     random.shuffle(queries)
     
@@ -1690,8 +1725,8 @@ async def get_random_photo(style: str = "streamer") -> Optional[str]:
     ]
     random.shuffle(search_functions)
     
-    for query in queries:
-        for search_func in search_functions:
+    for query in queries[:3]:
+        for search_func in search_functions[:2]:
             try:
                 logger.info(f"Поиск азиатского фото: {query}")
                 photo = search_func(query)
@@ -1702,29 +1737,11 @@ async def get_random_photo(style: str = "streamer") -> Optional[str]:
                         logger.info(f"✅ Найдено азиатское фото")
                         return photo
             except Exception as e:
-                logger.error(f"Ошибка поиска: {e}")
+                logger.error(f"Ошибка поиска азиатского фото: {e}")
                 continue
     
-    logger.warning("Не удалось найти фото, очищаю историю...")
-    history = []
-    save_history(history)
-    
-    # Последняя попытка
-    for query in queries[:5]:
-        for search_func in search_functions:
-            try:
-                photo = search_func(query)
-                if photo and is_photo_valid(photo):
-                    history.append(photo)
-                    save_history(history)
-                    return photo
-            except:
-                continue
-    
-    logger.error("Не удалось найти подходящее фото!")
+    logger.error("❌ Не удалось найти подходящее фото!")
     return None
-
-# ===== ФУНКЦИЯ АНАЛИЗА ФОТО =====
 
 def encode_image_to_base64_url(image_url: str) -> str:
     try:
@@ -1761,7 +1778,7 @@ async def analyze_photo_for_comment(image_url: str) -> Optional[str]:
                     "content": [
                         {
                             "type": "text",
-                            "text": """Коротко опиши что на фото. 1-2 предложения. Грубо, с юмором. Используй мат. Это стример или азиатка? Напиши так, как будто ты уставший мужик с пивом в руках."""
+                            "text": """Коротко опиши что на фото. 1-2 предложения. Грубо, с юмором. Используй мат. Напиши так, как будто ты уставший мужик с пивом в руках."""
                         },
                         {
                             "type": "image_url",
@@ -1800,29 +1817,24 @@ async def analyze_photo_for_comment(image_url: str) -> Optional[str]:
 
 async def create_post_with_photo(chat_id, user_id=0, skip_moderation=False, style="streamer"):
     try:
-        # Определяем стиль и тему
-        rand = random.random()
-        if rand < 0.85:
-            style = 'streamer'
-        else:
-            style = 'asia'
-        
-        logger.info(f"Создаю пост в стиле: {style}")
-        
-        # Ищем фото
-        photo_url = await get_random_photo(style)
-        if not photo_url:
-            logger.error("Не удалось найти фото")
-            return False
-        
-        # Генерируем текст с проверкой
-        caption = generate_caption_with_validation()
+        caption, streamer_key = generate_caption_with_validation()
         if not caption:
             logger.error("Не удалось сгенерировать текст")
             return False
         
-        # Анализ картинки (редко)
-        should_analyze = random.random() < 0.1 and DEEPSEEK_API_KEY
+        if streamer_key:
+            photo_url = get_streamer_photo(streamer_key)
+            if not photo_url:
+                logger.warning(f"Не найдено фото для {streamer_key}, пробую общий поиск")
+                photo_url = await get_random_photo("streamer")
+        else:
+            photo_url = await get_random_photo("asia")
+        
+        if not photo_url:
+            logger.error("Не удалось найти фото")
+            return False
+        
+        should_analyze = random.random() < 0.1 and DEEPSEEK_API_KEY and streamer_key is None
         
         photo_comment = None
         if should_analyze:
@@ -1834,12 +1846,10 @@ async def create_post_with_photo(chat_id, user_id=0, skip_moderation=False, styl
             else:
                 logger.info("⚠️ Не удалось получить комментарий к фото")
         
-        # Сохраняем в историю
         if photo_url not in history:
             history.append(photo_url)
             save_history(history)
         
-        # Создаём задачу
         post_id = f"post_{int(time.time())}_{hashlib.md5(caption.encode()).hexdigest()[:8]}"
         post_data = {
             'id': post_id,
@@ -1850,7 +1860,8 @@ async def create_post_with_photo(chat_id, user_id=0, skip_moderation=False, styl
             'timestamp': time.time(),
             'needs_moderation': not skip_moderation,
             'style': style,
-            'has_photo_comment': photo_comment is not None
+            'has_photo_comment': photo_comment is not None,
+            'streamer_key': streamer_key
         }
         
         if skip_moderation:
@@ -2096,7 +2107,7 @@ async def send_post(chat_id, photo_url=None, caption=None):
             return False
         
         if not caption:
-            caption = generate_caption_with_validation()
+            caption, _ = generate_caption_with_validation()
             caption = clean_text(caption)
             caption = truncate_by_sentences(caption, max_length=1023)
             validated, error = validate_caption(caption, min_length=500, max_length=1023)
@@ -2248,7 +2259,6 @@ async def send_to_all_users():
             return
         logger.info(f"Добавление постов в очередь для {len(users_list)} пользователей...")
         
-        # 85% стримеры, 15% Азия
         rand = random.random()
         if rand < 0.85:
             style = 'streamer'
@@ -2257,12 +2267,7 @@ async def send_to_all_users():
         
         logger.info(f"Автоматический пост будет в стиле: {style}")
         
-        photo_url = await get_random_photo(style)
-        if not photo_url:
-            logger.error("Не удалось найти фото")
-            return
-        
-        caption = generate_caption_with_validation()
+        caption, streamer_key = generate_caption_with_validation()
         caption = clean_text(caption)
         caption = truncate_by_sentences(caption, max_length=1023)
         validated, error = validate_caption(caption, min_length=500, max_length=1023)
@@ -2275,7 +2280,18 @@ async def send_to_all_users():
             if validated:
                 caption = validated
         
-        if random.random() < 0.1 and DEEPSEEK_API_KEY:
+        if streamer_key:
+            photo_url = get_streamer_photo(streamer_key)
+            if not photo_url:
+                photo_url = await get_random_photo("streamer")
+        else:
+            photo_url = await get_random_photo("asia")
+        
+        if not photo_url:
+            logger.error("Не удалось найти фото")
+            return
+        
+        if random.random() < 0.1 and DEEPSEEK_API_KEY and streamer_key is None:
             photo_comment = await analyze_photo_for_comment(photo_url)
             if photo_comment:
                 caption = caption.rstrip() + "\n\n" + photo_comment
@@ -2289,7 +2305,8 @@ async def send_to_all_users():
                 'caption': caption,
                 'user_id': 0,
                 'timestamp': time.time(),
-                'needs_moderation': False
+                'needs_moderation': False,
+                'streamer_key': streamer_key
             }
             await task_queue.push(QUEUE_NAME, post_data)
         
@@ -2304,7 +2321,8 @@ async def send_to_all_users():
                 'caption': caption,
                 'user_id': 0,
                 'timestamp': time.time(),
-                'needs_moderation': False
+                'needs_moderation': False,
+                'streamer_key': streamer_key
             })
         
         logger.info(f"{len(users_list)} задач добавлены в очередь, стиль: {style}")
