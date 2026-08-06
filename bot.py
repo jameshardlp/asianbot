@@ -98,6 +98,117 @@ USERS_FILE = "users.json"
 HISTORY_FILE = "history.json"
 SCHEDULE_FILE = "schedule.json"
 
+# ===== РАБОТА С ПОЛЬЗОВАТЕЛЯМИ =====
+
+def load_users():
+    """Загружает список пользователей из файла"""
+    try:
+        with open(USERS_FILE, "r") as f:
+            return json.load(f)
+    except:
+        return []
+
+def save_users(users_list):
+    """Сохраняет список пользователей в файл"""
+    try:
+        with open(USERS_FILE, "w") as f:
+            json.dump(users_list, f)
+    except Exception as e:
+        logger.error(f"Ошибка сохранения пользователей: {e}")
+
+users = load_users()
+
+# ===== РАБОТА С ИСТОРИЕЙ ФОТО =====
+
+def load_history():
+    """Загружает историю фото"""
+    try:
+        with open(HISTORY_FILE, "r") as f:
+            return json.load(f)
+    except:
+        return []
+
+def save_history(history_list):
+    """Сохраняет историю фото"""
+    try:
+        if len(history_list) > 100:
+            history_list = history_list[-100:]
+        with open(HISTORY_FILE, "w") as f:
+            json.dump(history_list, f)
+    except Exception as e:
+        logger.error(f"Ошибка сохранения истории: {e}")
+
+history = load_history()
+
+# ===== РАБОТА С РАСПИСАНИЕМ =====
+
+def load_schedule():
+    try:
+        with open(SCHEDULE_FILE, "r") as f:
+            data = json.load(f)
+            if not data or not data.get("times"):
+                return {"times": ["12:00", "21:00"]}
+            return data
+    except:
+        return {"times": ["12:00", "21:00"]}
+
+def save_schedule(schedule_data):
+    try:
+        with open(SCHEDULE_FILE, "w") as f:
+            json.dump(schedule_data, f)
+        return True
+    except:
+        return False
+
+schedule_data = load_schedule()
+
+# ===== РАБОТА С ЦЕНОЙ =====
+
+def load_broadcast_price() -> dict:
+    try:
+        with open(BROADCAST_PRICE_FILE, "r") as f:
+            data = json.load(f)
+            return data
+    except:
+        return {"stars": 100, "rub": 100}
+
+def save_broadcast_price(prices: dict):
+    try:
+        with open(BROADCAST_PRICE_FILE, "w") as f:
+            json.dump(prices, f)
+        return True
+    except:
+        return False
+
+broadcast_prices = load_broadcast_price()
+
+# ===== КЭШ ПОСТОВ =====
+last_posts = []
+
+def add_to_last_posts(text: str):
+    global last_posts
+    if not text or len(text) < 10:
+        return
+    key = text[:100]
+    last_posts.append(key)
+    if len(last_posts) > 20:
+        last_posts.pop(0)
+
+def is_similar(text: str) -> bool:
+    global last_posts
+    if not text:
+        return False
+    key = text[:150]
+    for post in last_posts:
+        same_chars = sum(1 for a, b in zip(key, post) if a == b)
+        if len(key) > 10 and same_chars / len(key) > 0.65:
+            return True
+    return False
+
+# ===== ГЛОБАЛЬНЫЕ СЛОВАРИ ДЛЯ ПЛАТЕЖЕЙ =====
+broadcast_data = {}
+pending_broadcasts = {}
+
 # ===== РАБОТА С ИСПОЛЬЗОВАНИЕМ КОМАНДЫ /PHOTO =====
 
 def load_usage() -> dict:
@@ -229,26 +340,6 @@ def clear_prompt_cache():
     global _system_prompt_cache
     _system_prompt_cache.clear()
     logger.info("🗑️ Кэш промптов очищен")
-
-# ===== РАБОТА С ЦЕНОЙ =====
-
-def load_broadcast_price() -> dict:
-    try:
-        with open(BROADCAST_PRICE_FILE, "r") as f:
-            data = json.load(f)
-            return data
-    except:
-        return {"stars": 100, "rub": 100}
-
-def save_broadcast_price(prices: dict):
-    try:
-        with open(BROADCAST_PRICE_FILE, "w") as f:
-            json.dump(prices, f)
-        return True
-    except:
-        return False
-
-broadcast_prices = load_broadcast_price()
 
 # ===== FREEKASSA =====
 def generate_freekassa_signature(shop_id: str, amount: str, order_id: str) -> str:
