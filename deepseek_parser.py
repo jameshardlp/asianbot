@@ -127,8 +127,8 @@ style_prompts = {
 - Бустер: "Бустер накрутил", его вечные "смотрите какой я"
 
 Требования:
-- 500-700 символов
-- Мат 3-5 раз (блядь, сука, пиздец, хуйня, нахуй)
+- Пиши пост любого размера, но сохраняй логику и смысл
+- Мат 2-5 раз (блядь, сука, пиздец, хуйня, нахуй)
 - Обязательно используй 1-2 локальных мема про стримера
 - Используй правильные падежи стримеров (у Вудуша, Прадену, Алине Рин и т.д.)
 - Острые шутки и насмешки над стримерами с чёрным юмором
@@ -149,7 +149,7 @@ style_prompts = {
 Напиши пост про Азию (редко, 15% постов). С юмором и самоиронией.
 
 Требования:
-- 500-700 символов
+- Пиши пост любого размера, но сохраняй логику и смысл
 - Мат 1-2 раза
 - Одна острая шутка с юмором
 - Используй "так называемый/ая/ые" где уместно
@@ -294,7 +294,7 @@ def is_sentence_complete(sentence: str) -> bool:
         return False
     clean = re.sub(r'[.!?]$', '', sentence).strip()
     words = clean.split()
-    if len(words) < 5:
+    if len(words) < 2:
         return False
     incomplete_words = ['и', 'а', 'но', 'да', 'или', 'либо', 'за', 'перед', 'под', 'над', 'без', 'для', 'про', 'через', 'между', 'среди', 'у', 'о', 'об', 'от', 'до', 'из', 'с', 'к', 'по', 'на', 'в', 'во', 'вот', 'тем', 'того', 'этого', 'того']
     last_word = words[-1].lower()
@@ -321,7 +321,7 @@ def is_sentence_complete(sentence: str) -> bool:
         if clean_lower.endswith(ending):
             return False
     incomplete_adverbs = ['тогда', 'потом', 'сейчас', 'здесь', 'там', 'тут', 'вчера', 'сегодня', 'завтра', 'всегда', 'никогда', 'иногда', 'уже', 'ещё', 'просто', 'даже', 'почти', 'совсем', 'очень', 'слишком', 'также', 'тоже']
-    if last_word in incomplete_adverbs and len(words) < 8:
+    if last_word in incomplete_adverbs and len(words) < 5:
         return False
     verbs = [
         'быть', 'стать', 'являться', 'иметь', 'делать', 'сказать', 'пойти',
@@ -339,7 +339,7 @@ def is_sentence_complete(sentence: str) -> bool:
     ]
     has_verb = any(verb in clean_lower for verb in verbs)
     has_subject = bool(re.search(r'\b(я|ты|он|она|оно|мы|вы|они|это|тот|всё|все|кто|что|который|которые|которое|эта|этот|эти|сам|себя)\b', clean, re.IGNORECASE))
-    if len(clean) > 50:
+    if len(clean) > 20:
         return True
     return has_verb and has_subject
 
@@ -392,12 +392,13 @@ def clean_text(text: str) -> str:
     text = clean_punctuation(text)
     return text
 
-def validate_caption(text: str, min_length: int = 500, max_length: int = 1023) -> Tuple[str, Optional[str]]:
+def validate_caption(text: str, max_length: int = 1023) -> Tuple[str, Optional[str]]:
+    """Проверяет текст без ограничений по минимальной длине"""
     if not text:
         return '', 'Текст пустой'
     text = clean_text(text)
     if len(text) < 10:
-        return '', 'Слишком короткий'
+        return '', 'Слишком короткий (меньше 10 символов)'
     if len(text) > max_length:
         text = truncate_by_sentences(text, max_length)
         if not text:
@@ -416,7 +417,7 @@ def validate_caption(text: str, min_length: int = 500, max_length: int = 1023) -
             else:
                 return '', 'Последнее предложение не завершено'
         word_count = len(last_sentence.split())
-        if word_count < 5:
+        if word_count < 2:
             if len(all_sentences) > 1:
                 text = ' '.join(all_sentences[:-1]).strip()
                 text = ensure_ends_with_dot(text)
@@ -428,9 +429,6 @@ def validate_caption(text: str, min_length: int = 500, max_length: int = 1023) -
                 text = ensure_ends_with_dot(text)
             else:
                 return '', 'Последнее предложение не завершено логически'
-    if min_length > 0 and len(text) < min_length:
-        if len(all_sentences) < 2:
-            return '', f'Слишком короткий ({len(text)} символов, нужно {min_length})'
     return text, None
 
 def add_to_last_posts(text: str):
@@ -449,7 +447,7 @@ def is_similar(text: str) -> bool:
     key = text[:150]
     for post in last_posts:
         same_chars = sum(1 for a, b in zip(key, post) if a == b)
-        if len(key) > 10 and same_chars / len(key) > 0.65:
+        if len(key) > 10 and same_chars / len(key) > 0.70:
             return True
     return False
 
@@ -464,7 +462,7 @@ def get_system_prompt() -> str:
 ⚠️ ГЛАВНЫЕ ПРАВИЛА:
 - Ты НЕ называешь своё имя
 - Пиши от первого лица, как будто сидишь с пивом и обсуждаешь
-- Используй много мата: блядь, сука, пиздец, хуйня, нахуй
+- Используй мат: блядь, сука, пиздец, хуйня, нахуй
 - Говори грубо, прямо, без цензуры
 - Шути над стримерами жёстко, но с юмором
 - Используй "так называемый", "так называемые" часто
@@ -658,14 +656,12 @@ def generate_caption_with_validation() -> Tuple[str, Optional[str]]:
         style = 'streamer'
         streamer_key, streamer_display = get_streamer_for_post()
         topic = f"стример {streamer_display}"
-        min_len, max_len = 500, 700
         logger.info(f"Генерация поста про {streamer_display}")
     else:
         style = 'asia'
         streamer_key = None
         streamer_display = None
         topic = "Азия"
-        min_len, max_len = 500, 700
         logger.info(f"Генерация поста про Азию")
     
     if not DEEPSEEK_API_KEY:
@@ -734,10 +730,10 @@ def generate_caption_with_validation() -> Tuple[str, Optional[str]]:
                     {"role": "user", "content": current_prompt}
                 ],
                 "temperature": 1.2,
-                "max_tokens": 1500,
+                "max_tokens": 4000,  # Установлено 4000 токенов
             }
             
-            response = requests.post(url, headers=headers, json=data, timeout=30)
+            response = requests.post(url, headers=headers, json=data, timeout=60)  # Увеличил таймаут до 60 секунд
             
             if response.status_code == 400:
                 error_text = response.text.lower()
@@ -758,7 +754,7 @@ def generate_caption_with_validation() -> Tuple[str, Optional[str]]:
             generated_content = choice.get("message", {}).get("content", "")
             finish_reason = choice.get("finish_reason", "")
             
-            if not generated_content or len(generated_content.strip()) < 20:
+            if not generated_content or len(generated_content.strip()) < 10:
                 logger.warning("Пустой или короткий ответ")
                 continue
             
@@ -779,15 +775,13 @@ def generate_caption_with_validation() -> Tuple[str, Optional[str]]:
             caption = clean_text(caption)
             caption = truncate_by_sentences(caption, max_length=1023)
             
-            if len(caption) < min_len:
-                logger.warning(f"Слишком короткий ({len(caption)} символов, нужно {min_len})")
+            # Проверяем только максимальную длину, минимальной нет
+            if len(caption) > 1023:
+                logger.warning(f"Слишком длинный ({len(caption)} символов)")
                 continue
             
-            if len(caption) > max_len + 50:
-                logger.warning(f"Слишком длинный ({len(caption)} символов, нужно {max_len})")
-                continue
-            
-            validated, error = validate_caption(caption, min_length=min_len, max_length=max_len)
+            # Проверяем только логику и смысл
+            validated, error = validate_caption(caption, max_length=1023)
             
             if not validated:
                 logger.warning(f"Текст не прошёл проверку: {error}")
