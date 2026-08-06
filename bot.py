@@ -175,32 +175,40 @@ _system_prompt_cache = {}
 
 def get_system_prompt() -> str:
     """Возвращает системный промпт с кэшированием."""
-    cache_key = "system_prompt_v2"
+    cache_key = "system_prompt_v3"
     if cache_key not in _system_prompt_cache:
-        _system_prompt_cache[cache_key] = """Ты — автор канала, который пишет про Азию, стримеров и ботоводов.
+        _system_prompt_cache[cache_key] = """Ты — уставший мужик, который много работает, много пьёт и много смотрит стримеров.
 
 ⚠️ ГЛАВНЫЕ ПРАВИЛА:
 - Ты НЕ называешь своё имя
-- Ты пишешь от первого лица
-- Используй мат для эмоций, но не перебарщивай
-- Редко используй слово "скуф" (только в крайнем случае)
-- Редко используй "средних лет" (только если очень нужно)
-- Чаще используй "так называемый", "так называемые", "так называемая"
-- Крайне редко используй "чмодьё" — только в негативном контексте
-- Пиши как будто общаешься с друзьями в баре
+- Пиши от первого лица, как будто сидишь с пивом и обсуждаешь
+- Используй много мата: блядь, сука, пиздец, хуйня, нахуй, ебаный
+- Говори грубо, прямо, без цензуры
+- Шути над стримерами жёстко, но без личных оскорблений
+- Используй "так называемый", "так называемые" часто
+- Не используй "скуф", "средних лет" — ты сам такой же
+- Если нужно упомянуть автора канала @maddysontg — называй его Илюха (только когда действительно нужно, не в каждом посте)
+- Только когда реально ссылаешься на его пост
 
-Твой стиль:
-- Колкий, дерзкий, с чёрным юмором
-- Самоирония и сарказм
-- Если про Азию — описывай реальные ситуации
-- Если про стримеров — критикуй, но с фактами
-- Не ной, шути над всем
+Твой образ:
+- Работяга, который устал от жизни
+- Пьёт пиво каждый вечер
+- Смотрит стримеров и бесится с них
+- Говорит как в гараже с мужиками
+
+Стиль речи:
+- Мат через слово
+- Грубые сравнения
+- Чёрный юмор
+- Без соплей и сантиментов
+- Коротко и по делу
 
 Важно:
 - Не упоминай своё имя
 - Обращайся к читателям на "вы"
-- Не упоминай жену
-- Никогда не пиши о том, что контент запрещён
+- Не переходи на личности стримеров (критика действий, а не внешности)
+- Используй "так называемый" для участников
+- Илюху упоминай ТОЛЬКО по делу
 - Отвечай ТОЛЬКО готовым постом. БЕЗ РАССУЖДЕНИЙ."""
         logger.info("💾 Системный промпт закэширован")
     return _system_prompt_cache[cache_key]
@@ -209,10 +217,10 @@ def get_style_prompt(style: str) -> str:
     """Возвращает промпт для стиля с кэшированием."""
     cache_key = f"style_prompt_{style}"
     if cache_key not in _system_prompt_cache:
-        base_prompt = style_prompts.get(style, style_prompts['asia'])
+        base_prompt = style_prompts.get(style, style_prompts['streamer'])
         _system_prompt_cache[cache_key] = base_prompt + """
 
-⚠️ ВАЖНО: Пиши строго по теме. Не переключайся на другие темы.
+⚠️ ВАЖНО: Пиши строго по теме. Без рассуждений. Только готовый пост.
 Твой ответ (ТОЛЬКО ПОСТ, БЕЗ РАССУЖДЕНИЙ):"""
         logger.info(f"💾 Промпт для стиля {style} закэширован")
     return _system_prompt_cache[cache_key]
@@ -647,7 +655,66 @@ async def fail_page(request):
 async def health_check(request):
     return web.Response(text="Bot is running! ✅")
 
-# ===== РАСШИРЕННЫЕ СПИСКИ КЛЮЧЕВЫХ СЛОВ =====
+# ===== КЛЮЧЕВЫЕ СЛОВА ДЛЯ СТРИМЕРОВ (для поиска фото) =====
+
+STREAMER_QUERIES = {
+    'voodush': [
+        "voodush stream",
+        "voodush russian streamer",
+        "вудуш стрим",
+        "вудуш стример",
+    ],
+    'praden': [
+        "praden stream",
+        "praden russian streamer",
+        "праден стрим",
+        "праден стример",
+    ],
+    'vova_bratishkin': [
+        "vova bratishkin stream",
+        "vova bratishkin russian",
+        "вова братишкин стрим",
+        "братишкин стример",
+    ],
+    'sasavot': [
+        "sasavot stream",
+        "sasavot russian streamer",
+        "сасавот стрим",
+    ],
+    'nenormova': [
+        "nenormova stream",
+        "nenormova russian",
+        "ненормова стрим",
+    ],
+    'alina_rin': [
+        "alina rin stream",
+        "alina rin russian",
+        "алина рин стрим",
+    ],
+    'laska': [
+        "laska stream",
+        "laska russian streamer",
+        "ласка стрим",
+    ],
+    'aravudus': [
+        "aravudus stream",
+        "aravudus russian",
+        "аравудус стрим",
+    ],
+}
+
+# Азиатские запросы (для 15% постов)
+ASIAN_QUERIES = [
+    "japanese girl friend photo casual",
+    "korean girl natural shot street",
+    "thai girl friend photo outside",
+    "vietnamese woman friend photo",
+    "asian girl laughing with friend",
+    "asian woman talking to friend",
+    "asian girl walking with friend",
+]
+
+# ===== РАСШИРЕННЫЕ СПИСКИ ДЛЯ ФИЛЬТРАЦИИ =====
 
 ASIAN_KEYWORDS = [
     'asian', 'japanese', 'korean', 'chinese', 'thai', 'vietnamese',
@@ -655,109 +722,193 @@ ASIAN_KEYWORDS = [
     'mongolian', 'burmese', 'cambodian', 'laotian', 'east asian',
     'south east asian', 'oriental', 'asia girl', 'asia woman',
     'japan', 'korea', 'china', 'thailand', 'vietnam', 'philippines',
-    'indonesia', 'malaysia', 'singapore', 'taiwan', 'mongolia',
-    'myanmar', 'cambodia', 'laos', 'hong kong', 'macau',
 ]
 
 NON_ASIAN_KEYWORDS = [
     'african', 'black', 'white', 'caucasian', 'european', 'american',
     'latina', 'mexican', 'brazilian', 'indian', 'middle eastern',
     'arab', 'persian', 'turkish', 'russian', 'ukrainian', 'polish',
-    'german', 'french', 'italian', 'spanish', 'british', 'swedish',
-    'norwegian', 'danish', 'dutch', 'belgian', 'swiss', 'austrian',
-    'australian', 'canadian', 'colombian', 'peruvian', 'chilean',
-    'argentinian', 'venezuelan', 'ecuadorian', 'bolivian', 'paraguayan',
-    'uruguayan', 'guyanese', 'surinamese', 'egyptian', 'moroccan',
-    'algerian', 'tunisian', 'libyan', 'nigerian', 'kenyan',
-    'south african', 'ethiopian', 'ghanaian', 'senegalese', 'ugandan',
-    'rwandan', 'somali', 'sudanese', 'american girl', 'european girl',
-    'russian girl', 'ukrainian girl', 'indian girl', 'african girl',
-    'american woman', 'european woman', 'russian woman', 'ukrainian woman',
-    'latina girl', 'brazilian girl', 'mexican girl', 'arab girl',
-    'persian girl', 'turkish girl', 'caucasian girl', 'white girl',
-    'black girl', 'african woman', 'latina woman', 'brazilian woman',
 ]
 
 ASIAN_NAMES = [
     'yuki', 'haruka', 'sakura', 'ai', 'miyu', 'rina', 'mika', 'kaori',
     'hana', 'momoko', 'chihiro', 'nanami', 'hinata', 'yui', 'mizuki',
     'yeon', 'jiwoo', 'eunji', 'yuna', 'hyejin', 'sooyoung', 'jisoo',
-    'minji', 'nayeon', 'jeongyeon', 'momo', 'sana', 'mina', 'dahyun',
-    'chaeyoung', 'tzuyu', 'jungkook', 'taehyung', 'jimin', 'namjoon',
-    'seokjin', 'yoongi', 'hoseok', 'jennie', 'lisa', 'rosé', 'jisoo',
-    'xiao', 'mei', 'ling', 'fang', 'li', 'hua', 'xia', 'wei', 'ting',
-    'chen', 'wang', 'zhang', 'liu', 'yang', 'zhao', 'huang', 'wu',
-    'somchai', 'somsak', 'somporn', 'nong', 'lek', 'noi', 'kaew',
-    'mai', 'ploy', 'fah', 'mild', 'baitoey', 'gift', 'new', 'oil',
-    'aom', 'joong', 'ki', 'hoon', 'jin', 'soo', 'young', 'sun',
 ]
 
-# ===== НОВЫЕ ПОИСКОВЫЕ ЗАПРОСЫ (смесь Азии и стримеров) =====
-
-SEARCH_QUERIES = [
-    "japanese girl friend photo casual",
-    "japanese woman everyday life candid",
-    "korean girl natural shot street",
-    "thai girl friend photo outside",
-    "vietnamese woman friend photo",
-    "asian girl laughing with friend",
-    "asian woman talking to friend",
-    "asian girl walking with friend",
-    "asian woman sitting with friend",
-    "asian girl shopping with friend",
-    "asian woman eating with friend",
-    "asian girl coffee with friend",
-    "asian woman market with friend",
-    "asian girl street food friend",
-    "asian woman casual outfit friend",
-    "asian girl candid laugh",
-    "asian woman natural smile",
-    "asian girl genuine moment",
-    "asian woman carefree day",
-    "asian girl relaxed photo",
-    "asian woman happy moment",
-    "asian girl friend group photo",
-    "asian woman friend gathering",
+AGE_POSITIVE_KEYWORDS = [
+    '18', '19', '20', '21', '22', '23', '24', '25',
+    '26', '27', '28', '29', '30',
+    '18year', '19year', '20year', '21year', '22year',
+    '18yo', '19yo', '20yo', '21yo', '22yo', '23yo',
+    '20s', 'twenties', 'young', 'college', 'university',
+    'student', 'freshman', 'sophomore', 'junior', 'senior',
 ]
 
-# ===== НОВЫЕ СТРИМЕРСКИЕ ЗАПРОСЫ =====
-
-STREAMER_QUERIES = [
-    "russian streamer scandal",
-    "twitch streamer drama",
-    "streamer fake viewers",
-    "botting viewers twitch",
-    "streamer cheat scandal",
-    "streamer ban controversy",
-    "twitch streamer conflict",
-    "russian streamer fight",
-    "streamer viewbot exposed",
-    "twitch drama 2026",
-    "streamer scandal reaction",
-    "russian streamer controversy",
+CHILD_EXCLUDE_WORDS = [
+    'child', 'children', 'kid', 'kids', 'baby', 'babies', 'toddler',
+    'infant', 'preschool', 'kindergarten', 'schoolgirl', 'schoolboy',
+    'girl scout', 'boy scout', 'cub scout', 'teen', 'teenager',
+    'minor', 'underage', 'little girl', 'little boy', 'young girl',
+    'young boy', 'daughter', 'son', 'family', 'family photo',
+    'childhood', 'baby girl', 'baby boy', 'newborn', 'cute baby',
+    'child model', 'kid model', 'baby model', 'toddler girl', 'toddler boy',
 ]
 
-K_POP_QUERIES = [
-    "blackpink jennie casual photo",
-    "twice nayeon casual outfit",
-    "newjeans minji everyday photo",
-    "aespa karina natural photo",
-    "itzy yeji street style",
-    "kpop idol street style",
-    "kpop girl group casual photo",
+MEN_EXCLUDE_WORDS = [
+    'man', 'men', 'boy', 'male', 'guy', 'dude', 'brother',
+    'father', 'husband', 'boyfriend', 'gentleman', 'sir',
+    'bloke', 'chap', 'fellow', 'lad', 'young man',
 ]
 
-FITNESS_QUERIES = [
-    "japanese fitness girl friend photo",
-    "korean gym girl friend photo",
-    "asian girl gym with friend",
+TRADITIONAL_EXCLUDE = [
+    'kimono', 'hanbok', 'cheongsam', 'qi pao', 'sari', 'ao dai',
+    'traditional', 'folk costume', 'national dress', 'hanfu',
 ]
 
-# ===== НОВЫЕ ПРОМПТЫ =====
+# ===== ФУНКЦИИ ФИЛЬТРАЦИИ ФОТО =====
+
+def has_man_in_photo(url: str) -> bool:
+    if not url:
+        return False
+    url_lower = url.lower()
+    for word in MEN_EXCLUDE_WORDS:
+        if word in url_lower:
+            return True
+    return False
+
+def is_child_photo(url: str) -> bool:
+    if not url:
+        return False
+    url_lower = url.lower()
+    for word in CHILD_EXCLUDE_WORDS:
+        if word in url_lower:
+            return True
+    child_age_patterns = [
+        r'\b(0|1|2|3|4|5|6|7|8|9|10|11|12|13|14|15|16|17)\b',
+        r'\b(infant|toddler|child|kid|teen)\b',
+        r'\b(grade|class|school)\s+[1-9]\b',
+    ]
+    for pattern in child_age_patterns:
+        if re.search(pattern, url_lower, re.IGNORECASE):
+            return True
+    return False
+
+def is_asian_photo(url: str, additional_context: str = "") -> bool:
+    if not url:
+        return False
+    text_to_check = url.lower()
+    if additional_context:
+        text_to_check += " " + additional_context.lower()
+    for keyword in ASIAN_KEYWORDS:
+        if keyword in text_to_check:
+            return True
+    for keyword in NON_ASIAN_KEYWORDS:
+        if keyword in text_to_check:
+            return False
+    for name in ASIAN_NAMES:
+        if name in text_to_check:
+            return True
+    has_age = False
+    for pattern in AGE_POSITIVE_KEYWORDS:
+        if pattern in text_to_check:
+            has_age = True
+            break
+    if has_age:
+        for keyword in ['blonde', 'blue eyes', 'green eyes', 'redhead', 'ginger']:
+            if keyword in text_to_check:
+                return False
+        return True
+    asian_features = [
+        'slender', 'petite', 'olive skin', 'dark hair', 'black hair',
+        'straight hair', 'bangs', 'double eyelid', 'monolid',
+        'kawaii', 'cute', 'innocent', 'pure', 'delicate',
+        'slender figure', 'small face', 'fair skin',
+    ]
+    for feature in asian_features:
+        if feature in text_to_check:
+            return True
+    asian_domains = ['.jp', '.kr', '.cn', '.tw', '.hk', '.mo', '.sg', '.th', '.vn', '.ph', '.my', '.id']
+    for domain in asian_domains:
+        if domain in url.lower():
+            return True
+    return False
+
+def is_age_appropriate(url: str) -> bool:
+    if not url:
+        return False
+    url_lower = url.lower()
+    if is_child_photo(url):
+        return False
+    for word in AGE_POSITIVE_KEYWORDS:
+        if word in url_lower:
+            return True
+    if re.search(r'\b(age|years?|yo|y/o)\b', url_lower, re.IGNORECASE):
+        for word in AGE_POSITIVE_KEYWORDS:
+            if word in url_lower:
+                return True
+        return False
+    if 'mature' in url_lower or 'old' in url_lower or 'senior' in url_lower:
+        return False
+    return True
+
+def is_traditional_clothing(url: str) -> bool:
+    if not url:
+        return False
+    url_lower = url.lower()
+    for word in TRADITIONAL_EXCLUDE:
+        if word in url_lower:
+            return True
+    if 'traditional dress' in url_lower or 'folk costume' in url_lower:
+        return True
+    return False
+
+def is_photo_valid(url: str) -> bool:
+    if not url:
+        return False
+    if is_child_photo(url):
+        return False
+    if has_man_in_photo(url):
+        return False
+    if not is_asian_photo(url):
+        return False
+    if not is_age_appropriate(url):
+        return False
+    if is_traditional_clothing(url):
+        return False
+    unwanted = ['naked', 'nude', 'porn', 'xxx', 'sex', 'erotic', 'bikini']
+    for word in unwanted:
+        if word in url.lower():
+            return False
+    return True
+
+# ===== НОВЫЕ ПРОМПТЫ (85% стримеры, 15% Азия) =====
 
 style_prompts = {
+    'streamer': """
+Ты — уставший мужик, сидишь с пивом и обсуждаешь стримеров.
+
+Напиши пост про стримера/стримеров. Используй грубую лексику, мат, чёрный юмор.
+
+Требования:
+- 500-700 символов
+- Мат 3-5 раз (блядь, сука, пиздец, хуйня, нахуй)
+- Острые шутки и насмешки над стримерами
+- Используй "так называемый/ая/ые" по отношению к участникам
+- Не переходи на личности (критика действий, а не внешности)
+- Можно ссылаться на посты Илюхи с @maddysontg
+- Пиши как работяга в гараже
+- Коротко, грубо, по делу
+- Не называй своё имя
+- Обращайся к читателям на "вы"
+
+Пример темы: стример накрутил зрителей, стример забанил подписчика, стример поссорился с другим стримером, стример снова проиграл на стриме, очередной скандал.
+""",
+
     'asia': """
-Ты пишешь пост про Азию. Это может быть история, наблюдение или шутка про жизнь в Азии.
+Ты — уставший мужик, но иногда вспоминаешь про Азию.
+
+Напиши пост про Азию (редко, 15% постов). С юмором и самоиронией.
 
 Требования:
 - 500-700 символов
@@ -765,57 +916,8 @@ style_prompts = {
 - Одна острая шутка
 - Используй "так называемый/ая/ые" где уместно
 - Не называй своё имя
-- Не используй "скуф" и "средних лет" (только если очень нужно)
 - Обращайся к читателям на "вы"
-- Пиши только готовый пост
-""",
-
-    'streamer': """
-Ты пишешь пост про стримеров, ботоводов или скандалы в русскоязычном твиче.
-
-Требования:
-- 500-700 символов
-- Мат 2-3 раза
-- Острые шутки про стримеров
-- Используй "так называемый/ая/ые" по отношению к участникам
-- Не называй своё имя
-- Не используй "скуф" и "средних лет"
-- Упоминай реальные скандалы или ситуации
-- Обращайся к читателям на "вы"
-- Пиши только готовый пост
-""",
-
-    'russia': """
-Ты пишешь пост про жизнь в России из прошлого. Редко, 1-2 раза в неделю.
-
-Требования:
-- 500-700 символов
-- Мат 1-2 раза
-- Одна острая шутка
-- Сравнивай с Азией
-- Не называй своё имя
-- Обращайся к читателям на "вы"
-- Пиши только готовый пост
-""",
-
-    'funny': """
-Ты пишешь смешной пост. Это может быть история про Азию или стримеров.
-
-Требования:
-- 500-700 символов
-- Мат 1-2 раза
-- Одна острая шутка
-- Не называй своё имя
-- Обращайся к читателям на "вы"
-- Пиши только готовый пост
-""",
-
-    'short_joke': """
-Короткая колкая шутка. 200-350 символов.
-- Мат 0-1 раз
-- Одна острая шутка
-- Не называй своё имя
-- Пиши только готовый пост
+- Не используй "скуф"
 """,
 }
 
@@ -1015,16 +1117,17 @@ def validate_post_with_deepseek(post_text: str) -> Tuple[bool, str]:
             "messages": [
                 {"role": "system", "content": """Ты — строгий модератор контента. Проверяй посты на соответствие правилам:
 
-1. Пост должен быть уникальным
-2. Не должно быть оскорблений конкретных людей (кроме критики стримеров по фактам)
-3. Не должно быть призывов к насилию или экстремизму
-4. Пост должен быть грамотным (орфография, пунктуация)
-5. Пост должен быть завершённым (иметь логический конец)
+1. Пост должен быть о стримерах или Азии (по теме)
+2. Допускается грубая лексика и мат (это стиль автора)
+3. Не должно быть личных оскорблений (критика действий, а не внешности)
+4. Не должно быть призывов к насилию или экстремизму
+5. Пост должен быть грамотным (орфография, пунктуация)
+6. Пост должен быть завершённым
 
-Если пост НЕ соответствует правилам — напиши "REJECT: причина".
 Если пост соответствует — напиши "APPROVED".
+Если пост НЕ соответствует — напиши "REJECT: причина".
 
-Будь максимально строгим."""},
+Будь строгим."""},
                 {"role": "user", "content": f"Проверь этот пост:\n\n{post_text}"}
             ],
             "temperature": 0.3,
@@ -1060,7 +1163,179 @@ def validate_post_with_deepseek(post_text: str) -> Tuple[bool, str]:
         logger.error(f"❌ Ошибка при проверке поста через DeepSeek: {e}")
         return True, post_text
 
-# ===== НОВАЯ ФУНКЦИЯ ГЕНЕРАЦИИ ПОСТА С ПРОВЕРКОЙ =====
+# ===== ПОИСК ФОТО =====
+
+def search_bing(query):
+    if not query:
+        return None
+    try:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.5",
+        }
+        encoded_query = quote(query)
+        url = f"https://www.bing.com/images/search?q={encoded_query}&form=HDRSC3&first=1&count=35&safeSearch=moderate"
+        response = requests.get(url, headers=headers, timeout=15)
+        patterns = [
+            r'"murl":"([^"]+)"',
+            r'"mediaurl":"([^"]+)"',
+            r'"contentUrl":"([^"]+)"',
+            r'"url":"([^"]+)"',
+        ]
+        images = []
+        for pattern in patterns:
+            found = re.findall(pattern, response.text)
+            images.extend(found)
+        clean_images = []
+        for img in images:
+            img = img.replace('\\u0026', '&').replace('\\/', '/')
+            if not any(ext in img.lower() for ext in ['.jpg', '.jpeg', '.png', '.webp']):
+                continue
+            if any(x in img.lower() for x in ['gstatic', 'google', 'favicon', 'logo', 'bing', 'avatar']):
+                continue
+            clean_images.append(img)
+        if clean_images:
+            clean_images = list(dict.fromkeys(clean_images))
+            return random.choice(clean_images)
+        return None
+    except Exception as e:
+        logger.error(f"Ошибка Bing: {e}")
+        return None
+
+def search_google_direct(query):
+    if not query:
+        return None
+    try:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.5",
+        }
+        encoded_query = quote(query)
+        url = f"https://www.google.com/search?q={encoded_query}&tbm=isch&safe=active&tbs=isz:l,itp:photo"
+        response = requests.get(url, headers=headers, timeout=15)
+        pattern = r'imgurl=([^&]+)'
+        images = re.findall(pattern, response.text)
+        pattern2 = r'"([^"]+\.jpg[^"]*)"'
+        images.extend(re.findall(pattern2, response.text))
+        clean_images = []
+        for img in images:
+            img = img.replace('\\u0026', '&')
+            img = img.replace('\\/', '/')
+            if any(ext in img.lower() for ext in ['.jpg', '.jpeg', '.png', '.webp']):
+                if not any(x in img.lower() for x in ['gstatic', 'google', 'favicon', 'logo']):
+                    if not img.startswith('data:'):
+                        clean_images.append(img)
+        clean_images = list(dict.fromkeys(clean_images))
+        if clean_images:
+            return random.choice(clean_images)
+        return None
+    except Exception as e:
+        logger.error(f"Ошибка Google: {e}")
+        return None
+
+def search_yandex(query):
+    if not query:
+        return None
+    try:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+            "Accept-Encoding": "gzip, deflate, br",
+            "Connection": "keep-alive",
+        }
+        encoded_query = quote(query)
+        url = f"https://yandex.ru/images/search?text={encoded_query}&rdrnd=1&rpt=imageview&noreask=1"
+        response = requests.get(url, headers=headers, timeout=15)
+        patterns = [
+            r'"img_url":"([^"]+)"',
+            r'"url":"([^"]+\.(jpg|jpeg|png|webp))"',
+            r'<img[^>]+src="([^"]+\.(jpg|jpeg|png|webp))"',
+        ]
+        images = []
+        for pattern in patterns:
+            found = re.findall(pattern, response.text)
+            for item in found:
+                if isinstance(item, tuple):
+                    item = item[0]
+                if item and not any(x in item.lower() for x in ['logo', 'favicon', 'gif']):
+                    images.append(item.replace('\\u0026', '&').replace('\\/', '/'))
+        clean_images = []
+        for img in images:
+            if any(ext in img.lower() for ext in ['.jpg', '.jpeg', '.png', '.webp']):
+                if not any(x in img.lower() for x in ['gstatic', 'google', 'favicon', 'logo']):
+                    if not img.startswith('data:'):
+                        clean_images.append(img)
+        clean_images = list(dict.fromkeys(clean_images))
+        if clean_images:
+            return random.choice(clean_images)
+        return None
+    except Exception as e:
+        logger.error(f"Ошибка Yandex: {e}")
+        return None
+
+def search_pexels(query):
+    if not query:
+        return None
+    try:
+        PEXELS_KEY = os.getenv("PEXELS_KEY")
+        if not PEXELS_KEY:
+            return None
+        url = "https://api.pexels.com/v1/search"
+        headers = {"Authorization": PEXELS_KEY}
+        params = {
+            "query": query,
+            "per_page": 30,
+            "orientation": "portrait",
+            "size": "large"
+        }
+        response = requests.get(url, headers=headers, params=params, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            if data.get("photos"):
+                photos = data["photos"]
+                random.shuffle(photos)
+                for photo in photos:
+                    url = photo["src"]["large"]
+                    return url
+        return None
+    except Exception as e:
+        logger.error(f"Ошибка Pexels: {e}")
+        return None
+
+# ===== ФУНКЦИЯ ПОЛУЧЕНИЯ ФОТО ДЛЯ СТРИМЕРОВ =====
+
+def get_streamer_photo(streamer_name: str) -> Optional[str]:
+    """Ищет фото конкретного стримера"""
+    queries = STREAMER_QUERIES.get(streamer_name, [])
+    if not queries:
+        return None
+    
+    search_functions = [
+        search_bing,
+        search_google_direct,
+        search_yandex,
+    ]
+    
+    random.shuffle(queries)
+    random.shuffle(search_functions)
+    
+    for query in queries:
+        for search_func in search_functions:
+            try:
+                logger.info(f"Поиск фото для {streamer_name}: {query}")
+                photo = search_func(query)
+                if photo:
+                    logger.info(f"✅ Найдено фото для {streamer_name}")
+                    return photo
+            except Exception as e:
+                logger.error(f"Ошибка поиска для {streamer_name}: {e}")
+                continue
+    
+    return None
+
+# ===== ФУНКЦИЯ ГЕНЕРАЦИИ ПОСТА =====
 
 def generate_caption_with_validation() -> str:
     """Генерирует пост и проверяет его через DeepSeek API до 5 раз."""
@@ -1079,65 +1354,45 @@ def generate_caption_with_validation() -> str:
     max_attempts = 5
     for attempt in range(max_attempts):
         try:
-            # 50% Азия, 50% Стримеры
+            # 85% стримеры, 15% Азия
             rand = random.random()
-            if rand < 0.50:
-                style = 'asia'
-                topic = "Азия"
-                min_len, max_len = 500, 700
-            else:
+            if rand < 0.85:
                 style = 'streamer'
                 topic = "стримеры и скандалы"
                 min_len, max_len = 500, 700
-            
-            # Редкие стили (5% шанс)
-            if random.random() < 0.05:
-                style = 'russia'
-                topic = "Россия"
+            else:
+                style = 'asia'
+                topic = "Азия"
                 min_len, max_len = 500, 700
-            elif random.random() < 0.10:
-                style = 'funny'
-                topic = "смешное"
-                min_len, max_len = 500, 700
-            elif random.random() < 0.15:
-                style = 'short_joke'
-                topic = "короткая шутка"
-                min_len, max_len = 200, 400
             
             logger.info(f"Попытка {attempt+1}: стиль {style}, тема {topic}")
             
             # Получаем промпт из кэша
             base_prompt = get_style_prompt(style)
             
-            # Альтернативные промпты
-            alternative_prompts = {
-                'asia': [
-                    "Напиши пост про Азию. 500-700 символов. С юмором и самоиронией.",
-                    "История из жизни в Азии. 500-700 символов. Острая шутка в конце.",
-                    "Наблюдение про азиатскую жизнь. 500-700 символов. С колкостью.",
-                ],
-                'streamer': [
-                    "Напиши пост про скандал со стримером. 500-700 символов. Критика по фактам.",
-                    "История про ботоводов на Twitch. 500-700 символов. Острые шутки.",
-                    "Разбор ситуации с русским стримером. 500-700 символов. С матом.",
-                ],
-                'russia': [
-                    "Напиши пост про жизнь в России из прошлого. 500-700 символов.",
-                    "Вспомни Россию с юмором. 500-700 символов. Без ностальгии.",
-                ],
-                'funny': [
-                    "Смешной пост про жизнь. 500-700 символов. Хорошая шутка.",
-                ],
-                'short_joke': [
-                    "Короткая колкая шутка. 200-350 символов. Только шутка.",
-                ]
-            }
+            # Альтернативные промпты для стримеров
+            streamer_topics = [
+                "Напиши пост про стримера, который накрутил зрителей. Критикуй, используй мат.",
+                "Напиши пост про скандал между стримерами. Грубо, с матом, с насмешками.",
+                "Напиши пост про стримера, который забанил подписчика. Критика действий.",
+                "Напиши пост про очередной провал стримера на стриме. С матом и чёрным юмором.",
+                "Напиши пост про ботоводов на Twitch. Критикуй так называемых накрутчиков.",
+                "Напиши пост про стримера Вудуш. Что он опять сделал не так.",
+                "Напиши пост про Прадена. Почему он бесит своей игрой.",
+                "Напиши пост про братишкина. Его лысина и попытки выглядеть молодо.",
+                "Напиши пост про сасавота. Очередной скандал.",
+                "Напиши пост про ненормову. Что она опять устроила.",
+                "Напиши пост про Алину Рин. Почему она бесит.",
+                "Напиши пост про Ласку. Очередная драма.",
+                "Напиши пост про аравудуса. Что он опять натворил.",
+                "Илюха опять написал пост про стримеров. Ответь ему, но грубо и по делу.",
+            ]
             
             current_prompt = base_prompt
             if attempt > 0:
-                alt = random.choice(alternative_prompts.get(style, alternative_prompts['asia']))
+                alt = random.choice(streamer_topics)
                 current_prompt = alt + "\n\n⚠️ Пиши строго по теме. Только пост без рассуждений."
-                logger.info(f"Пробую альтернативный промпт...")
+                logger.info(f"Пробую альтернативный промпт: {alt[:50]}...")
             
             # Получаем системный промпт
             system_prompt = get_system_prompt()
@@ -1154,7 +1409,7 @@ def generate_caption_with_validation() -> str:
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": current_prompt}
                 ],
-                "temperature": 1.1,
+                "temperature": 1.2,
                 "max_tokens": 1500,
             }
             
@@ -1214,10 +1469,7 @@ def generate_caption_with_validation() -> str:
                 continue
             
             # Валидация структуры
-            if style == 'short_joke':
-                validated, error = validate_caption(caption, min_length=100, max_length=400)
-            else:
-                validated, error = validate_caption(caption, min_length=min_len, max_length=max_len)
+            validated, error = validate_caption(caption, min_length=min_len, max_length=max_len)
             
             if not validated:
                 logger.warning(f"Текст не прошёл проверку: {error}")
@@ -1248,7 +1500,7 @@ def generate_caption_with_validation() -> str:
         return validated
     return clean_text(truncate_by_sentences(get_fallback_caption()))
 
-# ===== ПРОДОЛЖЕНИЕ ТЕКСТА (для обрезанных постов) =====
+# ===== ПРОДОЛЖЕНИЕ ТЕКСТА =====
 
 def request_continuation(previous_text: str) -> str:
     try:
@@ -1261,7 +1513,7 @@ def request_continuation(previous_text: str) -> str:
         data = {
             "model": "deepseek-chat",
             "messages": [
-                {"role": "system", "content": "Ты автор канала. Текст поста был обрезан. Допиши ТОЛЬКО концовку — 1-3 завершающих предложения с логическим выводом. Не повторяй уже написанное. Только текст продолжения."},
+                {"role": "system", "content": "Ты уставший мужик. Текст поста был обрезан. Допиши ТОЛЬКО концовку — 1-3 завершающих предложения с логическим выводом. Не повторяй уже написанное. Только текст продолжения."},
                 {"role": "user", "content": f"Вот текст, который оборвался:\n\n...{tail}\n\nДопиши концовку (1-3 предложения)."}
             ],
             "temperature": 0.9,
@@ -1280,38 +1532,108 @@ def request_continuation(previous_text: str) -> str:
 
 def get_fallback_caption() -> str:
     fallbacks = [
-        "Вчера в Бангкоке ко мне подошла стайка тайских девчонок и попросила сфоткаться. Я сразу расправил плечи - ну, думаю, наконец-то заметили мой шарм, мою харизму. Делаю serious face, как будто я важный чел. А они визжат, тычут пальцами. И тут одна тянет мой телефон, начинает листать и показывает на фото какого-то китайского блогера с двумя миллионами подписчиков. Оказалось, я просто попал в кадр, потому что стоял на том же месте, где он снимал своё видосик. Стою, улыбаюсь, а в голове: ну ты и дурак, опять повёлся. Ну и ладно, зато теперь я типа знаменит локально - сегодня меня уже трижды окликнули на базаре. Вывод один: слава - это когда тебя путают с другим, но ты всё равно рад, что хоть с кем-то перепутали. И это пиздец как греет душу.",
-        "Сижу в кафе в Чиангмае, пью кофе, смотрю на прохожих. Вдруг подходит местная девушка и говорит: Вы тот самый блогер? Я сразу напрягся, думаю - неужели узнали? А она показывает на мою футболку с логотипом какой-то группы и говорит, что ей нравится их музыка. Оказалось, она думала, что я участник группы. Я даже не стал её разочаровывать - улыбнулся, сфоткался с ней и пошёл дальше. Теперь я официально музыкант. Хотя на гитаре играю только в голове. Но знаете, приятно, когда тебя замечают, даже если по ошибке.",
-        "Вчера на рынке в Бангкоке продавщица назвала меня красивым иностранным мужчиной. Я чуть не подавился соком. Расправил плечи, уже приготовился торговаться с чувством собственного достоинства. А она оказалась просто вежливая - так она всех мужиков называет, чтобы цену набить. Но осадочек остался, приятный такой. Домой пришёл, в зеркало посмотрел - ну вроде ничего, харизма есть. Наверное, я всё-таки красавчик, просто в этом городе слишком много настоящих красавчиков.",
-        "Тайские девушки - это отдельный вид искусства. Вчера одна сказала мне: Ты такой забавный, как мой папа. Я чуть кофе не поперхнулся. Думаю - ну всё, старость пришла. А она потом говорит: Это комплимент, папа у меня крутой! Ну ладно, тогда норм. Буду теперь гордо носить звание папик в Таиланде. Хотя, сука, обидно было первые пять секунд.",
+        "Блядь, опять эти стримеры накручивают зрителей. Сидят, пиздят, а толку ноль. Так называемые ботоводы, сука, только портят всё. Хуйня какая-то, а не стриминг. Ну хоть посмеяться есть над чем, потому что пиздец полный. Идите нахуй со своей накруткой, нормальные люди так не делают.",
+        "Вова братишкин опять лысиной светит на стриме. Блядь, Вова, ты бы в качалку пошёл, а не страдал херней. Бабы смотрят не на лысину твою, а на мускулы. Но ты так и будешь сидеть, накручивать зрителей и думать, что ты крутой. Пиздец, сука, обидно за индустрию.",
+        "Праден опять проиграл на стриме. Сидит, лицо кислое, будто лимон съел. Так называемый геймер, блядь. На кого ты играешь? На детей в песочнице? Хуйня полная. Сделай что-нибудь нормальное, а не позорься на всю платформу.",
+        "Смотрю на этих стримеров и думаю: ебаный вы стыд. Накручиваете зрителей, ссоритесь друг с другом, а контент как был говном, так и остался. Ну и кому это надо? Сидели бы тихо, работали над контентом, а не скандалы устраивали. Пиздец, сука, обидно.",
     ]
     return random.choice(fallbacks)
 
-# ===== ФУНКЦИИ ДЛЯ ПОИСКА ФОТО =====
+# ===== ФУНКЦИЯ ДЛЯ ПОЛУЧЕНИЯ ФОТО =====
 
-def get_search_queries_for_style(style: str) -> List[str]:
-    """Возвращает запросы в зависимости от стиля."""
-    base_queries = SEARCH_QUERIES.copy()
+async def get_random_photo(style: str = "streamer") -> Optional[str]:
+    """Получает фото в зависимости от стиля поста"""
+    global history
     
+    if len(history) > 80:
+        logger.info("История переполнена, очищаю...")
+        history = []
+        save_history(history)
+    
+    # Для стримерских постов выбираем конкретного стримера
     if style == 'streamer':
-        # Для стримерских постов используем стримерские запросы + немного азиатских
-        streamer_queries = STREAMER_QUERIES.copy()
-        random.shuffle(streamer_queries)
-        base_queries.extend(streamer_queries[:3])
-        # Добавляем немного азиатских
-        asian_part = random.sample(SEARCH_QUERIES, min(3, len(SEARCH_QUERIES)))
-        base_queries.extend(asian_part)
+        # Список стримеров
+        streamers = ['voodush', 'praden', 'vova_bratishkin', 'sasavot', 
+                     'nenormova', 'alina_rin', 'laska', 'aravudus']
+        random.shuffle(streamers)
+        
+        for streamer in streamers:
+            photo = get_streamer_photo(streamer)
+            if photo and photo not in history:
+                history.append(photo)
+                save_history(history)
+                logger.info(f"✅ Найдено фото для стримера {streamer}")
+                return photo
+        
+        # Если не нашлось фото стримера, используем общий поиск
+        fallback_queries = [
+            "russian streamer face",
+            "twitch streamer russian",
+            "russian streamer photo",
+        ]
+        search_functions = [search_bing, search_google_direct, search_yandex]
+        random.shuffle(fallback_queries)
+        random.shuffle(search_functions)
+        
+        for query in fallback_queries:
+            for search_func in search_functions:
+                try:
+                    photo = search_func(query)
+                    if photo and photo not in history:
+                        history.append(photo)
+                        save_history(history)
+                        logger.info(f"✅ Найдено запасное фото стримера")
+                        return photo
+                except:
+                    continue
     
-    # Иногда добавляем K-pop запросы
-    if random.random() < 0.3:
-        kpop_queries = random.sample(K_POP_QUERIES, min(2, len(K_POP_QUERIES)))
-        base_queries.extend(kpop_queries)
+    # Для азиатских постов
+    queries = ASIAN_QUERIES.copy()
+    random.shuffle(queries)
     
-    # Редко фитнес
-    if random.random() < 0.1:
-        base_queries.extend(FITNESS_QUERIES)
+    search_functions = [
+        search_bing,
+        search_google_direct,
+        search_yandex,
+        search_pexels,
+    ]
+    random.shuffle(search_functions)
     
-    return base_queries
+    for query in queries:
+        for search_func in search_functions:
+            try:
+                logger.info(f"Поиск азиатского фото: {query}")
+                photo = search_func(query)
+                if photo and photo not in history:
+                    if is_photo_valid(photo):
+                        history.append(photo)
+                        save_history(history)
+                        logger.info(f"✅ Найдено азиатское фото")
+                        return photo
+            except Exception as e:
+                logger.error(f"Ошибка поиска: {e}")
+                continue
+    
+    logger.warning("Не удалось найти фото, очищаю историю...")
+    history = []
+    save_history(history)
+    
+    # Последняя попытка
+    for query in queries[:5]:
+        for search_func in search_functions:
+            try:
+                photo = search_func(query)
+                if photo and is_photo_valid(photo):
+                    history.append(photo)
+                    save_history(history)
+                    return photo
+            except:
+                continue
+    
+    logger.error("Не удалось найти подходящее фото!")
+    return None
+
+# ===== ФУНКЦИЯ АНАЛИЗА ФОТО =====
 
 def encode_image_to_base64_url(image_url: str) -> str:
     try:
@@ -1348,7 +1670,7 @@ async def analyze_photo_for_comment(image_url: str) -> Optional[str]:
                     "content": [
                         {
                             "type": "text",
-                            "text": """Опиши девушку на этом фото коротко и с юмором. 1-2 предложения. Не называй возраст, используй "молодая" или "юная". Пиши в стиле: "посмотрите какая милая девушка, наверняка богатая, ухаживает за собой". Без оскорблений, только лёгкая ирония."""
+                            "text": """Коротко опиши что на фото. 1-2 предложения. Грубо, с юмором. Используй мат. Это стример или азиатка? Напиши так, как будто ты уставший мужик с пивом в руках."""
                         },
                         {
                             "type": "image_url",
@@ -1383,376 +1705,37 @@ async def analyze_photo_for_comment(image_url: str) -> Optional[str]:
         logger.error(f"Ошибка анализа фото: {e}")
         return None
 
-# ===== ФУНКЦИИ ПОИСКА ФОТО =====
+# ===== СОЗДАНИЕ ПОСТА =====
 
-def search_bing(query):
-    if not query:
-        return None
+async def create_post_with_photo(chat_id, user_id=0, skip_moderation=False, style="streamer"):
     try:
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.5",
-        }
-        encoded_query = quote(query)
-        url = f"https://www.bing.com/images/search?q={encoded_query}&form=HDRSC3&first=1&count=35&safeSearch=moderate"
-        response = requests.get(url, headers=headers, timeout=15)
-        patterns = [
-            r'"murl":"([^"]+)"',
-            r'"mediaurl":"([^"]+)"',
-            r'"contentUrl":"([^"]+)"',
-            r'"url":"([^"]+)"',
-        ]
-        images = []
-        for pattern in patterns:
-            found = re.findall(pattern, response.text)
-            images.extend(found)
-        clean_images = []
-        for img in images:
-            img = img.replace('\\u0026', '&').replace('\\/', '/')
-            if not any(ext in img.lower() for ext in ['.jpg', '.jpeg', '.png', '.webp']):
-                continue
-            if any(x in img.lower() for x in ['gstatic', 'google', 'favicon', 'logo', 'bing', 'avatar']):
-                continue
-            if is_photo_valid(img):
-                clean_images.append(img)
-        if clean_images:
-            clean_images = list(dict.fromkeys(clean_images))
-            return random.choice(clean_images)
-        return None
-    except Exception as e:
-        logger.error(f"Ошибка Bing: {e}")
-        return None
-
-def search_google_direct(query):
-    if not query:
-        return None
-    try:
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.5",
-        }
-        encoded_query = quote(query)
-        url = f"https://www.google.com/search?q={encoded_query}&tbm=isch&safe=active&tbs=isz:l,itp:photo"
-        response = requests.get(url, headers=headers, timeout=15)
-        pattern = r'imgurl=([^&]+)'
-        images = re.findall(pattern, response.text)
-        pattern2 = r'"([^"]+\.jpg[^"]*)"'
-        images.extend(re.findall(pattern2, response.text))
-        clean_images = []
-        for img in images:
-            img = img.replace('\\u0026', '&')
-            img = img.replace('\\/', '/')
-            if any(ext in img.lower() for ext in ['.jpg', '.jpeg', '.png', '.webp']):
-                if not any(x in img.lower() for x in ['gstatic', 'google', 'favicon', 'logo']):
-                    if not img.startswith('data:'):
-                        if is_photo_valid(img):
-                            clean_images.append(img)
-        clean_images = list(dict.fromkeys(clean_images))
-        if clean_images:
-            return random.choice(clean_images)
-        return None
-    except Exception as e:
-        logger.error(f"Ошибка Google: {e}")
-        return None
-
-def search_yandex(query):
-    if not query:
-        return None
-    try:
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-            "Accept-Encoding": "gzip, deflate, br",
-            "Connection": "keep-alive",
-        }
-        encoded_query = quote(query)
-        url = f"https://yandex.ru/images/search?text={encoded_query}&rdrnd=1&rpt=imageview&noreask=1"
-        response = requests.get(url, headers=headers, timeout=15)
-        patterns = [
-            r'"img_url":"([^"]+)"',
-            r'"url":"([^"]+\.(jpg|jpeg|png|webp))"',
-            r'<img[^>]+src="([^"]+\.(jpg|jpeg|png|webp))"',
-        ]
-        images = []
-        for pattern in patterns:
-            found = re.findall(pattern, response.text)
-            for item in found:
-                if isinstance(item, tuple):
-                    item = item[0]
-                if item and not any(x in item.lower() for x in ['logo', 'favicon', 'gif']):
-                    images.append(item.replace('\\u0026', '&').replace('\\/', '/'))
-        clean_images = []
-        for img in images:
-            if any(ext in img.lower() for ext in ['.jpg', '.jpeg', '.png', '.webp']):
-                if not any(x in img.lower() for x in ['gstatic', 'google', 'favicon', 'logo']):
-                    if not img.startswith('data:'):
-                        if is_photo_valid(img):
-                            clean_images.append(img)
-        clean_images = list(dict.fromkeys(clean_images))
-        if clean_images:
-            return random.choice(clean_images)
-        return None
-    except Exception as e:
-        logger.error(f"Ошибка Yandex: {e}")
-        return None
-
-def search_pexels(query):
-    if not query:
-        return None
-    try:
-        PEXELS_KEY = os.getenv("PEXELS_KEY")
-        if not PEXELS_KEY:
-            return None
-        url = "https://api.pexels.com/v1/search"
-        headers = {"Authorization": PEXELS_KEY}
-        params = {
-            "query": query,
-            "per_page": 30,
-            "orientation": "portrait",
-            "size": "large"
-        }
-        response = requests.get(url, headers=headers, params=params, timeout=10)
-        if response.status_code == 200:
-            data = response.json()
-            if data.get("photos"):
-                photos = data["photos"]
-                random.shuffle(photos)
-                for photo in photos:
-                    url = photo["src"]["large"]
-                    if is_photo_valid(url):
-                        return url
-        return None
-    except Exception as e:
-        logger.error(f"Ошибка Pexels: {e}")
-        return None
-
-# ===== ФИЛЬТРЫ ФОТО =====
-
-CHILD_EXCLUDE_WORDS = [
-    'child', 'children', 'kid', 'kids', 'baby', 'babies', 'toddler',
-    'infant', 'preschool', 'kindergarten', 'schoolgirl', 'schoolboy',
-    'girl scout', 'boy scout', 'cub scout', 'teen', 'teenager',
-    'minor', 'underage', 'little girl', 'little boy', 'young girl',
-    'young boy', 'daughter', 'son', 'family', 'family photo',
-    'childhood', 'baby girl', 'baby boy', 'newborn', 'cute baby',
-    'child model', 'kid model', 'baby model', 'toddler girl', 'toddler boy',
-]
-
-MEN_EXCLUDE_WORDS = [
-    'man', 'men', 'boy', 'male', 'guy', 'dude', 'brother',
-    'father', 'husband', 'boyfriend', 'gentleman', 'sir',
-    'bloke', 'chap', 'fellow', 'lad', 'young man',
-]
-
-AGE_POSITIVE_KEYWORDS = [
-    '18', '19', '20', '21', '22', '23', '24', '25',
-    '26', '27', '28', '29', '30',
-    '18year', '19year', '20year', '21year', '22year',
-    '18yo', '19yo', '20yo', '21yo', '22yo', '23yo',
-    '20s', 'twenties', 'young', 'college', 'university',
-    'student', 'freshman', 'sophomore', 'junior', 'senior',
-]
-
-TRADITIONAL_EXCLUDE = [
-    'kimono', 'hanbok', 'cheongsam', 'qi pao', 'sari', 'ao dai',
-    'traditional', 'folk costume', 'national dress', 'hanfu',
-]
-
-def has_man_in_photo(url: str) -> bool:
-    if not url:
-        return False
-    url_lower = url.lower()
-    for word in MEN_EXCLUDE_WORDS:
-        if word in url_lower:
-            return True
-    return False
-
-def is_child_photo(url: str) -> bool:
-    if not url:
-        return False
-    url_lower = url.lower()
-    for word in CHILD_EXCLUDE_WORDS:
-        if word in url_lower:
-            return True
-    child_age_patterns = [
-        r'\b(0|1|2|3|4|5|6|7|8|9|10|11|12|13|14|15|16|17)\b',
-        r'\b(infant|toddler|child|kid|teen)\b',
-        r'\b(grade|class|school)\s+[1-9]\b',
-    ]
-    for pattern in child_age_patterns:
-        if re.search(pattern, url_lower, re.IGNORECASE):
-            return True
-    return False
-
-def is_asian_photo(url: str, additional_context: str = "") -> bool:
-    if not url:
-        return False
-    text_to_check = url.lower()
-    if additional_context:
-        text_to_check += " " + additional_context.lower()
-    for keyword in ASIAN_KEYWORDS:
-        if keyword in text_to_check:
-            return True
-    for keyword in NON_ASIAN_KEYWORDS:
-        if keyword in text_to_check:
-            return False
-    for name in ASIAN_NAMES:
-        if name in text_to_check:
-            return True
-    has_age = False
-    for pattern in AGE_POSITIVE_KEYWORDS:
-        if pattern in text_to_check:
-            has_age = True
-            break
-    if has_age:
-        for keyword in ['blonde', 'blue eyes', 'green eyes', 'redhead', 'ginger']:
-            if keyword in text_to_check:
-                return False
-        return True
-    asian_features = [
-        'slender', 'petite', 'olive skin', 'dark hair', 'black hair',
-        'straight hair', 'bangs', 'double eyelid', 'monolid',
-        'kawaii', 'cute', 'innocent', 'pure', 'delicate',
-        'slender figure', 'small face', 'fair skin',
-    ]
-    for feature in asian_features:
-        if feature in text_to_check:
-            return True
-    asian_domains = ['.jp', '.kr', '.cn', '.tw', '.hk', '.mo', '.sg', '.th', '.vn', '.ph', '.my', '.id']
-    for domain in asian_domains:
-        if domain in url.lower():
-            return True
-    return False
-
-def is_age_appropriate(url: str) -> bool:
-    if not url:
-        return False
-    url_lower = url.lower()
-    if is_child_photo(url):
-        return False
-    for word in AGE_POSITIVE_KEYWORDS:
-        if word in url_lower:
-            return True
-    if re.search(r'\b(age|years?|yo|y/o)\b', url_lower, re.IGNORECASE):
-        for word in AGE_POSITIVE_KEYWORDS:
-            if word in url_lower:
-                return True
-        return False
-    if 'mature' in url_lower or 'old' in url_lower or 'senior' in url_lower:
-        return False
-    return True
-
-def is_traditional_clothing(url: str) -> bool:
-    if not url:
-        return False
-    url_lower = url.lower()
-    for word in TRADITIONAL_EXCLUDE:
-        if word in url_lower:
-            return True
-    if 'traditional dress' in url_lower or 'folk costume' in url_lower:
-        return True
-    return False
-
-def is_photo_valid(url: str) -> bool:
-    if not url:
-        return False
-    if is_child_photo(url):
-        return False
-    if has_man_in_photo(url):
-        return False
-    if not is_asian_photo(url):
-        return False
-    if not is_age_appropriate(url):
-        return False
-    if is_traditional_clothing(url):
-        return False
-    unwanted = ['naked', 'nude', 'porn', 'xxx', 'sex', 'erotic', 'bikini']
-    for word in unwanted:
-        if word in url.lower():
-            return False
-    return True
-
-# ===== АСИНХРОННЫЕ ФУНКЦИИ =====
-
-async def get_random_photo(style: str = "asia"):
-    global history
-    
-    if len(history) > 80:
-        logger.info("История переполнена, очищаю...")
-        history = []
-        save_history(history)
-    
-    queries = get_search_queries_for_style(style)
-    random.shuffle(queries)
-    
-    search_functions = [
-        ('Bing', search_bing),
-        ('Google', search_google_direct),
-        ('Yandex', search_yandex),
-        ('Pexels', search_pexels),
-    ]
-    
-    for query in queries:
-        for source_name, search_func in search_functions:
-            try:
-                logger.info(f"Поиск в {source_name}: {query}")
-                photo = search_func(query)
-                if photo and photo not in history:
-                    if is_photo_valid(photo):
-                        history.append(photo)
-                        save_history(history)
-                        logger.info(f"Найдено подходящее фото: {photo[:60]}...")
-                        return photo
-            except Exception as e:
-                logger.error(f"Ошибка в {source_name}: {e}")
-                continue
-            await asyncio.sleep(0.3)
-    
-    logger.warning("Не удалось найти новое фото, очищаю историю...")
-    history = []
-    save_history(history)
-    
-    for query in queries[:10]:
-        for source_name, search_func in search_functions:
-            try:
-                photo = search_func(query)
-                if photo and is_photo_valid(photo):
-                    history.append(photo)
-                    save_history(history)
-                    logger.info(f"Найдено фото после очистки: {photo[:60]}...")
-                    return photo
-            except:
-                continue
-    
-    logger.error("Не удалось найти подходящее фото!")
-    return None
-
-async def create_post_with_photo(chat_id, user_id=0, skip_moderation=False, style="asia"):
-    try:
+        # Определяем стиль и тему
+        rand = random.random()
+        if rand < 0.85:
+            style = 'streamer'
+        else:
+            style = 'asia'
+        
+        logger.info(f"Создаю пост в стиле: {style}")
+        
+        # Ищем фото
         photo_url = await get_random_photo(style)
         if not photo_url:
             logger.error("Не удалось найти фото")
             return False
         
-        # Используем новую функцию с проверкой
+        # Генерируем текст с проверкой
         caption = generate_caption_with_validation()
         if not caption:
             logger.error("Не удалось сгенерировать текст")
             return False
         
         # Анализ картинки (редко)
-        analyze_styles = ['asia', 'streamer', 'funny']
-        should_analyze = (
-            style in analyze_styles and 
-            random.random() < 0.15 and 
-            DEEPSEEK_API_KEY
-        )
+        should_analyze = random.random() < 0.1 and DEEPSEEK_API_KEY
         
         photo_comment = None
         if should_analyze:
-            logger.info(f"🖼️ Анализирую картинку (15% вероятность)")
+            logger.info(f"🖼️ Анализирую картинку (10% вероятность)")
             photo_comment = await analyze_photo_for_comment(photo_url)
             if photo_comment:
                 caption = caption.rstrip() + "\n\n" + photo_comment
@@ -1760,9 +1743,12 @@ async def create_post_with_photo(chat_id, user_id=0, skip_moderation=False, styl
             else:
                 logger.info("⚠️ Не удалось получить комментарий к фото")
         
-        history.append(photo_url)
-        save_history(history)
+        # Сохраняем в историю
+        if photo_url not in history:
+            history.append(photo_url)
+            save_history(history)
         
+        # Создаём задачу
         post_id = f"post_{int(time.time())}_{hashlib.md5(caption.encode()).hexdigest()[:8]}"
         post_data = {
             'id': post_id,
@@ -2061,87 +2047,6 @@ async def send_post(chat_id, photo_url=None, caption=None):
         logger.error(f"Ошибка отправки в {chat_id}: {e}")
         return False
 
-# ===== РАБОТА С ФАЙЛАМИ =====
-
-def load_schedule():
-    try:
-        with open(SCHEDULE_FILE, "r") as f:
-            data = json.load(f)
-            if not data or not data.get("times"):
-                return {"times": ["12:00", "21:00"]}
-            return data
-    except:
-        return {"times": ["12:00", "21:00"]}
-
-def save_schedule(schedule_data):
-    try:
-        with open(SCHEDULE_FILE, "w") as f:
-            json.dump(schedule_data, f)
-        return True
-    except:
-        return False
-
-schedule_data = load_schedule()
-
-def load_users():
-    try:
-        with open(USERS_FILE, "r") as f:
-            return json.load(f)
-    except:
-        return []
-
-def save_users(users_list):
-    try:
-        with open(USERS_FILE, "w") as f:
-            json.dump(users_list, f)
-    except Exception as e:
-        logger.error(f"Ошибка сохранения пользователей: {e}")
-
-users = load_users()
-
-def load_history():
-    try:
-        with open(HISTORY_FILE, "r") as f:
-            return json.load(f)
-    except:
-        return []
-
-def save_history(history_list):
-    try:
-        if len(history_list) > 100:
-            history_list = history_list[-100:]
-        with open(HISTORY_FILE, "w") as f:
-            json.dump(history_list, f)
-    except Exception as e:
-        logger.error(f"Ошибка сохранения истории: {e}")
-
-history = load_history()
-
-# ===== КЭШ =====
-last_posts = []
-
-def add_to_last_posts(text: str):
-    global last_posts
-    if not text or len(text) < 10:
-        return
-    key = text[:100]
-    last_posts.append(key)
-    if len(last_posts) > 20:
-        last_posts.pop(0)
-
-def is_similar(text: str) -> bool:
-    global last_posts
-    if not text:
-        return False
-    key = text[:150]
-    for post in last_posts:
-        same_chars = sum(1 for a, b in zip(key, post) if a == b)
-        if len(key) > 10 and same_chars / len(key) > 0.65:
-            return True
-    return False
-
-# ===== ОСТАЛЬНЫЕ ФУНКЦИИ (кэш, продолжение, команды и т.д.) =====
-
 async def queue_processor():
     logger.info("Запущен обработчик очереди...")
     while True:
@@ -2252,9 +2157,13 @@ async def send_to_all_users():
             return
         logger.info(f"Добавление постов в очередь для {len(users_list)} пользователей...")
         
-        # 50% Азия, 50% Стримеры
-        styles = ["asia", "streamer", "asia", "streamer", "funny"]
-        style = random.choice(styles)
+        # 85% стримеры, 15% Азия
+        rand = random.random()
+        if rand < 0.85:
+            style = 'streamer'
+        else:
+            style = 'asia'
+        
         logger.info(f"Автоматический пост будет в стиле: {style}")
         
         photo_url = await get_random_photo(style)
@@ -2388,8 +2297,8 @@ async def photo_command(message: Message):
             return
         
         args = message.text.replace("/photo", "").strip().lower()
-        styles = ["asia", "streamer", "funny", "russia"]
-        style = "asia"
+        styles = ["streamer", "asia"]
+        style = "streamer"
         if args in styles:
             style = args
         
@@ -2425,8 +2334,8 @@ async def post_command(message: Message):
             return
         
         args = message.text.replace("/post", "").strip().lower()
-        styles = ["asia", "streamer", "funny", "russia"]
-        style = "asia"
+        styles = ["streamer", "asia"]
+        style = "streamer"
         if args in styles:
             style = args
         
@@ -3322,7 +3231,7 @@ async def start(msg: Message):
         rub_price = broadcast_prices.get("rub", 100)
         await msg.answer(
             f"✅ Вы подписаны на рассылку!\n"
-            f"📸 Уникальные посты про Азию и стримеров\n"
+            f"📸 Посты про стримеров и Азию\n"
             f"⏰ Расписание: {times}\n"
             f"{channel_status}\n"
             f"🔄 /photo - получить пост сейчас (до 10 раз в день)\n"
@@ -3535,9 +3444,8 @@ async def main():
     try:
         logger.info("=" * 60)
         logger.info("🤖 БОТ ЗАПУЩЕН")
-        logger.info("📸 /photo — для всех (до 10 раз в день)")
-        logger.info("📝 /post — только для владельца")
-        logger.info("📢 /broadcast — платная рассылка")
+        logger.info("📸 85% постов про стримеров, 15% про Азию")
+        logger.info("📝 Грубый стиль, мат, чёрный юмор")
         logger.info("=" * 60)
         
         if FREEKASSA_SHOP_ID and FREEKASSA_SECRET1:
