@@ -6,7 +6,6 @@ import re
 import requests
 import json
 import time
-import gc
 import hashlib
 import base64
 from urllib.parse import quote, urlencode
@@ -34,7 +33,7 @@ except ImportError:
 # Для Telegram
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
-from aiogram.types import Message, ChatMember, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, PreCheckoutQuery, LabeledPrice
+from aiogram.types import Message, ChatMember, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, PreCheckoutQuery, LabeledPrice, WebAppInfo
 from aiogram.exceptions import TelegramConflictError, TelegramAPIError
 
 # Для веб-сервера (FreeKassa webhook)
@@ -443,7 +442,7 @@ def get_system_prompt() -> str:
 ⚠️ ГЛАВНЫЕ ПРАВИЛА:
 - Ты НЕ называешь своё имя
 - Пиши от первого лица, как будто сидишь с пивом и обсуждаешь
-- Используй много мата: блядь, сука, пиздец, хуйня, нахуй, ебаный
+- Используй много мата: блядь, сука, пиздец, хуйня, нахуй
 - Говори грубо, прямо, без цензуры
 - Шути над стримерами жёстко, но с юмором
 - Используй "так называемый", "так называемые" часто
@@ -768,8 +767,11 @@ async def aurapay_webhook(request):
         if status in ['paid', 'success', 'completed']:
             base_order_id = order_id.replace('_aurapay', '')
             
+            # Проверяем, существует ли заказ в broadcast_data
+            found = False
             for uid, info in broadcast_data.items():
                 if info.get('order_id') == base_order_id:
+                    found = True
                     logger.info(f"✅ Платёж {order_id} подтверждён для {uid}")
                     
                     try:
@@ -786,6 +788,9 @@ async def aurapay_webhook(request):
                         logger.error(f"❌ Ошибка обработки оплаты: {e}")
                     
                     break
+            
+            if not found:
+                logger.warning(f"⚠️ Заказ {base_order_id} не найден в broadcast_data")
         
         return web.Response(text="OK", status=200)
         
@@ -871,8 +876,7 @@ async def aurapay_status_api(request):
             return web.json_response({
                 "success": True,
                 "status": payment_status,
-                "data": status_data
-            })
+                "data": status_data            })
         else:
             return web.json_response({
                 "success": True,
@@ -2333,6 +2337,8 @@ async def create_post_with_photo(chat_id, user_id=0, skip_moderation=False, styl
             'streamer_key': streamer_key
         }
         
+        # Используем глобальную переменную task_queue
+        global task_queue
         if skip_moderation:
             await task_queue.push(QUEUE_NAME, post_data)
             logger.info(f"✅ Пост {post_id} добавлен в очередь (медиа: {media_type})")
@@ -2428,6 +2434,7 @@ class TaskQueue:
         except:
             return 0
 
+# Создаем экземпляр очереди задач ДО использования в других функциях
 task_queue = TaskQueue()
 
 # ===== СИСТЕМА МОДЕРАЦИИ =====
@@ -3318,7 +3325,7 @@ async def pay_with_aurapay(callback: CallbackQuery):
         miniapp_url = f"{AURAPAY_MINIAPP_URL}?order_id={order_id}&user_id={user_id}&amount={rub_price}&currency=RUB"
         
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔗 Оплатить через AuraPay", web_app=types.WebAppInfo(url=miniapp_url))],
+            [InlineKeyboardButton(text="🔗 Оплатить через AuraPay", web_app=WebAppInfo(url=miniapp_url))],
             [InlineKeyboardButton(text="✅ Проверить оплату", callback_data=f"check_aurapay_payment_{order_id}")]
         ])
         
@@ -3980,8 +3987,11 @@ async def freekassa_webhook(request):
         
         if status == 'SUCCESS':
             base_order_id = order_id.replace('_rub', '')
+            # Проверяем, существует ли заказ
+            found = False
             for uid, info in broadcast_data.items():
                 if info.get('order_id') == base_order_id:
+                    found = True
                     logger.info(f"✅ Платёж {order_id} подтверждён")
                     try:
                         await bot.send_message(
@@ -3991,6 +4001,9 @@ async def freekassa_webhook(request):
                     except Exception as e:
                         logger.error(f"Ошибка уведомления: {e}")
                     break
+            
+            if not found:
+                logger.warning(f"⚠️ Заказ {base_order_id} не найден в broadcast_data")
         
         return web.Response(text="OK", status=200)
         
@@ -4008,6 +4021,10 @@ async def main():
         logger.info("📝 Грубый стиль, мат, чёрный юмор с мемами")
         logger.info("🎬 Если нет фото - ищем клип на YouTube")
         logger.info("=" * 60)
+        
+        # Проверяем наличие YouTube API ключа
+        if not YOUTUBE_API_KEY:
+            logger.warning("⚠️ YOUTUBE_API_KEY не задан. Поиск клипов на YouTube будет недоступен.")
         
         if FREEKASSA_SHOP_ID and FREEKASSA_SECRET1:
             port = int(os.getenv("PORT", 8080))
@@ -4050,6 +4067,7 @@ async def main():
             await site.start()
             logger.info(f"🌐 Webhook сервер запущен на порту {port}")
         
+        # Подключаем очередь задач
         await task_queue.connect()
         
         asyncio.create_task(queue_processor())
