@@ -10,6 +10,7 @@ import random
 import hashlib
 import requests
 import logging
+import base64
 from typing import Optional, Tuple, List, Dict, Any
 from urllib.parse import quote
 from datetime import datetime, timedelta
@@ -115,68 +116,34 @@ style_prompts = {
     'streamer': """
 Ты — уставший мужик лет 35-40, работяга. Сидишь вечером с пивом, смотришь стримеров и ржешь с них. Твой стиль — как в гараже с мужиками: грубо, с матом, но с юмором.
 
-Напиши пост про стримера/стримеров. Пост должен быть живым, эмоциональным, с реальными историями и наблюдениями. Не сухой пересказ, а твое мнение, как уставшего зрителя.
+Напиши пост про стримера/стримеров. Пост должен быть живым, эмоциональным, с реальными историями и наблюдениями.
 
 ⚠️ ПРАВИЛА ИСПОЛЬЗОВАНИЯ ПАДЕЖЕЙ (ЭТО ВАЖНО!):
-- Вудуш: у Вудуша, Вудушу, Вудушем, о Вудуше. НЕ "у Вудуш"!
-- Праден: у Прадена, Прадену, Праденом, о Прадене. НЕ "у Праден"!
+- Вудуш: у Вудуша, Вудушу, Вудушем, о Вудуше
+- Праден: у Прадена, Прадену, Праденом, о Прадене
 - Братишкин: у Братишкина, Братишкину, Братишкиным, о Братишкине
 - Сасавот: у Сасавота, Сасавоту, Сасавотом, о Сасавоте
-- Алина Рин: у Алины Рин, Алине Рин, Алиной Рин, об Алине Рин (ОНА, женский род!)
+- Алина Рин: у Алины Рин, Алине Рин, Алиной Рин, об Алине Рин (ОНА!)
 - Ласка: у Ласки, Ласке, Лаской, о Ласке
 - Аравудус: у Аравудуса, Аравудусу, Аравудусом, о Аравудусе
 - Эвелон: у Эвелона, Эвелону, Эвелоном, о Эвелоне
 - Бустер: у Бустера, Бустеру, Бустером, о Бустере
 
-⚠️ МЕСТОИМЕНИЯ:
-- Для мужчин (он, его, ему, им, нём): Вудуш, Праден, Братишкин, Сасавот, Ласка, Аравудус, Эвелон, Бустер
-- Для женщин (она, её, ей, ей, ней): Алина Рин
-
-Примеры правильных падежей:
-❌ НЕПРАВИЛЬНО: "Смотрю на Бустер" 
-✅ ПРАВИЛЬНО: "Смотрю на Бустера"
-
-❌ НЕПРАВИЛЬНО: "У Вудуш опять проблемы"
-✅ ПРАВИЛЬНО: "У Вудуша опять проблемы"
-
-❌ НЕПРАВИЛЬНО: "Дайте Праден"
-✅ ПРАВИЛЬНО: "Дайте Прадену"
-
-❌ НЕПРАВИЛЬНО: "Алина Рин накрутила" 
-✅ ПРАВИЛЬНО: "Алина Рин накрутила" (она, женский род)
-
-⚠️ ИЗВЕСТНЫЕ МЕМЫ И ШУТКИ ПРО СТРИМЕРОВ:
-- Вудуш: вечные проблемы с ПК, "Вудуш снова перезагружается", "ладно, я пошёл"
-- Праден: вечно проигрывает, обижается, его лицо на стриме
-- Братишкин: лысина, качалка, "Вова Братишкин лысиной светит"
-- Сасавот: его смех ломает микрофон, угарные моменты
-- Алина Рин: эмоциональная, орёт на стримах, яркие реакции
-- Ласка: "сейчас", "забил", вечные отмазки
-- Аравудус: вечно в тильте, проблемы с игрой
-- Эвелон: "я устал, я спать", крашится
-- Бустер: накрутки, "смотрите какой я"
-
-Требования к посту:
-- Пиши от первого лица, как будто ты сидишь с пивом и обсуждаешь
-- Пост должен быть 400-700 символов, содержательный
-- Мат 3-5 раз (блядь, сука, пиздец, хуйня, нахуй, ёбаный)
+Требования:
+- Пиши пост любого размера, но сохраняй логику и смысл
+- Мат 2-5 раз
 - Обязательно используй 1-2 локальных мема про стримера
-- Используй правильные падежи! Проверь ещё раз перед отправкой!
-- Острые шутки с юмором, без перехода на личности
+- Используй правильные падежи!
+- Острые шутки с юмором
 - Используй "так называемый/ая/ые" с иронией
-- Можно ссылаться на @maddysontg
 - Не называй своё имя
 - Обращайся к читателям на "вы"
-
-Пример хорошего поста:
-"Сижу, пиво пью, смотрю на Вудуша и ржу. Блядь, ну как можно так тупить? Опять ПК перезагружает, опять "ладно, я пошёл". Так называемый стример, сука. У Вудуша вечные проблемы, а он сидит и делает вид, что так и надо. Пиздец, ну хоть посмеяться есть над чем. Илюха с @maddysontg вчера пост кидал про него, так я вообще угарал. В общем, Вудуш — наше всё, без него скучно было бы. Но блядь, сделай уже что-нибудь с ПК!"
 """,
     'asia': """
 Ты — уставший мужик, работяга. Иногда вспоминаешь про Азию, где всё по-другому. Напиши пост про Азию с юмором и самоиронией.
 
 Требования:
-- 300-500 символов
-- От первого лица, как будто рассказываешь друзьям
+- Пиши пост любого размера, но сохраняй логику и смысл
 - Мат 1-2 раза
 - Острая шутка с юмором
 - Используй "так называемый/ая/ые" с иронией
@@ -553,14 +520,12 @@ def check_date_in_content(content: str, url: str = "") -> bool:
 def get_system_prompt() -> str:
     cache_key = "system_prompt_v4"
     if cache_key not in _system_prompt_cache:
-        _system_prompt_cache[cache_key] = """Ты — уставший мужик лет 35-40, работяга. Сидишь вечером с пивом, смотришь стримеров и ржешь с них. Твой стиль — как в гараже с мужиками: грубо, с матом, но с юмором.
+        _system_prompt_cache[cache_key] = """Ты — уставший мужик лет 35-40, работяга. Сидишь вечером с пивом, смотришь стримеров и ржешь с них.
 
-Ты НЕ ИИ, ты НЕ бот, ты — обычный мужик, который устал на работе и отдыхает за просмотром стримов.
-
-⚠️ ПРАВИЛА РУССКОГО ЯЗЫКА (ЭТО ВАЖНО!):
+⚠️ ПРАВИЛА РУССКОГО ЯЗЫКА:
 1. Все стримеры (кроме Алины Рин) — МУЖСКОГО РОДА. Используй: он, его, ему, им, нём.
 2. Алина Рин — ЖЕНСКОГО РОДА. Используй: она, её, ей, ей, ней.
-3. Падежи для мужских имён (запомни!):
+3. Падежи для мужских имён:
    - Вудуш → у Вудуша, Вудушу, Вудушем, о Вудуше
    - Праден → у Прадена, Прадену, Праденом, о Прадене
    - Братишкин → у Братишкина, Братишкину, Братишкиным, о Братишкине
@@ -572,29 +537,7 @@ def get_system_prompt() -> str:
 4. Падежи для женских имён:
    - Алина Рин → у Алины Рин, Алине Рин, Алиной Рин, об Алине Рин
 
-Твой образ:
-- Работяга, который устал от жизни
-- Пьёт пиво каждый вечер
-- Смотрит стримеров и бесится с них, но с юмором
-- Говорит как в гараже с мужиками
-- Любит чёрный юмор и самоиронию
-
-Стиль речи:
-- Мат через слово, но к месту
-- Грубые сравнения с юмором
-- Чёрный юмор
-- Без соплей и сантиментов
-- Коротко и по делу, но живо и эмоционально
-
-Важно:
-- Не упоминай своё имя
-- Обращайся к читателям на "вы"
-- Не переходи на личности стримеров (критика действий, а не внешности)
-- Используй "так называемый" с иронией
-- Илюху упоминай ТОЛЬКО по делу
-- Отвечай ТОЛЬКО готовым постом. БЕЗ РАССУЖДЕНИЙ.
-- Пост должен быть живым, эмоциональным, с реальными наблюдениями
-- Используй правильные падежи! Проверь себя перед отправкой!"""
+Отвечай ТОЛЬКО готовым постом. БЕЗ РАССУЖДЕНИЙ."""
         logger.info("💾 Системный промпт закэширован")
     return _system_prompt_cache[cache_key]
 
@@ -617,19 +560,13 @@ def get_style_prompt(style: str, streamer_key: str = None) -> str:
             gender_hint = f"""
 ⚠️ ВАЖНО! СТРИМЕР {name} — {pronoun.upper()}
 
-Правильные падежи для {name} (ПРОВЕРЬ СЕБЯ!):
-- Именительный (кто? что?): {name}
-- Родительный (кого? чего?): {genitive}
-- Дательный (кому? чему?): {dative}
-- Винительный (кого? что?): {accusative}
-- Творительный (кем? чем?): {instrumental}
-- Предложный (о ком? о чём?): {prepositional}
-
-Примеры использования:
-- "Смотрю на {accusative}"
-- "У {genitive} проблемы"
-- "Дайте {dative}"
-- "Говорю о {prepositional}"
+Правильные падежи для {name}:
+- Именительный: {name}
+- Родительный: {genitive}
+- Дательный: {dative}
+- Винительный: {accusative}
+- Творительный: {instrumental}
+- Предложный: {prepositional}
 """
             _system_prompt_cache[cache_key] = gender_hint + base_prompt + """
 
@@ -698,14 +635,11 @@ def validate_post_with_deepseek(post_text: str) -> Tuple[bool, str]:
 2. Допускается грубая лексика и мат (это стиль автора)
 3. Не должно быть личных оскорблений (критика действий, а не внешности)
 4. Не должно быть призывов к насилию или экстремизму
-5. Пост должен быть грамотным (орфография, пунктуация)
+5. Пост должен быть грамотным
 6. Пост должен быть завершённым
-7. Пост должен быть живым и эмоциональным, не сухим
 
 Если пост соответствует — напиши "APPROVED".
-Если пост НЕ соответствует — напиши "REJECT: причина".
-
-Будь строгим."""},
+Если пост НЕ соответствует — напиши "REJECT: причина"."""},
                 {"role": "user", "content": f"Проверь этот пост:\n\n{post_text}"}
             ],
             "temperature": 0.3,
@@ -791,11 +725,8 @@ def generate_caption_with_validation() -> Tuple[str, Optional[str]]:
                     f"Напиши пост про {name}. У {genitive} опять проблемы на стриме. Расскажи с юмором и матом.",
                     f"Напиши пост про скандал с {name}. Используй мат и чёрный юмор.",
                     f"Расскажи смешную историю про {name}. С юмором и матом.",
-                    f"Ответь на пост Илюхи про {name}. Согласись или поспорь, но с юмором и матом.",
                     f"Напиши пост про то, как {name} накручивает зрителей. С юмором.",
-                    f"Напиши пост про очередную драму с {name}. С юмором и матом.",
                     f"У {genitive} опять проблемы со стримом. Напиши об этом с юмором.",
-                    f"Сегодня {dative} снова не повезло. Расскажи об этом с матом.",
                     f"Смотрю на {accusative} и ржу. Расскажи почему.",
                 ]
             else:
@@ -816,7 +747,7 @@ def generate_caption_with_validation() -> Tuple[str, Optional[str]]:
                     alt = random.choice(streamer_topics)
                 else:
                     alt = random.choice(asian_topics)
-                current_prompt = alt + "\n\n⚠️ Пиши строго по теме. Только пост без рассуждений. Пост должен быть живым и эмоциональным."
+                current_prompt = alt + "\n\n⚠️ Пиши строго по теме. Только пост без рассуждений."
                 logger.info(f"Пробую альтернативный промпт")
             
             system_prompt = get_system_prompt()
@@ -858,7 +789,7 @@ def generate_caption_with_validation() -> Tuple[str, Optional[str]]:
             generated_content = choice.get("message", {}).get("content", "")
             finish_reason = choice.get("finish_reason", "")
             
-            if not generated_content or len(generated_content.strip()) < 20:
+            if not generated_content or len(generated_content.strip()) < 10:
                 logger.warning("Пустой или короткий ответ")
                 continue
             
@@ -883,7 +814,7 @@ def generate_caption_with_validation() -> Tuple[str, Optional[str]]:
                 logger.warning(f"Слишком длинный ({len(caption)} символов)")
                 continue
             
-            if len(caption) < 100:
+            if len(caption) < 20:
                 logger.warning(f"Слишком короткий ({len(caption)} символов)")
                 continue
             
@@ -1284,6 +1215,136 @@ def get_streamer_media(streamer_key: str, streamer_display: str) -> Tuple[Option
     
     logger.warning(f"⚠️ Не найдено ни клипа, ни фото для {streamer_display}")
     return None, 'none'
+
+# ===== ДОПОЛНИТЕЛЬНЫЕ ФУНКЦИИ ДЛЯ РАБОТЫ С ФОТО =====
+
+def encode_image_to_base64_url(image_url: str) -> str:
+    try:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        }
+        response = requests.get(image_url, headers=headers, timeout=10)
+        if response.status_code == 200:
+            return base64.b64encode(response.content).decode('utf-8')
+        return None
+    except Exception as e:
+        logger.error(f"Ошибка загрузки картинки: {e}")
+        return None
+
+async def analyze_photo_for_comment(image_url: str) -> Optional[str]:
+    if not DEEPSEEK_API_KEY:
+        return None
+    
+    try:
+        base64_image = encode_image_to_base64_url(image_url)
+        if not base64_image:
+            return None
+        
+        headers = {
+            "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+            "Content-Type": "application/json"
+        }
+        
+        data = {
+            "model": "deepseek-vl-chat",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "Коротко опиши что на фото. 1-2 предложения. Грубо, с юмором. Используй мат."
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{base64_image}"
+                            }
+                        }
+                    ]
+                }
+            ],
+            "max_tokens": 150,
+            "temperature": 1.1
+        }
+        
+        response = requests.post(
+            "https://api.deepseek.com/v1/chat/completions",
+            headers=headers,
+            json=data,
+            timeout=30
+        )
+        
+        if response.status_code == 200:
+            result = response.json()
+            comment = result["choices"][0]["message"]["content"].strip()
+            logger.info(f"🖼️ Комментарий к фото: {comment}")
+            return comment
+        return None
+    except Exception as e:
+        logger.error(f"Ошибка анализа фото: {e}")
+        return None
+
+async def get_random_photo(style: str = "streamer", streamer_key: str = None, history=None) -> Optional[str]:
+    """Получает случайное фото с проверкой истории и даты"""
+    if history is None:
+        history = []
+    
+    if streamer_key:
+        photo = get_streamer_photo(streamer_key)
+        if photo and photo not in history:
+            if check_date_in_content("", photo):
+                return photo
+        elif photo and photo in history:
+            logger.info("⏭️ Фото уже использовалось")
+            return None
+    
+    if style == 'streamer':
+        streamers = ['voodoosh', 'praden', 'bratishkinoff', 'sasavot', 
+                     'alina_rin', 'lasqa', 'arrowwoods', 'evelone', 'buster']
+        random.shuffle(streamers)
+        
+        for streamer in streamers:
+            photo = get_streamer_photo(streamer)
+            if photo and photo not in history:
+                if check_date_in_content("", photo):
+                    return photo
+        
+        logger.warning("⚠️ Не найдены фото стримеров, пробую общий поиск")
+        fallback_queries = ["russian streamer face", "twitch streamer russian", "streamer portrait"]
+        random.shuffle(fallback_queries)
+        
+        search_functions = [search_bing, search_google_direct, search_yandex]
+        random.shuffle(search_functions)
+        
+        for query in fallback_queries[:2]:
+            for search_func in search_functions[:2]:
+                try:
+                    photo = search_func(query)
+                    if photo and photo not in history:
+                        if check_date_in_content("", photo):
+                            return photo
+                except Exception as e:
+                    continue
+    
+    queries = ASIAN_QUERIES.copy()
+    random.shuffle(queries)
+    
+    search_functions = [search_bing, search_google_direct, search_yandex, search_pexels]
+    random.shuffle(search_functions)
+    
+    for query in queries[:3]:
+        for search_func in search_functions[:2]:
+            try:
+                photo = search_func(query)
+                if photo and photo not in history and is_photo_valid(photo):
+                    if check_date_in_content("", photo):
+                        return photo
+            except Exception as e:
+                continue
+    
+    logger.error("❌ Не удалось найти подходящее фото!")
+    return None
 
 def is_photo_valid(url: str) -> bool:
     if not url:
