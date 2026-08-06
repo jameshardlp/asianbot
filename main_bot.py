@@ -25,11 +25,10 @@ from aiohttp import web
 # Импорты из модулей
 from deepseek_parser import (
     generate_caption_with_validation, get_streamer_media, get_streamer_photo,
-    get_streamer_for_post, get_random_photo, analyze_photo_for_comment,
-    validate_caption, clean_text, truncate_by_sentences, get_fallback_caption,
+    get_streamer_for_post, validate_caption, clean_text, truncate_by_sentences,
     STREAMER_INFO, ASIAN_QUERIES, is_photo_valid, search_bing, search_google_direct,
     search_yandex, search_pexels, search_youtube_clip, get_streamer_media,
-    encode_image_to_base64_url, add_to_last_posts, is_similar, clear_prompt_cache
+    add_to_last_posts, is_similar, clear_prompt_cache, check_date_in_content
 )
 from payment_system import (
     broadcast_prices, save_broadcast_price, load_broadcast_price,
@@ -156,6 +155,7 @@ schedule_data = load_schedule()
 # ===== ФУНКЦИИ РАБОТЫ С ФОТО (с историей) =====
 
 async def get_random_photo(style: str = "streamer", streamer_key: str = None) -> Optional[str]:
+    """Получает случайное фото с проверкой истории и даты"""
     global history
     
     if len(history) > 80:
@@ -166,9 +166,11 @@ async def get_random_photo(style: str = "streamer", streamer_key: str = None) ->
     if streamer_key:
         photo = get_streamer_photo(streamer_key)
         if photo and photo not in history:
-            history.append(photo)
-            save_history(history)
-            return photo
+            # Проверяем дату
+            if check_date_in_content("", photo):
+                history.append(photo)
+                save_history(history)
+                return photo
         elif photo and photo in history:
             logger.info("⏭️ Фото уже использовалось")
             return None
@@ -181,9 +183,10 @@ async def get_random_photo(style: str = "streamer", streamer_key: str = None) ->
         for streamer in streamers:
             photo = get_streamer_photo(streamer)
             if photo and photo not in history:
-                history.append(photo)
-                save_history(history)
-                return photo
+                if check_date_in_content("", photo):
+                    history.append(photo)
+                    save_history(history)
+                    return photo
         
         logger.warning("⚠️ Не найдены фото стримеров, пробую общий поиск")
         fallback_queries = ["russian streamer face", "twitch streamer russian", "streamer portrait"]
@@ -197,9 +200,10 @@ async def get_random_photo(style: str = "streamer", streamer_key: str = None) ->
                 try:
                     photo = search_func(query)
                     if photo and photo not in history:
-                        history.append(photo)
-                        save_history(history)
-                        return photo
+                        if check_date_in_content("", photo):
+                            history.append(photo)
+                            save_history(history)
+                            return photo
                 except Exception as e:
                     continue
     
@@ -214,9 +218,10 @@ async def get_random_photo(style: str = "streamer", streamer_key: str = None) ->
             try:
                 photo = search_func(query)
                 if photo and photo not in history and is_photo_valid(photo):
-                    history.append(photo)
-                    save_history(history)
-                    return photo
+                    if check_date_in_content("", photo):
+                        history.append(photo)
+                        save_history(history)
+                        return photo
             except Exception as e:
                 continue
     
@@ -444,6 +449,54 @@ async def send_to_all_users():
 
 # ===== КОМАНДЫ =====
 
+def can_use_photo(user_id: int) -> Tuple[bool, int, int]:
+    if user_id == OWNER_ID:
+        return True, 0, float('inf')
+    
+    usage_data = load_usage()
+    current_date = datetime.now().strftime("%Y-%m-%d")
+    user_key = str(user_id)
+    limit = 10
+    
+    if user_key not in usage_data:
+        return True, 0, limit
+    
+    user_usage = usage_data.get(user_key, {})
+    last_date = user_usage.get("date")
+    count = user_usage.get("count", 0)
+    
+    if last_date != current_date:
+        return True, 0, limit
+    
+    if count >= limit:
+        return False, count, limit
+    
+    return True, count, limit
+
+def increment_photo_usage(user_id: int) -> Tuple[int, int]:
+    if user_id == OWNER_ID:
+        return 0, float('inf')
+    
+    usage_data = load_usage()
+    current_date = datetime.now().strftime("%Y-%m-%d")
+    user_key = str(user_id)
+    limit = 10
+    
+    if user_key not in usage_data:
+        usage_data[user_key] = {"date": current_date, "count": 0}
+    
+    user_usage = usage_data[user_key]
+    
+    if user_usage.get("date") != current_date:
+        user_usage["date"] = current_date
+        user_usage["count"] = 0
+    
+    user_usage["count"] += 1
+    
+    save_usage(usage_data)
+    
+    return user_usage["count"], limit
+
 @dp.message(Command("start"))
 async def start(msg: Message):
     try:
@@ -479,8 +532,24 @@ async def photo_command(message: Message):
             await message.answer("⚠️ Бот не активирован. Напишите /start")
             return
         
+        can_use, used_count, limit = can_use_photo(user_id)
+        
+        if not can_use:
+            await message.answer(
+                f"⛔ Вы исчерпали лимит на сегодня ({limit} запросов).\n"
+                f"🔄 Лимит обновится завтра."
+            )
+            return
+        
         await create_post_with_photo(str(chat_id), user_id, skip_moderation=True)
-        await message.answer("✅ Пост отправлен в очередь!")
+        
+        new_count, limit = increment_photo_usage(user_id)
+        remaining = limit - new_count
+        
+        await message.answer(
+            f"✅ Пост отправлен в очередь!\n"
+            f"📊 Осталось запросов на сегодня: {remaining} из {limit}"
+        )
     except Exception as e:
         logger.error(f"Ошибка в команде photo: {e}")
         await message.answer("❌ Произошла ошибка")
