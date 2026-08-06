@@ -50,7 +50,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 CHANNEL_ID = os.getenv("CHANNEL_ID")
 OWNER_ID = int(os.getenv("OWNER_ID", 0))
-YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY", "")  # Добавляем YouTube API ключ
+YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY", "")
 
 # Настройки для Stars
 STARS_CHANNEL_ID = -1003893727881
@@ -281,6 +281,155 @@ def increment_photo_usage(user_id: int) -> Tuple[int, int]:
     
     return user_usage["count"], limit
 
+# ===== ИНФОРМАЦИЯ О СТРИМЕРАХ (С ПРАВИЛЬНЫМИ ПАДЕЖАМИ) =====
+
+STREAMER_INFO = {
+    'voodoosh': {
+        'name': 'Вудуш',
+        'gender': 'male',
+        'nominative': 'Вудуш',
+        'genitive': 'Вудуша',
+        'dative': 'Вудушу',
+        'accusative': 'Вудуша',
+        'instrumental': 'Вудушем',
+        'prepositional': 'Вудуше',
+        'pronoun': 'он',
+        'possessive': 'его',
+        'verb_past_male': 'сделал',
+        'verb_past_female': 'сделала',
+        'verb_present': 'делает',
+        'verb_future': 'сделает'
+    },
+    'praden': {
+        'name': 'Праден',
+        'gender': 'male',
+        'nominative': 'Праден',
+        'genitive': 'Прадена',
+        'dative': 'Прадену',
+        'accusative': 'Прадена',
+        'instrumental': 'Праденом',
+        'prepositional': 'Прадене',
+        'pronoun': 'он',
+        'possessive': 'его',
+        'verb_past_male': 'сделал',
+        'verb_past_female': 'сделала',
+        'verb_present': 'делает',
+        'verb_future': 'сделает'
+    },
+    'bratishkinoff': {
+        'name': 'Братишкин',
+        'gender': 'male',
+        'nominative': 'Братишкин',
+        'genitive': 'Братишкина',
+        'dative': 'Братишкину',
+        'accusative': 'Братишкина',
+        'instrumental': 'Братишкиным',
+        'prepositional': 'Братишкине',
+        'pronoun': 'он',
+        'possessive': 'его',
+        'verb_past_male': 'сделал',
+        'verb_past_female': 'сделала',
+        'verb_present': 'делает',
+        'verb_future': 'сделает'
+    },
+    'sasavot': {
+        'name': 'Сасавот',
+        'gender': 'male',
+        'nominative': 'Сасавот',
+        'genitive': 'Сасавота',
+        'dative': 'Сасавоту',
+        'accusative': 'Сасавота',
+        'instrumental': 'Сасавотом',
+        'prepositional': 'Сасавоте',
+        'pronoun': 'он',
+        'possessive': 'его',
+        'verb_past_male': 'сделал',
+        'verb_past_female': 'сделала',
+        'verb_present': 'делает',
+        'verb_future': 'сделает'
+    },
+    'alina_rin': {
+        'name': 'Алина Рин',
+        'gender': 'female',
+        'nominative': 'Алина Рин',
+        'genitive': 'Алины Рин',
+        'dative': 'Алине Рин',
+        'accusative': 'Алину Рин',
+        'instrumental': 'Алиной Рин',
+        'prepositional': 'Алине Рин',
+        'pronoun': 'она',
+        'possessive': 'её',
+        'verb_past_male': 'сделал',
+        'verb_past_female': 'сделала',
+        'verb_present': 'делает',
+        'verb_future': 'сделает'
+    },
+    'lasqa': {
+        'name': 'Ласка',
+        'gender': 'male',
+        'nominative': 'Ласка',
+        'genitive': 'Ласки',
+        'dative': 'Ласке',
+        'accusative': 'Ласку',
+        'instrumental': 'Лаской',
+        'prepositional': 'Ласке',
+        'pronoun': 'он',
+        'possessive': 'его',
+        'verb_past_male': 'сделал',
+        'verb_past_female': 'сделала',
+        'verb_present': 'делает',
+        'verb_future': 'сделает'
+    },
+    'arrowwoods': {
+        'name': 'Аравудус',
+        'gender': 'male',
+        'nominative': 'Аравудус',
+        'genitive': 'Аравудуса',
+        'dative': 'Аравудусу',
+        'accusative': 'Аравудуса',
+        'instrumental': 'Аравудусом',
+        'prepositional': 'Аравудусе',
+        'pronoun': 'он',
+        'possessive': 'его',
+        'verb_past_male': 'сделал',
+        'verb_past_female': 'сделала',
+        'verb_present': 'делает',
+        'verb_future': 'сделает'
+    },
+    'evelone': {
+        'name': 'Эвелон',
+        'gender': 'male',
+        'nominative': 'Эвелон',
+        'genitive': 'Эвелона',
+        'dative': 'Эвелону',
+        'accusative': 'Эвелона',
+        'instrumental': 'Эвелоном',
+        'prepositional': 'Эвелоне',
+        'pronoun': 'он',
+        'possessive': 'его',
+        'verb_past_male': 'сделал',
+        'verb_past_female': 'сделала',
+        'verb_present': 'делает',
+        'verb_future': 'сделает'
+    },
+    'buster': {
+        'name': 'Бустер',
+        'gender': 'male',
+        'nominative': 'Бустер',
+        'genitive': 'Бустера',
+        'dative': 'Бустеру',
+        'accusative': 'Бустера',
+        'instrumental': 'Бустером',
+        'prepositional': 'Бустере',
+        'pronoun': 'он',
+        'possessive': 'его',
+        'verb_past_male': 'сделал',
+        'verb_past_female': 'сделала',
+        'verb_present': 'делает',
+        'verb_future': 'сделает'
+    }
+}
+
 # ===== КЭШИРОВАНИЕ СИСТЕМНЫХ ПРОМПТОВ =====
 
 _system_prompt_cache = {}
@@ -299,8 +448,20 @@ def get_system_prompt() -> str:
 - Шути над стримерами жёстко, но с юмором
 - Используй "так называемый", "так называемые" часто
 - Не используй "скуф", "средних лет" — ты сам такой же
-- Если нужно упомянуть автора канала @maddysontg — называй его Илюха (только когда действительно нужно, не в каждом посте)
-- Только когда реально ссылаешься на его пост
+- Если нужно упомянуть автора канала @maddysontg — называй его Илюха
+
+⚠️ ВАЖНО: ПРАВИЛЬНЫЕ ПАДЕЖИ ДЛЯ СТРИМЕРОВ:
+- Вудуш: у Вудуша, Вудушу
+- Праден: у Прадена, Прадену
+- Братишкин: у Братишкина, Братишкину
+- Сасавот: у Сасавота, Сасавоту
+- Алина Рин: у Алины Рин, Алине Рин (она/её)
+- Ласка: у Ласки, Ласке
+- Аравудус: у Аравудуса, Аравудусу
+- Эвелон: у Эвелона, Эвелону
+- Бустер: у Бустера, Бустеру
+
+Используй правильные падежи в постах!
 
 Твой образ:
 - Работяга, который устал от жизни
@@ -325,16 +486,55 @@ def get_system_prompt() -> str:
         logger.info("💾 Системный промпт закэширован")
     return _system_prompt_cache[cache_key]
 
-def get_style_prompt(style: str) -> str:
-    """Возвращает промпт для стиля с кэшированием."""
-    cache_key = f"style_prompt_{style}"
+def get_style_prompt(style: str, streamer_key: str = None) -> str:
+    """Возвращает промпт для стиля с кэшированием, учитывая пол и падежи стримера."""
+    cache_key = f"style_prompt_{style}_{streamer_key}"
+    
     if cache_key not in _system_prompt_cache:
         base_prompt = style_prompts.get(style, style_prompts['streamer'])
-        _system_prompt_cache[cache_key] = base_prompt + """
+        
+        if streamer_key and streamer_key in STREAMER_INFO:
+            info = STREAMER_INFO[streamer_key]
+            name = info['name']
+            pronoun = info['pronoun']
+            possessive = info['possessive']
+            genitive = info['genitive']
+            dative = info['dative']
+            
+            gender_hint = f"""
+⚠️ ВАЖНО: СТРИМЕР {name} — {pronoun.upper()}
+
+Правильные падежи для {name}:
+- Именительный (кто?): {name}
+- Родительный (у кого?): у {genitive}
+- Дательный (кому?): {dative}
+
+Используй правильные падежи в тексте!
+"""
+            if info['gender'] == 'female':
+                gender_hint = f"""
+⚠️ ВАЖНО: СТРИМЕР {name} — {pronoun.upper()}
+
+Правильные падежи для {name}:
+- Именительный (кто?): {name}
+- Родительный (у кого?): у {genitive}
+- Дательный (кому?): {dative}
+
+Используй правильные падежи в тексте!
+"""
+            
+            _system_prompt_cache[cache_key] = gender_hint + base_prompt + """
 
 ⚠️ ВАЖНО: Пиши строго по теме. Без рассуждений. Только готовый пост.
 Твой ответ (ТОЛЬКО ПОСТ, БЕЗ РАССУЖДЕНИЙ):"""
+        else:
+            _system_prompt_cache[cache_key] = base_prompt + """
+
+⚠️ ВАЖНО: Пиши строго по теме. Без рассуждений. Только готовый пост.
+Твой ответ (ТОЛЬКО ПОСТ, БЕЗ РАССУЖДЕНИЙ):"""
+        
         logger.info(f"💾 Промпт для стиля {style} закэширован")
+    
     return _system_prompt_cache[cache_key]
 
 def clear_prompt_cache():
@@ -1002,18 +1202,31 @@ def is_photo_valid(url: str) -> bool:
             return False
     return True
 
-# ===== ОБНОВЛЕННЫЕ ПРОМПТЫ С ЮМОРОМ =====
+# ===== ОБНОВЛЕННЫЕ ПРОМПТЫ С МЕМАМИ И ПАДЕЖАМИ =====
 
 style_prompts = {
     'streamer': """
 Ты — уставший мужик, сидишь с пивом и обсуждаешь стримеров.
 
-Напиши пост про стримера/стримеров. Используй грубую лексику, мат, чёрный юмор.
+Напиши пост про стримера/стримеров. Используй грубую лексику, мат, чёрный юмор и локальные мемы.
+
+⚠️ ИЗВЕСТНЫЕ МЕМЫ И ШУТКИ ПРО СТРИМЕРОВ:
+- Вудуш: его вечные проблемы с ПК, "Вудуш снова перезагружается", вечные "ладно, я пошёл"
+- Праден: "Праден снова проиграл", его лицо на стриме, "Праден обиделся"
+- Братишкин: лысина, "Братишкин на качалку", "Вова Братишкин опять лысиной светит"
+- Сасавот: его смех, "Сасавот засмеялся так, что микрофон сломал"
+- Алина Рин: её эмоции на стриме, "Алина Рин опять орёт", её реакции
+- Ласка: "Ласка снова забил", его вечные "я сейчас"
+- Аравудус: "Аравудус снова в тильте", его вечные проблемы с игрой
+- Эвелон: "Эвелон крашнулся", его вечные "я устал, я спать"
+- Бустер: "Бустер накрутил", его вечные "смотрите какой я"
 
 Требования:
 - 500-700 символов
 - Мат 3-5 раз (блядь, сука, пиздец, хуйня, нахуй)
-- Острые шутки и насмешки над стримерами с юмором
+- Обязательно используй 1-2 локальных мема про стримера
+- Используй правильные падежи стримеров (у Вудуша, Прадену, Алине Рин и т.д.)
+- Острые шутки и насмешки над стримерами с чёрным юмором
 - Используй "так называемый/ая/ые" по отношению к участникам
 - Не переходи на личности (критика действий, а не внешности)
 - Пиши с юмором, как будто рассказываешь в баре
@@ -1219,13 +1432,62 @@ def clean_text(text: str) -> str:
 # ===== ФУНКЦИЯ ПОИСКА КЛИПОВ НА YOUTUBE =====
 
 def search_youtube_clip(streamer_name: str, streamer_display: str) -> Optional[str]:
-    """Ищет клип стримера на YouTube и возвращает ссылку на видео"""
+    """Ищет клип стримера на YouTube с учётом мемов"""
     if not YOUTUBE_API_KEY:
         logger.warning("⚠️ YouTube API ключ не настроен")
         return None
     
     try:
-        # Формируем поисковый запрос
+        # Формируем поисковые запросы с учётом мемов
+        meme_queries = {
+            'Вудуш': [
+                f"{streamer_display} перезагрузка",
+                f"{streamer_display} ладно я пошёл",
+                f"{streamer_display} сломал",
+            ],
+            'Праден': [
+                f"{streamer_display} проиграл",
+                f"{streamer_display} обиделся",
+                f"{streamer_display} лицо",
+            ],
+            'Братишкин': [
+                f"{streamer_display} лысина",
+                f"{streamer_display} качалка",
+                f"{streamer_display} светит",
+            ],
+            'Сасавот': [
+                f"{streamer_display} смех",
+                f"{streamer_display} засмеялся",
+                f"{streamer_display} микрофон",
+            ],
+            'Алина Рин': [
+                f"{streamer_display} орёт",
+                f"{streamer_display} эмоции",
+                f"{streamer_display} реакция",
+            ],
+            'Ласка': [
+                f"{streamer_display} забил",
+                f"{streamer_display} сейчас",
+                f"{streamer_display} стрим",
+            ],
+            'Аравудус': [
+                f"{streamer_display} тильт",
+                f"{streamer_display} проблемы",
+                f"{streamer_display} игра",
+            ],
+            'Эвелон': [
+                f"{streamer_display} краш",
+                f"{streamer_display} устал",
+                f"{streamer_display} спать",
+            ],
+            'Бустер': [
+                f"{streamer_display} накрутил",
+                f"{streamer_display} смотрите",
+                f"{streamer_display} зрители",
+            ],
+        }
+        
+        # Основные запросы
         search_queries = [
             f"{streamer_display} клип",
             f"{streamer_name} clip",
@@ -1235,9 +1497,13 @@ def search_youtube_clip(streamer_name: str, streamer_display: str) -> Optional[s
             f"{streamer_display} смешной момент",
         ]
         
+        # Добавляем мемные запросы
+        if streamer_display in meme_queries:
+            search_queries.extend(meme_queries[streamer_display])
+        
         random.shuffle(search_queries)
         
-        for query in search_queries[:3]:
+        for query in search_queries[:5]:
             url = "https://www.googleapis.com/youtube/v3/search"
             params = {
                 "part": "snippet",
@@ -1284,18 +1550,15 @@ def get_streamer_media(streamer_key: str, streamer_display: str) -> Tuple[Option
     Получает медиа для стримера (сначала фото, если нет - клип)
     Возвращает: (url, тип_медиа) где тип_медиа: 'photo' или 'clip'
     """
-    # Сначала пробуем найти фото
     photo = get_streamer_photo(streamer_key)
     if photo:
         return photo, 'photo'
     
-    # Если фото нет, ищем клип
     logger.info(f"📹 Фото не найдено для {streamer_display}, ищу клип...")
     clip = search_youtube_clip(streamer_key, streamer_display)
     if clip:
         return clip, 'clip'
     
-    # Если ничего не найдено, возвращаем None
     logger.warning(f"⚠️ Не найдено ни фото, ни клипа для {streamer_display}")
     return None, 'none'
 
@@ -1479,7 +1742,7 @@ def get_streamer_photo(streamer_name: str) -> Optional[str]:
 # ===== ФУНКЦИЯ ГЕНЕРАЦИИ ПОСТА =====
 
 def get_streamer_for_post() -> Tuple[str, str]:
-    """Выбирает случайного стримера для поста и возвращает его имя и ключ"""
+    """Выбирает случайного стримера для поста и возвращает его ключ и имя"""
     streamers = [
         ('voodoosh', 'Вудуш'),
         ('praden', 'Праден'),
@@ -1528,17 +1791,33 @@ def generate_caption_with_validation() -> Tuple[str, Optional[str]]:
         try:
             logger.info(f"Попытка {attempt+1} для {topic}")
             
-            base_prompt = get_style_prompt(style)
+            base_prompt = get_style_prompt(style, streamer_key)
             
-            streamer_topics = [
-                f"Напиши пост про стримера {streamer_display}. Критикуй его действия с юмором. Используй мат.",
-                f"Напиши пост про {streamer_display} и его очередной провал на стриме. С юмором и матом.",
-                f"Напиши пост про скандал с участием {streamer_display}. С юмором и матом.",
-                f"Расскажи смешную историю про {streamer_display}. С юмором и матом.",
-                f"Ответь на пост Илюхи про {streamer_display}. Согласись или поспорь, но с юмором и матом.",
-                f"Напиши пост про то, как {streamer_display} накручивает зрителей. С юмором.",
-                f"Напиши пост про очередную драму с {streamer_display}. С юмором и матом.",
-            ]
+            streamer_topics = []
+            if streamer_key and streamer_key in STREAMER_INFO:
+                info = STREAMER_INFO[streamer_key]
+                name = info['name']
+                pronoun = info['pronoun']
+                possessive = info['possessive']
+                genitive = info['genitive']
+                dative = info['dative']
+                
+                streamer_topics = [
+                    f"Напиши пост про стримера {name}. {pronoun} опять накрутил зрителей. Критикуй {pronoun} с юмором. Используй мат.",
+                    f"Напиши пост про {name} и {pronoun} очередной провал на стриме. С юмором и матом.",
+                    f"Напиши пост про скандал с участием {name}. С юмором и матом.",
+                    f"Расскажи смешную историю про {name}. С юмором и матом.",
+                    f"Ответь на пост Илюхи про {name}. Согласись или поспорь, но с юмором и матом.",
+                    f"Напиши пост про то, как {name} накручивает зрителей. С юмором.",
+                    f"Напиши пост про очередную драму с {name}. С юмором и матом.",
+                    f"У {genitive} опять проблемы со стримом. Напиши об этом с юмором.",
+                    f"Сегодня {dative} снова не повезло. Расскажи об этом с матом.",
+                ]
+            else:
+                streamer_topics = [
+                    "Напиши пост про стримера. Критикуй его действия с юмором. Используй мат.",
+                    "Напиши пост про стримера и его очередной провал на стриме. С юмором и матом.",
+                ]
             
             asian_topics = [
                 "Напиши пост про жизнь в Азии. С юмором и самоиронией.",
@@ -1778,7 +2057,6 @@ async def get_random_photo(style: str = "streamer", streamer_key: str = None) ->
         history = []
         save_history(history)
     
-    # Если указан конкретный стример - ищем его фото
     if streamer_key:
         photo = get_streamer_photo(streamer_key)
         if photo:
@@ -1786,7 +2064,6 @@ async def get_random_photo(style: str = "streamer", streamer_key: str = None) ->
             save_history(history)
             return photo
     
-    # Для стримерских постов (общий поиск)
     if style == 'streamer':
         streamers = ['voodoosh', 'praden', 'bratishkinoff', 'sasavot', 
                      'alina_rin', 'lasqa', 'arrowwoods', 'evelone', 'buster']
@@ -1799,7 +2076,6 @@ async def get_random_photo(style: str = "streamer", streamer_key: str = None) ->
                 save_history(history)
                 return photo
         
-        # Если не нашлось фото стримера, используем общий поиск
         logger.warning("⚠️ Не найдены фото стримеров, пробую общий поиск")
         fallback_queries = [
             "russian streamer face",
@@ -1831,7 +2107,6 @@ async def get_random_photo(style: str = "streamer", streamer_key: str = None) ->
                     logger.error(f"Ошибка общего поиска: {e}")
                     continue
     
-    # Для азиатских постов
     queries = ASIAN_QUERIES.copy()
     random.shuffle(queries)
     
@@ -1933,13 +2208,12 @@ async def analyze_photo_for_comment(image_url: str) -> Optional[str]:
 
 # ===== ОБНОВЛЕННАЯ ФУНКЦИЯ ОТПРАВКИ ПОСТА =====
 
-async def send_post(chat_id, photo_url=None, caption=None, media_type='photo'):
+async def send_post(chat_id, photo_url=None, caption=None, media_type='photo', clip_url=None):
     try:
         if not photo_url and not caption:
             return False
         
         if not photo_url:
-            # Отправляем только текст
             if caption:
                 await bot.send_message(chat_id=chat_id, text=caption)
                 logger.info(f"📝 Текст (без медиа) отправлен в чат {chat_id}")
@@ -1953,9 +2227,8 @@ async def send_post(chat_id, photo_url=None, caption=None, media_type='photo'):
             if validated:
                 caption = validated
         
-        # Отправляем в зависимости от типа медиа
         if media_type == 'clip':
-            text = f"{caption}\n\n🎬 Клип: {photo_url}"
+            text = f"{caption}\n\n{photo_url}"
             await bot.send_message(chat_id=chat_id, text=text)
             logger.info(f"🎬 Клип отправлен в чат {chat_id}")
         else:
@@ -1995,6 +2268,7 @@ async def create_post_with_photo(chat_id, user_id=0, skip_moderation=False, styl
         
         media_url = None
         media_type = 'photo'
+        clip_url = None
         
         if streamer_key:
             streamer_names = {
@@ -2011,12 +2285,14 @@ async def create_post_with_photo(chat_id, user_id=0, skip_moderation=False, styl
             streamer_display = streamer_names.get(streamer_key, streamer_key)
             
             media_url, media_type = get_streamer_media(streamer_key, streamer_display)
-            
-            if not media_url:
-                photo_url = await get_random_photo("streamer", None)
-                if photo_url:
-                    media_url = photo_url
-                    media_type = 'photo'
+            if media_type == 'clip':
+                clip_url = media_url
+        
+        if not media_url:
+            photo_url = await get_random_photo("streamer", None)
+            if photo_url:
+                media_url = photo_url
+                media_type = 'photo'
         
         if not media_url:
             photo_url = await get_random_photo("asia", None)
@@ -2046,7 +2322,7 @@ async def create_post_with_photo(chat_id, user_id=0, skip_moderation=False, styl
             'id': post_id,
             'chat_id': chat_id,
             'photo_url': media_url if media_type == 'photo' else None,
-            'clip_url': media_url if media_type == 'clip' else None,
+            'clip_url': clip_url,
             'media_type': media_type,
             'caption': caption,
             'user_id': user_id,
@@ -2328,7 +2604,7 @@ async def process_post_task(data: Dict[str, Any]):
             return
         
         media_url = clip_url if media_type == 'clip' else photo_url
-        await send_post(chat_id, media_url, caption, media_type)
+        await send_post(chat_id, media_url, caption, media_type, clip_url)
         logger.info(f"Пост отправлен в {chat_id}")
     except Exception as e:
         logger.error(f"Ошибка обработки задачи: {e}")
@@ -2427,6 +2703,7 @@ async def send_to_all_users():
         
         media_url = None
         media_type = 'photo'
+        clip_url = None
         
         if streamer_key:
             streamer_names = {
@@ -2442,12 +2719,14 @@ async def send_to_all_users():
             }
             streamer_display = streamer_names.get(streamer_key, streamer_key)
             media_url, media_type = get_streamer_media(streamer_key, streamer_display)
-            
-            if not media_url:
-                photo_url = await get_random_photo("streamer", None)
-                if photo_url:
-                    media_url = photo_url
-                    media_type = 'photo'
+            if media_type == 'clip':
+                clip_url = media_url
+        
+        if not media_url:
+            photo_url = await get_random_photo("streamer", None)
+            if photo_url:
+                media_url = photo_url
+                media_type = 'photo'
         
         if not media_url:
             photo_url = await get_random_photo("asia", None)
@@ -2470,7 +2749,7 @@ async def send_to_all_users():
                 'id': f"{base_post_id}_{chat_id}",
                 'chat_id': chat_id,
                 'photo_url': media_url if media_type == 'photo' else None,
-                'clip_url': media_url if media_type == 'clip' else None,
+                'clip_url': clip_url,
                 'media_type': media_type,
                 'caption': caption,
                 'user_id': 0,
@@ -2488,7 +2767,7 @@ async def send_to_all_users():
                 'id': f"{base_post_id}_channel",
                 'chat_id': channel_id,
                 'photo_url': media_url if media_type == 'photo' else None,
-                'clip_url': media_url if media_type == 'clip' else None,
+                'clip_url': clip_url,
                 'media_type': media_type,
                 'caption': caption,
                 'user_id': 0,
@@ -3726,7 +4005,7 @@ async def main():
         logger.info("=" * 60)
         logger.info("🤖 БОТ ЗАПУЩЕН")
         logger.info("📸 85% постов про стримеров, 15% про Азию")
-        logger.info("📝 Грубый стиль, мат, чёрный юмор")
+        logger.info("📝 Грубый стиль, мат, чёрный юмор с мемами")
         logger.info("🎬 Если нет фото - ищем клип на YouTube")
         logger.info("=" * 60)
         
