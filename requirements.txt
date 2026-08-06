@@ -1,4 +1,6 @@
 aiogram
 aiohttp
+redis
 requests
+python-dotenv
 cryptography
