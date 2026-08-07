@@ -195,13 +195,14 @@ STREAMER_QUERIES = {
 }
 
 ASIAN_QUERIES = [
-    "japanese girl friend photo casual",
-    "korean girl natural shot street",
-    "thai girl friend photo outside",
-    "vietnamese woman friend photo",
-    "asian girl laughing with friend",
-    "asian woman talking to friend",
-    "asian girl walking with friend",
+    "japanese idol girl portrait",
+    "kpop girl group member photo",
+    "korean idol female portrait",
+    "asian model girl portrait",
+    "japanese girl idol photo",
+    "kpop female idol face",
+    "asian woman model portrait",
+    "korean girl idol photo shoot",
 ]
 
 ASIAN_KEYWORDS = [
@@ -635,9 +636,10 @@ def validate_post_with_deepseek(post_text: str) -> Tuple[bool, str]:
 
 1. Пост должен быть о стримерах или Азии (по теме)
 2. Допускается грубая лексика и мат (это стиль автора)
-3. Не должно быть призывов к насилию или экстремизму
-4. Пост должен быть грамотным
-5. Пост должен быть завершённым
+3. Не должно быть личных оскорблений (критика действий, а не внешности)
+4. Не должно быть призывов к насилию или экстремизму
+5. Пост должен быть грамотным
+6. Пост должен быть завершённым
 
 Если пост соответствует — напиши "APPROVED".
 Если пост НЕ соответствует — напиши "REJECT: причина"."""},
@@ -766,7 +768,7 @@ def generate_caption_with_validation() -> Tuple[str, Optional[str]]:
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": current_prompt}
                 ],
-                "temperature": 1.1,  # Понижена температура до 1.1
+                "temperature": 1.1,
                 "max_tokens": 1500,
             }
             
@@ -1201,8 +1203,10 @@ def get_streamer_photo(streamer_name: str) -> Optional[str]:
                 photo = search_func(query)
                 if photo:
                     if check_date_in_content("", photo):
-                        logger.info(f"✅ Найдено новое фото для {streamer_name}")
-                        return photo
+                        # Проверяем через DeepSeek, что на фото стример
+                        if verify_photo_with_deepseek(photo, streamer_name):
+                            logger.info(f"✅ Найдено новое фото для {streamer_name}")
+                            return photo
             except Exception as e:
                 logger.error(f"Ошибка поиска для {streamer_name} в {source_name}: {e}")
                 continue
@@ -1210,27 +1214,159 @@ def get_streamer_photo(streamer_name: str) -> Optional[str]:
     logger.warning(f"⚠️ Не найдено фото для {streamer_name}")
     return None
 
-def get_streamer_media(streamer_key: str, streamer_display: str) -> Tuple[Optional[str], str]:
-    """Получение медиа для стримера (клип или фото)"""
-    logger.info(f"📹 Ищу клип для {streamer_display}...")
-    clip = search_youtube_clip(streamer_key, streamer_display)
-    if clip:
-        return clip, 'clip'
+def get_asia_photo() -> Optional[str]:
+    """Поиск фото азиатской модели для темы asia"""
+    queries = ASIAN_QUERIES.copy()
+    random.shuffle(queries)
     
-    logger.info(f"🖼️ Клип не найден, ищу фото для {streamer_display}...")
+    search_functions = [
+        (search_bing, "Bing Картинки"),
+        (search_google_direct, "Google Картинки"),
+        (search_yandex, "Яндекс Картинки"),
+        (search_pexels, "Pexels"),
+    ]
+    random.shuffle(search_functions)
     
-    screenshot = search_streamer_screenshot(streamer_key, streamer_display)
-    if screenshot:
-        return screenshot, 'photo'
+    for query in queries[:5]:
+        for search_func, source_name in search_functions:
+            try:
+                logger.info(f"Поиск азиатского фото в {source_name}: {query}")
+                photo = search_func(query)
+                if photo:
+                    if check_date_in_content("", photo):
+                        if is_photo_valid(photo):
+                            # Проверяем через DeepSeek, что на фото азиатская модель
+                            if verify_asia_photo_with_deepseek(photo):
+                                logger.info(f"✅ Найдено азиатское фото")
+                                return photo
+            except Exception as e:
+                logger.error(f"Ошибка поиска азиатского фото в {source_name}: {e}")
+                continue
     
-    photo = get_streamer_photo(streamer_key)
-    if photo:
-        return photo, 'photo'
-    
-    logger.warning(f"⚠️ Не найдено ни клипа, ни фото для {streamer_display}")
-    return None, 'none'
+    logger.warning("⚠️ Не найдено подходящее азиатское фото")
+    return None
 
-# ===== ДОПОЛНИТЕЛЬНЫЕ ФУНКЦИИ ДЛЯ РАБОТЫ С ФОТО =====
+# ===== ФУНКЦИИ ПРОВЕРКИ ФОТО ЧЕРЕЗ DEEPSEEK =====
+
+def verify_photo_with_deepseek(image_url: str, streamer_name: str) -> bool:
+    """Проверяет через DeepSeek, что на фото изображен нужный стример"""
+    if not DEEPSEEK_API_KEY:
+        logger.warning("⚠️ Нет DeepSeek API ключа для проверки фото")
+        return True  # Пропускаем проверку, если нет ключа
+    
+    try:
+        # Кодируем изображение в base64
+        base64_image = encode_image_to_base64_url(image_url)
+        if not base64_image:
+            return False
+        
+        headers = {
+            "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+            "Content-Type": "application/json"
+        }
+        
+        data = {
+            "model": "deepseek-vl-chat",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": f"Посмотри на это фото. Это стример {streamer_name}? Ответь только 'ДА' или 'НЕТ'."
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{base64_image}"
+                            }
+                        }
+                    ]
+                }
+            ],
+            "max_tokens": 10,
+            "temperature": 0.1
+        }
+        
+        response = requests.post(
+            "https://api.deepseek.com/v1/chat/completions",
+            headers=headers,
+            json=data,
+            timeout=15
+        )
+        
+        if response.status_code == 200:
+            result = response.json()
+            answer = result["choices"][0]["message"]["content"].strip().upper()
+            logger.info(f"🔍 DeepSeek проверка фото для {streamer_name}: {answer}")
+            return "ДА" in answer
+        else:
+            logger.error(f"❌ Ошибка проверки фото: {response.status_code}")
+            return True  # При ошибке пропускаем проверку
+            
+    except Exception as e:
+        logger.error(f"❌ Ошибка проверки фото через DeepSeek: {e}")
+        return True  # При ошибке пропускаем проверку
+
+def verify_asia_photo_with_deepseek(image_url: str) -> bool:
+    """Проверяет через DeepSeek, что на фото азиатская модель/девушка"""
+    if not DEEPSEEK_API_KEY:
+        logger.warning("⚠️ Нет DeepSeek API ключа для проверки фото")
+        return True  # Пропускаем проверку, если нет ключа
+    
+    try:
+        # Кодируем изображение в base64
+        base64_image = encode_image_to_base64_url(image_url)
+        if not base64_image:
+            return False
+        
+        headers = {
+            "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+            "Content-Type": "application/json"
+        }
+        
+        data = {
+            "model": "deepseek-vl-chat",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "Посмотри на это фото. Это азиатская девушка/модель? Ответь только 'ДА' или 'НЕТ'."
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{base64_image}"
+                            }
+                        }
+                    ]
+                }
+            ],
+            "max_tokens": 10,
+            "temperature": 0.1
+        }
+        
+        response = requests.post(
+            "https://api.deepseek.com/v1/chat/completions",
+            headers=headers,
+            json=data,
+            timeout=15
+        )
+        
+        if response.status_code == 200:
+            result = response.json()
+            answer = result["choices"][0]["message"]["content"].strip().upper()
+            logger.info(f"🔍 DeepSeek проверка азиатского фото: {answer}")
+            return "ДА" in answer
+        else:
+            logger.error(f"❌ Ошибка проверки фото: {response.status_code}")
+            return True  # При ошибке пропускаем проверку
+            
+    except Exception as e:
+        logger.error(f"❌ Ошибка проверки фото через DeepSeek: {e}")
+        return True  # При ошибке пропускаем проверку
 
 def encode_image_to_base64_url(image_url: str) -> str:
     try:
@@ -1300,11 +1436,12 @@ async def analyze_photo_for_comment(image_url: str) -> Optional[str]:
         return None
 
 async def get_random_photo(style: str = "streamer", streamer_key: str = None, history=None) -> Optional[str]:
-    """Получает случайное фото с проверкой истории и даты"""
+    """Получает случайное фото в зависимости от стиля"""
     if history is None:
         history = []
     
-    if streamer_key:
+    if style == 'streamer' and streamer_key:
+        # Для темы streamer - ищем фото конкретного стримера
         photo = get_streamer_photo(streamer_key)
         if photo and photo not in history:
             if check_date_in_content("", photo):
@@ -1312,18 +1449,22 @@ async def get_random_photo(style: str = "streamer", streamer_key: str = None, hi
         elif photo and photo in history:
             logger.info("⏭️ Фото уже использовалось")
             return None
-    
-    if style == 'streamer':
+        
+        # Если не нашли конкретного стримера, ищем любого стримера
+        logger.info("🔄 Пробую найти другого стримера...")
         streamers = ['voodoosh', 'praden', 'bratishkinoff', 'sasavot', 
                      'alina_rin', 'lasqa', 'arrowwoods', 'evelone', 'buster']
         random.shuffle(streamers)
         
         for streamer in streamers:
+            if streamer == streamer_key:
+                continue
             photo = get_streamer_photo(streamer)
             if photo and photo not in history:
                 if check_date_in_content("", photo):
                     return photo
         
+        # Если совсем не нашли, пробуем общий поиск
         logger.warning("⚠️ Не найдены фото стримеров, пробую общий поиск")
         fallback_queries = ["russian streamer face", "twitch streamer russian", "streamer portrait"]
         random.shuffle(fallback_queries)
@@ -1345,26 +1486,22 @@ async def get_random_photo(style: str = "streamer", streamer_key: str = None, hi
                 except Exception as e:
                     continue
     
-    queries = ASIAN_QUERIES.copy()
-    random.shuffle(queries)
-    
-    search_functions = [
-        (search_bing, "Bing Картинки"),
-        (search_google_direct, "Google Картинки"),
-        (search_yandex, "Яндекс Картинки"),
-        (search_pexels, "Pexels"),
-    ]
-    random.shuffle(search_functions)
-    
-    for query in queries[:3]:
-        for search_func, source_name in search_functions[:2]:
-            try:
-                photo = search_func(query)
-                if photo and photo not in history and is_photo_valid(photo):
-                    if check_date_in_content("", photo):
-                        return photo
-            except Exception as e:
-                continue
+    elif style == 'asia':
+        # Для темы asia - ищем азиатскую модель
+        photo = get_asia_photo()
+        if photo and photo not in history:
+            if check_date_in_content("", photo):
+                return photo
+        elif photo and photo in history:
+            logger.info("⏭️ Азиатское фото уже использовалось")
+            return None
+        
+        # Если не нашли, пробуем еще раз с другими запросами
+        logger.info("🔄 Пробую найти другое азиатское фото...")
+        photo = get_asia_photo()
+        if photo and photo not in history:
+            if check_date_in_content("", photo):
+                return photo
     
     logger.error("❌ Не удалось найти подходящее фото!")
     return None
