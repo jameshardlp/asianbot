@@ -293,7 +293,10 @@ def rate_limit(seconds: int = 3):
         return wrapper
     return decorator
 
-# ===== ОБНОВЛЕННЫЕ КОМАНДЫ =====
+# ===== КОМАНДЫ (ПРАВИЛЬНЫЙ ПОРЯДОК ДЕКОРАТОРОВ) =====
+
+# ВАЖНО: сначала @dp.message, потом @rate_limit!
+# Декораторы применяются снизу вверх: сначала rate_limit, потом dp.message
 
 @dp.message(Command("start"))
 @rate_limit(seconds=3)
