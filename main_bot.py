@@ -269,7 +269,7 @@ async def send_post(chat_id, photo_url=None, caption=None, media_type='photo', c
     """Отправляет пост с задержкой 3 секунды между сообщениями"""
     return await send_post_with_retry(chat_id, photo_url, caption, media_type, clip_url)
 
-# ===== ДЕКОРАТОР ДЛЯ ОГРАНИЧЕНИЯ ЧАСТОТЫ КОМАНД =====
+# ===== ИСПРАВЛЕННЫЙ ДЕКОРАТОР ДЛЯ ОГРАНИЧЕНИЯ ЧАСТОТЫ =====
 
 def rate_limit(seconds: int = 3):
     """Декоратор для ограничения частоты вызова команд"""
@@ -293,9 +293,10 @@ def rate_limit(seconds: int = 3):
         return wrapper
     return decorator
 
-# ===== ОБНОВЛЕННЫЕ КОМАНДЫ С rate_limit =====
+# ===== ОБНОВЛЕННЫЕ КОМАНДЫ =====
 
 @dp.message(Command("start"))
+@rate_limit(seconds=3)
 async def start(msg: Message):
     try:
         chat_id = msg.chat.id
