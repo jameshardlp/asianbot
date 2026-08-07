@@ -12,7 +12,7 @@ import hashlib
 import logging
 import base64
 from datetime import datetime, timedelta
-from typing import Optional, Tuple, Dict, Any, List
+from typing import Optional, Tuple, Dict, Any, List, Callable, Awaitable
 from collections import defaultdict
 
 import requests
@@ -20,6 +20,7 @@ from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, PreCheckoutQuery, LabeledPrice, WebAppInfo
 from aiogram.exceptions import TelegramAPIError
+from aiogram import BaseMiddleware
 from aiohttp import web
 
 # Импорты из модулей
@@ -93,7 +94,31 @@ history = []
 schedule_data = {}
 
 last_user_message_time = defaultdict(float)
-user_locks = defaultdict(asyncio.Lock)
+
+# ===== MIDDLEWARE ДЛЯ ОГРАНИЧЕНИЯ ЧАСТОТЫ =====
+
+class RateLimitMiddleware(BaseMiddleware):
+    def __init__(self, seconds: int = 3):
+        super().__init__()
+        self.seconds = seconds
+        self.user_last_message = defaultdict(float)
+    
+    async def __call__(
+        self,
+        handler: Callable[[Message, Dict[str, Any]], Awaitable[Any]],
+        event: Message,
+        data: Dict[str, Any]
+    ) -> Any:
+        user_id = event.from_user.id
+        current_time = time.time()
+        last_time = self.user_last_message.get(user_id, 0)
+        
+        if current_time - last_time < self.seconds:
+            logger.info(f"⏭️ Игнорируем частый запрос от {user_id} ({(current_time - last_time):.1f} сек)")
+            return
+        
+        self.user_last_message[user_id] = current_time
+        return await handler(event, data)
 
 # ===== ИНИЦИАЛИЗАЦИЯ БОТА =====
 if not BOT_TOKEN:
@@ -102,6 +127,9 @@ if not BOT_TOKEN:
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
+
+# Регистрируем middleware
+dp.message.middleware(RateLimitMiddleware(seconds=3))
 
 # ===== РАБОТА С ПОЛЬЗОВАТЕЛЯМИ =====
 
@@ -257,27 +285,6 @@ async def send_post_with_retry(chat_id, photo_url=None, caption=None, media_type
 
 async def send_post(chat_id, photo_url=None, caption=None, media_type='photo', clip_url=None):
     return await send_post_with_retry(chat_id, photo_url, caption, media_type, clip_url)
-
-# ===== ИСПРАВЛЕННЫЙ ДЕКОРАТОР =====
-
-def rate_limit(seconds: int = 3):
-    def decorator(func):
-        async def wrapper(message: Message, *args, **kwargs):
-            user_id = message.from_user.id
-            
-            async with user_locks[user_id]:
-                current_time = time.time()
-                last_time = last_user_message_time.get(user_id, 0)
-                
-                if current_time - last_time < seconds:
-                    logger.info(f"⏭️ Игнорируем частый запрос от {user_id} ({(current_time - last_time):.1f} сек)")
-                    return
-                
-                last_user_message_time[user_id] = current_time
-                # Передаем все аргументы, включая dispatcher
-                return await func(message, *args, **kwargs)
-        return wrapper
-    return decorator
 
 # ===== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ =====
 
@@ -490,7 +497,6 @@ async def send_to_all_users():
 # ===== КОМАНДЫ =====
 
 @dp.message(Command("start"))
-@rate_limit(seconds=3)
 async def start(msg: Message):
     try:
         chat_id = msg.chat.id
@@ -526,7 +532,6 @@ async def start(msg: Message):
         logger.error(f"Ошибка в команде start: {e}")
 
 @dp.message(Command("photo"))
-@rate_limit(seconds=3)
 async def photo_command(message: Message):
     try:
         user_id = message.from_user.id
@@ -558,7 +563,6 @@ async def photo_command(message: Message):
         logger.error(f"Ошибка в команде photo: {e}")
 
 @dp.message(Command("post"))
-@rate_limit(seconds=3)
 async def post_command(message: Message):
     try:
         if message.from_user.id != OWNER_ID:
@@ -578,7 +582,6 @@ async def post_command(message: Message):
         logger.error(f"Ошибка в команде post: {e}")
 
 @dp.message(Command("stop"))
-@rate_limit(seconds=3)
 async def stop(msg: Message):
     try:
         chat_id = msg.chat.id
@@ -592,7 +595,6 @@ async def stop(msg: Message):
         logger.error(f"Ошибка в команде stop: {e}")
 
 @dp.message(Command("schedule"))
-@rate_limit(seconds=3)
 async def schedule(msg: Message):
     try:
         if msg.from_user.id != OWNER_ID:
@@ -626,7 +628,6 @@ async def schedule(msg: Message):
         logger.error(f"Ошибка в команде schedule: {e}")
 
 @dp.message(Command("price"))
-@rate_limit(seconds=3)
 async def set_price(message: Message):
     try:
         if message.from_user.id != OWNER_ID:
@@ -672,7 +673,6 @@ async def set_price(message: Message):
         logger.error(f"Ошибка в команде price: {e}")
 
 @dp.message(Command("status"))
-@rate_limit(seconds=3)
 async def status(msg: Message):
     try:
         users_list = load_users()
@@ -691,7 +691,6 @@ async def status(msg: Message):
         logger.error(f"Ошибка в команде status: {e}")
 
 @dp.message(Command("check_channel"))
-@rate_limit(seconds=3)
 async def check_channel(message: Message):
     try:
         if message.from_user.id != OWNER_ID:
@@ -769,10 +768,9 @@ async def scheduler():
             logger.error(f"❌ Ошибка в планировщике: {e}")
             await asyncio.sleep(60)
 
-# ===== КОМАНДА /BROADCAST (СОКРАЩЕНА ДЛЯ ЭКОНОМИИ МЕСТА) =====
+# ===== КОМАНДА /BROADCAST =====
 
 @dp.message(Command("broadcast"))
-@rate_limit(seconds=3)
 async def broadcast_command(message: Message):
     try:
         if message.chat.type != "private":
