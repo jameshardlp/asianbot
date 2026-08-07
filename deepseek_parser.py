@@ -1246,6 +1246,32 @@ def get_asia_photo() -> Optional[str]:
     logger.warning("⚠️ Не найдено подходящее азиатское фото")
     return None
 
+# ===== ФУНКЦИЯ ПОЛУЧЕНИЯ МЕДИА ДЛЯ СТРИМЕРА =====
+
+def get_streamer_media(streamer_key: str, streamer_display: str) -> Tuple[Optional[str], str]:
+    """Получает медиа для стримера: сначала клип, если нет - скрин/фото"""
+    # Сначала ищем клип на YouTube
+    logger.info(f"📹 Ищу клип для {streamer_display}...")
+    clip = search_youtube_clip(streamer_key, streamer_display)
+    if clip:
+        return clip, 'clip'
+    
+    # Если клип не найден, ищем фото/скрин
+    logger.info(f"🖼️ Клип не найден, ищу фото для {streamer_display}...")
+    
+    # Сначала ищем скрин со стрима
+    screenshot = search_streamer_screenshot(streamer_key, streamer_display)
+    if screenshot:
+        return screenshot, 'photo'
+    
+    # Если скрин не найден, ищем обычное фото
+    photo = get_streamer_photo(streamer_key)
+    if photo:
+        return photo, 'photo'
+    
+    logger.warning(f"⚠️ Не найдено ни клипа, ни фото для {streamer_display}")
+    return None, 'none'
+
 # ===== ФУНКЦИИ ПРОВЕРКИ ФОТО ЧЕРЕЗ DEEPSEEK =====
 
 def verify_photo_with_deepseek(image_url: str, streamer_name: str) -> bool:
