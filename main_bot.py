@@ -288,6 +288,7 @@ def rate_limit(seconds: int = 3):
                     return
                 
                 last_user_message_time[user_id] = current_time
+                # Передаем все аргументы, включая dispatcher и другие
                 return await func(message, *args, **kwargs)
         return wrapper
     return decorator
@@ -335,7 +336,7 @@ async def start(msg: Message):
         logger.error(f"Ошибка в команде start: {e}")
 
 @dp.message(Command("photo"))
-@rate_limit(seconds=3)  # Ограничение 3 секунды между вызовами
+@rate_limit(seconds=3)
 async def photo_command(message: Message):
     try:
         user_id = message.from_user.id
@@ -504,6 +505,28 @@ async def status(msg: Message):
     except Exception as e:
         logger.error(f"Ошибка в команде status: {e}")
 
+@dp.message(Command("check_channel"))
+@rate_limit(seconds=3)
+async def check_channel(message: Message):
+    try:
+        if message.from_user.id != OWNER_ID:
+            await message.answer("⛔ Доступ запрещён")
+            return
+        try:
+            chat_member = await bot.get_chat_member(STARS_CHANNEL_ID, bot.id)
+            status_text = f"📊 Статус бота в канале {STARS_CHANNEL_ID}:\n"
+            status_text += f"• Статус: {chat_member.status}\n"
+            status_text += f"• Может отправлять: {chat_member.can_send_messages}\n"
+            status_text += f"• Может управлять: {chat_member.can_manage_chat}\n"
+            status_text += f"• Может публиковать: {chat_member.can_post_messages}\n"
+            status_text += f"• Может управлять видеочатами: {chat_member.can_manage_video_chats}\n"
+            await message.answer(status_text)
+        except Exception as e:
+            await message.answer(f"❌ Ошибка: {e}\n\nУбедитесь, что бот добавлен в канал {STARS_CHANNEL_ID} как администратор.")
+    except Exception as e:
+        logger.error(f"Ошибка проверки канала: {e}")
+        await message.answer("❌ Произошла ошибка")
+
 # ===== ОБНОВЛЕННАЯ ФУНКЦИЯ ОТПРАВКИ ВСЕМ ПОЛЬЗОВАТЕЛЯМ =====
 
 async def send_to_all_users():
@@ -591,7 +614,7 @@ async def send_to_all_users():
     except Exception as e:
         logger.error(f"Ошибка в send_to_all_users: {e}")
 
-# ===== ОСТАЛЬНЫЕ ФУНКЦИИ (без изменений) =====
+# ===== ОСТАЛЬНЫЕ ФУНКЦИИ =====
 
 async def get_channel_id() -> Optional[str]:
     if CHANNEL_ID and CHANNEL_ID.strip():
@@ -814,11 +837,802 @@ async def scheduler():
             logger.error(f"❌ Ошибка в планировщике: {e}")
             await asyncio.sleep(60)
 
-# ===== ОСТАЛЬНЫЕ КОМАНДЫ (BROADCAST, ОПЛАТА) =====
-# ... (код broadcast_command, pay_with_stars, pay_with_rub, pay_with_aurapay,
-# check_rub_payment, check_aurapay_payment, process_pre_checkout_query,
-# process_successful_payment, process_successful_payment_broadcast,
-# send_broadcast_for_moderation, handle_broadcast_moderation)
+# ===== КОМАНДА /BROADCAST =====
+
+@dp.message(Command("broadcast"))
+@rate_limit(seconds=3)
+async def broadcast_command(message: Message):
+    try:
+        if message.chat.type != "private":
+            await message.answer("ℹ️ Эта команда работает только в личных сообщениях с ботом.")
+            return
+        
+        user_id = message.from_user.id
+        chat_id = message.chat.id
+        
+        text = ""
+        has_media = False
+        media_type = None
+        media_file_id = None
+        
+        if message.text:
+            text = message.text.replace("/broadcast", "").strip()
+        elif message.caption:
+            text = message.caption.replace("/broadcast", "").strip()
+        
+        if message.photo:
+            has_media = True
+            media_type = "photo"
+            media_file_id = message.photo[-1].file_id
+            text = message.caption or ""
+        elif message.video:
+            has_media = True
+            media_type = "video"
+            media_file_id = message.video.file_id
+            text = message.caption or ""
+        elif message.document:
+            has_media = True
+            media_type = "document"
+            media_file_id = message.document.file_id
+            text = message.caption or ""
+        elif message.animation:
+            has_media = True
+            media_type = "animation"
+            media_file_id = message.animation.file_id
+            text = message.caption or ""
+        elif message.audio:
+            has_media = True
+            media_type = "audio"
+            media_file_id = message.audio.file_id
+            text = message.caption or ""
+        elif message.voice:
+            has_media = True
+            media_type = "voice"
+            media_file_id = message.voice.file_id
+            text = message.caption or ""
+        elif message.video_note:
+            has_media = True
+            media_type = "video_note"
+            media_file_id = message.video_note.file_id
+            text = message.caption or ""
+        elif message.sticker:
+            has_media = True
+            media_type = "sticker"
+            media_file_id = message.sticker.file_id
+            text = message.caption or ""
+        
+        if not text and not has_media:
+            stars_price = broadcast_prices.get("stars", 100)
+            rub_price = broadcast_prices.get("rub", 100)
+            await message.answer(
+                f"📢 **Платная рассылка**\n\n"
+                f"Отправьте сообщение с текстом или медиафайлом.\n\n"
+                f"💰 Цена: {stars_price} ⭐ или {rub_price} RUB\n"
+                f"💳 После оплаты сообщение уйдёт на модерацию.\n\n"
+                f"📌 Поддерживаются: фото, видео, GIF, аудио, документы, голосовые, стикеры.",
+                parse_mode="Markdown"
+            )
+            return
+        
+        stars_price = broadcast_prices.get("stars", 100)
+        rub_price = broadcast_prices.get("rub", 100)
+        order_id = f"broadcast_{user_id}_{int(time.time())}"
+        
+        broadcast_data[user_id] = {
+            'text': text,
+            'has_media': has_media,
+            'media_type': media_type,
+            'media_file_id': media_file_id,
+            'timestamp': time.time(),
+            'chat_id': chat_id,
+            'user_id': user_id,
+            'order_id': order_id
+        }
+        
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=f"⭐ Оплатить {stars_price} звёзд", callback_data=f"pay_stars_{order_id}")],
+            [InlineKeyboardButton(text=f"💳 Оплатить {rub_price} RUB", callback_data=f"pay_rub_{order_id}")],
+            [InlineKeyboardButton(text=f"🔗 Оплатить через AuraPay", callback_data=f"pay_aurapay_{order_id}")]
+        ])
+        
+        preview_text = f"📢 **Ваше сообщение для рассылки**\n\n"
+        if text:
+            preview_text += f"📝 {text[:200]}{'...' if len(text) > 200 else ''}\n\n"
+        else:
+            preview_text += f"📝 (без текста)\n\n"
+        
+        if has_media:
+            media_names = {
+                "photo": "📸 Фото",
+                "video": "🎬 Видео",
+                "document": "📄 Документ",
+                "animation": "🎥 GIF",
+                "audio": "🎵 Аудио",
+                "voice": "🎤 Голосовое",
+                "video_note": "🔄 Видео-кружок",
+                "sticker": "🎯 Стикер"
+            }
+            preview_text += f"📎 {media_names.get(media_type, 'Медиафайл')} (будет отправлено)\n\n"
+        
+        preview_text += f"💰 Цена: {stars_price} ⭐ или {rub_price} RUB\n"
+        preview_text += f"⏳ После оплаты сообщение уйдёт на модерацию."
+        
+        if has_media and media_file_id:
+            if media_type == "photo":
+                await message.answer_photo(
+                    photo=media_file_id,
+                    caption=preview_text,
+                    reply_markup=keyboard,
+                    parse_mode="Markdown"
+                )
+            elif media_type == "video":
+                await message.answer_video(
+                    video=media_file_id,
+                    caption=preview_text,
+                    reply_markup=keyboard,
+                    parse_mode="Markdown"
+                )
+            elif media_type == "animation":
+                await message.answer_animation(
+                    animation=media_file_id,
+                    caption=preview_text,
+                    reply_markup=keyboard,
+                    parse_mode="Markdown"
+                )
+            elif media_type == "audio":
+                await message.answer_audio(
+                    audio=media_file_id,
+                    caption=preview_text,
+                    reply_markup=keyboard,
+                    parse_mode="Markdown"
+                )
+            elif media_type == "document":
+                await message.answer_document(
+                    document=media_file_id,
+                    caption=preview_text,
+                    reply_markup=keyboard,
+                    parse_mode="Markdown"
+                )
+            elif media_type == "voice":
+                await message.answer_voice(
+                    voice=media_file_id,
+                    caption=preview_text,
+                    reply_markup=keyboard,
+                    parse_mode="Markdown"
+                )
+            elif media_type == "video_note":
+                await message.answer_video_note(
+                    video_note=media_file_id,
+                    reply_markup=keyboard
+                )
+                await message.answer(
+                    preview_text,
+                    reply_markup=keyboard,
+                    parse_mode="Markdown"
+                )
+            elif media_type == "sticker":
+                await message.answer_sticker(
+                    sticker=media_file_id,
+                    reply_markup=keyboard
+                )
+                await message.answer(
+                    preview_text,
+                    reply_markup=keyboard,
+                    parse_mode="Markdown"
+                )
+        else:
+            await message.answer(
+                preview_text,
+                reply_markup=keyboard,
+                parse_mode="Markdown"
+            )
+        
+        logger.info(f"📢 Рассылка создана для {user_id}, заказ {order_id}")
+        
+    except Exception as e:
+        logger.error(f"Ошибка в команде broadcast: {e}")
+        await message.answer("❌ Произошла ошибка. Попробуйте позже.")
+
+# ===== ОБРАБОТЧИКИ ОПЛАТЫ =====
+
+@dp.callback_query(lambda c: c.data and c.data.startswith('pay_stars_'))
+async def pay_with_stars(callback: CallbackQuery):
+    try:
+        order_id = callback.data.replace('pay_stars_', '')
+        user_id = callback.from_user.id
+        
+        if user_id not in broadcast_data:
+            await callback.answer("❌ Данные не найдены", show_alert=True)
+            return
+        
+        broadcast_info = broadcast_data[user_id]
+        if broadcast_info.get('order_id') != order_id:
+            await callback.answer("❌ Неверный заказ", show_alert=True)
+            return
+        
+        text = broadcast_info.get('text', '')
+        has_media = broadcast_info.get('has_media', False)
+        stars_price = broadcast_prices.get("stars", 100)
+        
+        description = f"Отправка сообщения всем подписчикам бота"
+        if text:
+            description += f"\n\nТекст: {text[:100]}{'...' if len(text) > 100 else ''}"
+        if has_media:
+            description += "\n📎 С медиафайлом"
+        
+        prices = [LabeledPrice(label="⭐ Рассылка", amount=stars_price)]
+        
+        await bot.send_invoice(
+            chat_id=user_id,
+            title="📢 Рассылка сообщения",
+            description=description,
+            payload=f"broadcast_stars_{order_id}",
+            provider_token="",
+            currency="XTR",
+            prices=prices,
+            start_parameter="broadcast",
+            chat_id_for_payment=STARS_CHANNEL_ID,
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text=f"⭐ Оплатить {stars_price} звёзд", pay=True)]
+            ])
+        )
+        
+        await callback.answer("🔄 Отправлен счёт на оплату звёздами")
+    except Exception as e:
+        logger.error(f"Ошибка оплаты звёздами: {e}")
+        await callback.answer("❌ Ошибка", show_alert=True)
+
+@dp.callback_query(lambda c: c.data and c.data.startswith('pay_rub_'))
+async def pay_with_rub(callback: CallbackQuery):
+    try:
+        order_id = callback.data.replace('pay_rub_', '')
+        user_id = callback.from_user.id
+        
+        if user_id not in broadcast_data:
+            await callback.answer("❌ Данные не найдены", show_alert=True)
+            return
+        
+        broadcast_info = broadcast_data[user_id]
+        if broadcast_info.get('order_id') != order_id:
+            await callback.answer("❌ Неверный заказ", show_alert=True)
+            return
+        
+        text = broadcast_info.get('text', '')
+        has_media = broadcast_info.get('has_media', False)
+        rub_price = broadcast_prices.get("rub", 100)
+        
+        description = f"Рассылка в Telegram"
+        if text:
+            description += f": {text[:50]}"
+        
+        payment_url = create_freekassa_payment_link(
+            rub_price,
+            f"{order_id}_rub",
+            description
+        )
+        
+        if not payment_url:
+            await callback.answer("❌ FreeKassa не настроен", show_alert=True)
+            return
+        
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=f"💳 Оплатить {rub_price} RUB", url=payment_url)],
+            [InlineKeyboardButton(text="✅ Проверить оплату", callback_data=f"check_rub_payment_{order_id}")]
+        ])
+        
+        preview_text = f"💳 **Оплата в рублях**\n\n"
+        if text:
+            preview_text += f"📝 Текст: {text[:100]}{'...' if len(text) > 100 else ''}\n"
+        else:
+            preview_text += f"📝 (без текста)\n"
+        if has_media:
+            preview_text += f"📎 С медиафайлом\n"
+        preview_text += f"💰 Сумма: {rub_price} RUB\n\n"
+        preview_text += f"🔗 Нажмите кнопку ниже для оплаты через FreeKassa.\n"
+        preview_text += f"После оплаты нажмите 'Проверить оплату'."
+        
+        await callback.message.edit_text(
+            preview_text,
+            reply_markup=keyboard,
+            parse_mode="Markdown"
+        )
+        
+        await callback.answer("🔄 Ссылка на оплату создана")
+    except Exception as e:
+        logger.error(f"Ошибка оплаты рублями: {e}")
+        await callback.answer("❌ Ошибка", show_alert=True)
+
+@dp.callback_query(lambda c: c.data and c.data.startswith('pay_aurapay_'))
+async def pay_with_aurapay(callback: CallbackQuery):
+    try:
+        order_id = callback.data.replace('pay_aurapay_', '')
+        user_id = callback.from_user.id
+        
+        if user_id not in broadcast_data:
+            await callback.answer("❌ Данные не найдены", show_alert=True)
+            return
+        
+        broadcast_info = broadcast_data[user_id]
+        if broadcast_info.get('order_id') != order_id:
+            await callback.answer("❌ Неверный заказ", show_alert=True)
+            return
+        
+        rub_price = broadcast_prices.get("rub", 100)
+        
+        miniapp_url = f"{AURAPAY_MINIAPP_URL}?order_id={order_id}&user_id={user_id}&amount={rub_price}&currency=RUB"
+        
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔗 Оплатить через AuraPay", web_app=WebAppInfo(url=miniapp_url))],
+            [InlineKeyboardButton(text="✅ Проверить оплату", callback_data=f"check_aurapay_payment_{order_id}")]
+        ])
+        
+        text = broadcast_info.get('text', '')
+        has_media = broadcast_info.get('has_media', False)
+        
+        preview_text = f"🔗 **Оплата через AuraPay**\n\n"
+        if text:
+            preview_text += f"📝 Текст: {text[:100]}{'...' if len(text) > 100 else ''}\n"
+        if has_media:
+            preview_text += f"📎 С медиафайлом\n"
+        preview_text += f"💰 Сумма: {rub_price} RUB\n\n"
+        preview_text += f"🔐 Нажмите кнопку ниже для оплаты через AuraPay.\n"
+        preview_text += f"После оплаты нажмите 'Проверить оплату'."
+        
+        await callback.message.edit_text(
+            preview_text,
+            reply_markup=keyboard,
+            parse_mode="Markdown"
+        )
+        
+        await callback.answer("🔄 Ссылка на AuraPay создана")
+        
+    except Exception as e:
+        logger.error(f"Ошибка оплаты через AuraPay: {e}")
+        await callback.answer("❌ Ошибка", show_alert=True)
+
+@dp.callback_query(lambda c: c.data and c.data.startswith('check_rub_payment_'))
+async def check_rub_payment(callback: CallbackQuery):
+    try:
+        order_id = callback.data.replace('check_rub_payment_', '')
+        user_id = callback.from_user.id
+        
+        if user_id not in broadcast_data:
+            await callback.answer("❌ Данные не найдены", show_alert=True)
+            return
+        
+        broadcast_info = broadcast_data[user_id]
+        if broadcast_info.get('order_id') != order_id:
+            await callback.answer("❌ Неверный заказ", show_alert=True)
+            return
+        
+        await callback.answer("⏳ Проверяю статус платежа...")
+        
+        payment_status = await check_freekassa_payment_status(f"{order_id}_rub")
+        
+        if payment_status and payment_status.get('status') == 'paid':
+            await process_successful_payment_broadcast(user_id, broadcast_info, "rub")
+        else:
+            await callback.message.answer(
+                "❌ Платёж ещё не оплачен.\n"
+                "Оплатите счёт и нажмите 'Проверить оплату' снова."
+            )
+    except Exception as e:
+        logger.error(f"Ошибка проверки оплаты: {e}")
+        await callback.answer("❌ Ошибка", show_alert=True)
+
+@dp.callback_query(lambda c: c.data and c.data.startswith('check_aurapay_payment_'))
+async def check_aurapay_payment(callback: CallbackQuery):
+    try:
+        order_id = callback.data.replace('check_aurapay_payment_', '')
+        user_id = callback.from_user.id
+        
+        if user_id not in broadcast_data:
+            await callback.answer("❌ Данные не найдены", show_alert=True)
+            return
+        
+        broadcast_info = broadcast_data[user_id]
+        if broadcast_info.get('order_id') != order_id:
+            await callback.answer("❌ Неверный заказ", show_alert=True)
+            return
+        
+        await callback.answer("⏳ Проверяю статус платежа...")
+        
+        full_order_id = f"{order_id}_aurapay"
+        payment_status = await check_aurapay_payment_status(full_order_id)
+        
+        if payment_status and payment_status.get('status') in ['paid', 'success', 'completed']:
+            await process_successful_payment_broadcast(user_id, broadcast_info, "aurapay")
+            
+            if user_id in broadcast_data:
+                del broadcast_data[user_id]
+            
+            await callback.message.edit_text(
+                "✅ Оплата через AuraPay подтверждена!\n\n"
+                "Ваше сообщение отправлено на модерацию.\n"
+                "Ожидайте подтверждения от администратора."
+            )
+        else:
+            await callback.message.answer(
+                "❌ Платёж ещё не оплачен.\n"
+                "Оплатите счёт и нажмите 'Проверить оплату' снова."
+            )
+            
+    except Exception as e:
+        logger.error(f"Ошибка проверки оплаты AuraPay: {e}")
+        await callback.answer("❌ Ошибка", show_alert=True)
+
+@dp.pre_checkout_query()
+async def process_pre_checkout_query(pre_checkout_query: PreCheckoutQuery):
+    try:
+        if pre_checkout_query.invoice_payload.startswith("broadcast_stars_"):
+            await bot.answer_pre_checkout_query(pre_checkout_query.id, ok=True)
+        else:
+            await bot.answer_pre_checkout_query(pre_checkout_query.id, ok=False, error_message="Неизвестный платёж")
+    except Exception as e:
+        logger.error(f"Ошибка в pre_checkout: {e}")
+        await bot.answer_pre_checkout_query(pre_checkout_query.id, ok=False, error_message="Ошибка")
+
+@dp.message(lambda message: message.successful_payment is not None)
+async def process_successful_payment(message: Message):
+    try:
+        user_id = message.from_user.id
+        payload = message.successful_payment.invoice_payload
+        if not payload.startswith("broadcast_stars_"):
+            return
+        
+        order_id = payload.replace("broadcast_stars_", "")
+        
+        broadcast_info = broadcast_data.get(user_id)
+        if not broadcast_info:
+            await message.answer("❌ Данные о сообщении не найдены. Попробуйте снова.")
+            return
+        
+        await process_successful_payment_broadcast(user_id, broadcast_info, "stars")
+    except Exception as e:
+        logger.error(f"Ошибка в successful_payment: {e}")
+        await message.answer(f"❌ Ошибка при обработке платежа: {str(e)}")
+
+async def process_successful_payment_broadcast(user_id: int, broadcast_info: dict, payment_type: str):
+    try:
+        text = broadcast_info.get('text', '')
+        has_media = broadcast_info.get('has_media', False)
+        media_type = broadcast_info.get('media_type')
+        media_file_id = broadcast_info.get('media_file_id')
+        
+        if not text and not has_media:
+            return
+        
+        broadcast_id = f"broadcast_{int(time.time())}_{hashlib.md5(str(broadcast_info).encode()).hexdigest()[:8]}"
+        
+        pending_broadcasts[broadcast_id] = {
+            'text': text,
+            'has_media': has_media,
+            'media_type': media_type,
+            'media_file_id': media_file_id,
+            'user_id': user_id,
+            'timestamp': time.time(),
+            'chat_id': broadcast_info.get('chat_id'),
+            'payment_type': payment_type
+        }
+        
+        if user_id in broadcast_data:
+            del broadcast_data[user_id]
+        
+        await send_broadcast_for_moderation(broadcast_id, pending_broadcasts[broadcast_id])
+        
+        payment_methods = {
+            'stars': '⭐ Звёзды',
+            'rub': '💳 FreeKassa',
+            'aurapay': '🔗 AuraPay'
+        }
+        payment_method = payment_methods.get(payment_type, '🔗 AuraPay')
+        
+        await bot.send_message(
+            chat_id=user_id,
+            text=f"✅ Оплата получена! Сообщение отправлено на модерацию.\n"
+                 f"📝 {text[:100]}{'...' if len(text) > 100 else ''}\n"
+                 f"{'📎 С медиафайлом' if has_media else ''}\n"
+                 f"💳 Способ оплаты: {payment_method}\n\n"
+                 f"⏳ Ожидайте подтверждения от администратора."
+        )
+    except Exception as e:
+        logger.error(f"Ошибка обработки оплаты: {e}")
+
+async def send_broadcast_for_moderation(broadcast_id: str, broadcast_info: dict):
+    if not OWNER_ID:
+        return
+    try:
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(text="✅ Подтвердить", callback_data=f"broad_approve_{broadcast_id}"),
+                InlineKeyboardButton(text="❌ Отклонить", callback_data=f"broad_reject_{broadcast_id}")
+            ]
+        ])
+        
+        text = broadcast_info.get('text', '')
+        has_media = broadcast_info.get('has_media', False)
+        media_type = broadcast_info.get('media_type')
+        media_file_id = broadcast_info.get('media_file_id')
+        user_id = broadcast_info.get('user_id')
+        payment_type = broadcast_info.get('payment_type', 'stars')
+        
+        payment_methods = {
+            'stars': '⭐ Звёзды',
+            'rub': '💳 FreeKassa',
+            'aurapay': '🔗 AuraPay'
+        }
+        payment_method = payment_methods.get(payment_type, '🔗 AuraPay')
+        
+        preview_text = f"📋 **Новая рассылка на модерацию** #{broadcast_id}\n\n"
+        preview_text += f"👤 Заказчик ID: {user_id}\n"
+        preview_text += f"💰 Оплачено: {payment_method}\n"
+        
+        if text:
+            preview_text += f"\n📝 Текст:\n{text[:500]}{'...' if len(text) > 500 else ''}\n"
+        else:
+            preview_text += f"\n📝 Текст: (без текста)\n"
+        
+        if has_media:
+            media_names = {
+                "photo": "📸 Фото",
+                "video": "🎬 Видео",
+                "document": "📄 Документ",
+                "animation": "🎥 GIF",
+                "audio": "🎵 Аудио",
+                "voice": "🎤 Голосовое",
+                "video_note": "🔄 Видео-кружок",
+                "sticker": "🎯 Стикер"
+            }
+            preview_text += f"\n📎 {media_names.get(media_type, 'Медиафайл')} (будет отправлено)\n"
+        
+        preview_text += f"\n⏳ После подтверждения будет задержка 5 минут перед публикацией."
+        
+        if has_media and media_file_id:
+            if media_type == "photo":
+                await bot.send_photo(
+                    chat_id=OWNER_ID,
+                    photo=media_file_id,
+                    caption=preview_text,
+                    reply_markup=keyboard,
+                    parse_mode="Markdown"
+                )
+            elif media_type == "video":
+                await bot.send_video(
+                    chat_id=OWNER_ID,
+                    video=media_file_id,
+                    caption=preview_text,
+                    reply_markup=keyboard,
+                    parse_mode="Markdown"
+                )
+            elif media_type == "animation":
+                await bot.send_animation(
+                    chat_id=OWNER_ID,
+                    animation=media_file_id,
+                    caption=preview_text,
+                    reply_markup=keyboard,
+                    parse_mode="Markdown"
+                )
+            elif media_type == "audio":
+                await bot.send_audio(
+                    chat_id=OWNER_ID,
+                    audio=media_file_id,
+                    caption=preview_text,
+                    reply_markup=keyboard,
+                    parse_mode="Markdown"
+                )
+            elif media_type == "document":
+                await bot.send_document(
+                    chat_id=OWNER_ID,
+                    document=media_file_id,
+                    caption=preview_text,
+                    reply_markup=keyboard,
+                    parse_mode="Markdown"
+                )
+            elif media_type == "voice":
+                await bot.send_voice(
+                    chat_id=OWNER_ID,
+                    voice=media_file_id,
+                    caption=preview_text,
+                    reply_markup=keyboard,
+                    parse_mode="Markdown"
+                )
+            else:
+                await bot.send_message(
+                    chat_id=OWNER_ID,
+                    text=preview_text + "\n\n📎 Медиафайл прикреплён",
+                    reply_markup=keyboard,
+                    parse_mode="Markdown"
+                )
+        else:
+            await bot.send_message(
+                chat_id=OWNER_ID,
+                text=preview_text,
+                reply_markup=keyboard,
+                parse_mode="Markdown"
+            )
+        
+        logger.info(f"📨 Рассылка {broadcast_id} на модерации")
+    except Exception as e:
+        logger.error(f"Ошибка модерации: {e}")
+
+@dp.callback_query(lambda c: c.data and c.data.startswith('broad_'))
+async def handle_broadcast_moderation(callback: CallbackQuery):
+    try:
+        if callback.from_user.id != OWNER_ID:
+            await callback.answer("⛔ Доступ запрещен", show_alert=True)
+            return
+        parts = callback.data.split('_')
+        action = parts[1]
+        broadcast_id = '_'.join(parts[2:])
+        approved = action == 'approve'
+        if broadcast_id not in pending_broadcasts:
+            await callback.answer("❌ Сообщение не найдено", show_alert=True)
+            return
+        broadcast_info = pending_broadcasts[broadcast_id]
+        if approved:
+            await callback.answer("✅ Сообщение одобрено. Будет опубликовано через 5 минут.", show_alert=True)
+            await callback.message.edit_text(
+                callback.message.text + "\n\n✅ ОДОБРЕНО",
+                reply_markup=None
+            )
+            await asyncio.sleep(300)
+            if broadcast_id in pending_broadcasts:
+                text = broadcast_info.get('text', '')
+                has_media = broadcast_info.get('has_media', False)
+                media_type = broadcast_info.get('media_type')
+                media_file_id = broadcast_info.get('media_file_id')
+                
+                users_list = load_users()
+                sent_count = 0
+                failed_count = 0
+                
+                for i, chat_id in enumerate(users_list):
+                    try:
+                        if has_media and media_file_id:
+                            if media_type == "photo":
+                                await bot.send_photo(
+                                    chat_id=chat_id,
+                                    photo=media_file_id,
+                                    caption=text if text else None
+                                )
+                            elif media_type == "video":
+                                await bot.send_video(
+                                    chat_id=chat_id,
+                                    video=media_file_id,
+                                    caption=text if text else None
+                                )
+                            elif media_type == "animation":
+                                await bot.send_animation(
+                                    chat_id=chat_id,
+                                    animation=media_file_id,
+                                    caption=text if text else None
+                                )
+                            elif media_type == "audio":
+                                await bot.send_audio(
+                                    chat_id=chat_id,
+                                    audio=media_file_id,
+                                    caption=text if text else None
+                                )
+                            elif media_type == "document":
+                                await bot.send_document(
+                                    chat_id=chat_id,
+                                    document=media_file_id,
+                                    caption=text if text else None
+                                )
+                            elif media_type == "voice":
+                                await bot.send_voice(
+                                    chat_id=chat_id,
+                                    voice=media_file_id,
+                                    caption=text if text else None
+                                )
+                            else:
+                                await bot.send_message(chat_id=chat_id, text=text)
+                        else:
+                            if text:
+                                await bot.send_message(chat_id=chat_id, text=text)
+                        
+                        sent_count += 1
+                        
+                        # Задержка 3 секунды между отправками
+                        if i < len(users_list) - 1:
+                            await asyncio.sleep(3.0)
+                            
+                    except Exception as e:
+                        logger.error(f"Ошибка отправки в {chat_id}: {e}")
+                        failed_count += 1
+                        if "forbidden" in str(e).lower() or "chat not found" in str(e).lower():
+                            if chat_id in users_list:
+                                users_list.remove(chat_id)
+                                save_users(users_list)
+                
+                try:
+                    if CHANNEL_ID and CHANNEL_ID.strip():
+                        if has_media and media_file_id:
+                            if media_type == "photo":
+                                await bot.send_photo(
+                                    chat_id=CHANNEL_ID,
+                                    photo=media_file_id,
+                                    caption=text if text else None
+                                )
+                            elif media_type == "video":
+                                await bot.send_video(
+                                    chat_id=CHANNEL_ID,
+                                    video=media_file_id,
+                                    caption=text if text else None
+                                )
+                            elif media_type == "animation":
+                                await bot.send_animation(
+                                    chat_id=CHANNEL_ID,
+                                    animation=media_file_id,
+                                    caption=text if text else None
+                                )
+                            elif media_type == "audio":
+                                await bot.send_audio(
+                                    chat_id=CHANNEL_ID,
+                                    audio=media_file_id,
+                                    caption=text if text else None
+                                )
+                            elif media_type == "document":
+                                await bot.send_document(
+                                    chat_id=CHANNEL_ID,
+                                    document=media_file_id,
+                                    caption=text if text else None
+                                )
+                            else:
+                                await bot.send_message(chat_id=CHANNEL_ID, text=text)
+                        else:
+                            if text:
+                                await bot.send_message(chat_id=CHANNEL_ID, text=text)
+                        logger.info(f"📢 Отправлено в канал {CHANNEL_ID}")
+                except Exception as e:
+                    logger.error(f"Ошибка отправки в канал: {e}")
+                
+                del pending_broadcasts[broadcast_id]
+                
+                try:
+                    await bot.send_message(
+                        chat_id=OWNER_ID,
+                        text=f"📊 Рассылка #{broadcast_id} завершена!\n"
+                             f"✅ Отправлено: {sent_count}\n"
+                             f"❌ Ошибок: {failed_count}\n"
+                             f"📝 {text[:200]}{'...' if len(text) > 200 else ''}\n"
+                             f"{'📎 С медиафайлом' if has_media else ''}"
+                    )
+                except Exception as e:
+                    logger.error(f"Ошибка отправки отчета: {e}")
+                
+                try:
+                    user_id = broadcast_info.get('user_id')
+                    if user_id:
+                        await bot.send_message(
+                            chat_id=user_id,
+                            text=f"✅ Ваше сообщение опубликовано!\n"
+                                 f"📨 Отправлено: {sent_count} пользователям\n"
+                                 f"📝 {text[:100]}{'...' if len(text) > 100 else ''}\n"
+                                 f"{'📎 С медиафайлом' if has_media else ''}"
+                        )
+                except Exception as e:
+                    logger.error(f"Ошибка уведомления заказчика: {e}")
+        else:
+            await callback.answer("❌ Сообщение отклонено", show_alert=True)
+            await callback.message.edit_text(
+                callback.message.text + "\n\n❌ ОТКЛОНЕНО",
+                reply_markup=None
+            )
+            try:
+                user_id = broadcast_info.get('user_id')
+                if user_id:
+                    await bot.send_message(
+                        chat_id=user_id,
+                        text="❌ Ваше сообщение отклонено модератором."
+                    )
+            except Exception as e:
+                logger.error(f"Ошибка уведомления заказчика: {e}")
+            if broadcast_id in pending_broadcasts:
+                del pending_broadcasts[broadcast_id]
+    except Exception as e:
+        logger.error(f"Ошибка в broadcast модерации: {e}")
+        await callback.answer("❌ Ошибка", show_alert=True)
 
 # ===== ЗАПУСК =====
 
