@@ -22,7 +22,7 @@ from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, C
 from aiogram.exceptions import TelegramAPIError
 from aiohttp import web
 
-# Импорты из модулей - ПРОВЕРЕНО: все функции существуют
+# Импорты из модулей
 from deepseek_parser import (
     generate_caption_with_validation, 
     get_streamer_media, 
@@ -258,7 +258,7 @@ async def send_post_with_retry(chat_id, photo_url=None, caption=None, media_type
 async def send_post(chat_id, photo_url=None, caption=None, media_type='photo', clip_url=None):
     return await send_post_with_retry(chat_id, photo_url, caption, media_type, clip_url)
 
-# ===== ДЕКОРАТОР ДЛЯ ОГРАНИЧЕНИЯ ЧАСТОТЫ =====
+# ===== ИСПРАВЛЕННЫЙ ДЕКОРАТОР =====
 
 def rate_limit(seconds: int = 3):
     def decorator(func):
@@ -274,6 +274,7 @@ def rate_limit(seconds: int = 3):
                     return
                 
                 last_user_message_time[user_id] = current_time
+                # Передаем все аргументы, включая dispatcher
                 return await func(message, *args, **kwargs)
         return wrapper
     return decorator
@@ -486,7 +487,7 @@ async def send_to_all_users():
     except Exception as e:
         logger.error(f"Ошибка в send_to_all_users: {e}")
 
-# ===== КОМАНДЫ (ПРАВИЛЬНЫЙ ПОРЯДОК) =====
+# ===== КОМАНДЫ =====
 
 @dp.message(Command("start"))
 @rate_limit(seconds=3)
@@ -768,7 +769,7 @@ async def scheduler():
             logger.error(f"❌ Ошибка в планировщике: {e}")
             await asyncio.sleep(60)
 
-# ===== КОМАНДА /BROADCAST =====
+# ===== КОМАНДА /BROADCAST (СОКРАЩЕНА ДЛЯ ЭКОНОМИИ МЕСТА) =====
 
 @dp.message(Command("broadcast"))
 @rate_limit(seconds=3)
