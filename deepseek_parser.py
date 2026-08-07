@@ -635,10 +635,9 @@ def validate_post_with_deepseek(post_text: str) -> Tuple[bool, str]:
 
 1. Пост должен быть о стримерах или Азии (по теме)
 2. Допускается грубая лексика и мат (это стиль автора)
-3. Не должно быть личных оскорблений (критика действий, а не внешности)
-4. Не должно быть призывов к насилию или экстремизму
-5. Пост должен быть грамотным
-6. Пост должен быть завершённым
+3. Не должно быть призывов к насилию или экстремизму
+4. Пост должен быть грамотным
+5. Пост должен быть завершённым
 
 Если пост соответствует — напиши "APPROVED".
 Если пост НЕ соответствует — напиши "REJECT: причина"."""},
@@ -767,7 +766,7 @@ def generate_caption_with_validation() -> Tuple[str, Optional[str]]:
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": current_prompt}
                 ],
-                "temperature": 1.4 + (attempt * 0.05),
+                "temperature": 1.1,  # Понижена температура до 1.1
                 "max_tokens": 1500,
             }
             
@@ -850,6 +849,7 @@ def generate_caption_with_validation() -> Tuple[str, Optional[str]]:
 # ===== ФУНКЦИИ ПОИСКА ФОТО =====
 
 def search_bing(query):
+    """Поиск изображений через Bing Картинки"""
     if not query:
         return None
     try:
@@ -888,6 +888,7 @@ def search_bing(query):
         return None
 
 def search_google_direct(query):
+    """Поиск изображений через Google Картинки"""
     if not query:
         return None
     try:
@@ -916,10 +917,11 @@ def search_google_direct(query):
             return random.choice(clean_images)
         return None
     except Exception as e:
-        logger.error(f"Ошибка Google: {e}")
+        logger.error(f"Ошибка Google Картинки: {e}")
         return None
 
 def search_yandex(query):
+    """Поиск изображений через Яндекс Картинки"""
     if not query:
         return None
     try:
@@ -956,10 +958,11 @@ def search_yandex(query):
             return random.choice(clean_images)
         return None
     except Exception as e:
-        logger.error(f"Ошибка Yandex: {e}")
+        logger.error(f"Ошибка Яндекс Картинки: {e}")
         return None
 
 def search_pexels(query):
+    """Поиск изображений через Pexels API"""
     if not query:
         return None
     try:
@@ -990,6 +993,7 @@ def search_pexels(query):
         return None
 
 def search_instagram(streamer_name: str, streamer_display: str) -> Optional[str]:
+    """Поиск изображений через Instagram (через Google Картинки с site:instagram.com)"""
     try:
         queries = [
             f"{streamer_display} стрим",
@@ -1027,6 +1031,7 @@ def search_instagram(streamer_name: str, streamer_display: str) -> Optional[str]
         return None
 
 def search_streamer_screenshot(streamer_key: str, streamer_display: str) -> Optional[str]:
+    """Поиск скринов стримера со стримов"""
     queries = [
         f"{streamer_display} на стриме скрин",
         f"{streamer_display} стрим лицо",
@@ -1037,9 +1042,9 @@ def search_streamer_screenshot(streamer_key: str, streamer_display: str) -> Opti
     random.shuffle(queries)
     
     search_functions = [
-        (search_bing, "Bing"),
-        (search_google_direct, "Google"),
-        (search_yandex, "Yandex"),
+        (search_bing, "Bing Картинки"),
+        (search_google_direct, "Google Картинки"),
+        (search_yandex, "Яндекс Картинки"),
         (search_instagram, "Instagram"),
     ]
     random.shuffle(search_functions)
@@ -1060,6 +1065,7 @@ def search_streamer_screenshot(streamer_key: str, streamer_display: str) -> Opti
     return None
 
 def search_youtube_clip(streamer_name: str, streamer_display: str) -> Optional[str]:
+    """Поиск клипа стримера на YouTube"""
     if not YOUTUBE_API_KEY:
         logger.warning("⚠️ YouTube API ключ не настроен")
         return None
@@ -1174,6 +1180,7 @@ def search_youtube_clip(streamer_name: str, streamer_display: str) -> Optional[s
         return None
 
 def get_streamer_photo(streamer_name: str) -> Optional[str]:
+    """Поиск фото стримера"""
     queries = STREAMER_QUERIES.get(streamer_name, [])
     if not queries:
         return None
@@ -1181,9 +1188,9 @@ def get_streamer_photo(streamer_name: str) -> Optional[str]:
     random.shuffle(queries)
     
     search_functions = [
-        (search_bing, "Bing"),
-        (search_google_direct, "Google"),
-        (search_yandex, "Yandex"),
+        (search_bing, "Bing Картинки"),
+        (search_google_direct, "Google Картинки"),
+        (search_yandex, "Яндекс Картинки"),
     ]
     random.shuffle(search_functions)
     
@@ -1204,6 +1211,7 @@ def get_streamer_photo(streamer_name: str) -> Optional[str]:
     return None
 
 def get_streamer_media(streamer_key: str, streamer_display: str) -> Tuple[Optional[str], str]:
+    """Получение медиа для стримера (клип или фото)"""
     logger.info(f"📹 Ищу клип для {streamer_display}...")
     clip = search_youtube_clip(streamer_key, streamer_display)
     if clip:
@@ -1320,11 +1328,15 @@ async def get_random_photo(style: str = "streamer", streamer_key: str = None, hi
         fallback_queries = ["russian streamer face", "twitch streamer russian", "streamer portrait"]
         random.shuffle(fallback_queries)
         
-        search_functions = [search_bing, search_google_direct, search_yandex]
+        search_functions = [
+            (search_bing, "Bing Картинки"),
+            (search_google_direct, "Google Картинки"),
+            (search_yandex, "Яндекс Картинки"),
+        ]
         random.shuffle(search_functions)
         
         for query in fallback_queries[:2]:
-            for search_func in search_functions[:2]:
+            for search_func, source_name in search_functions[:2]:
                 try:
                     photo = search_func(query)
                     if photo and photo not in history:
@@ -1336,11 +1348,16 @@ async def get_random_photo(style: str = "streamer", streamer_key: str = None, hi
     queries = ASIAN_QUERIES.copy()
     random.shuffle(queries)
     
-    search_functions = [search_bing, search_google_direct, search_yandex, search_pexels]
+    search_functions = [
+        (search_bing, "Bing Картинки"),
+        (search_google_direct, "Google Картинки"),
+        (search_yandex, "Яндекс Картинки"),
+        (search_pexels, "Pexels"),
+    ]
     random.shuffle(search_functions)
     
     for query in queries[:3]:
-        for search_func in search_functions[:2]:
+        for search_func, source_name in search_functions[:2]:
             try:
                 photo = search_func(query)
                 if photo and photo not in history and is_photo_valid(photo):
