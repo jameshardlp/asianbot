@@ -11,6 +11,7 @@ import hashlib
 import requests
 import logging
 import base64
+import asyncio
 from typing import Optional, Tuple, List, Dict, Any
 from urllib.parse import quote
 from datetime import datetime, timedelta
@@ -19,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 # ===== КОНФИГУРАЦИЯ =====
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
-DEEPSEEK_MODEL = "deepseek-chat-v3-0324"  # Новая модель
+DEEPSEEK_MODEL = "deepseek-chat"
 YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY", "")
 MIN_DATE = datetime(2026, 1, 1)
 
@@ -599,7 +600,7 @@ def request_continuation(previous_text: str) -> str:
         }
         tail = previous_text[-500:]
         data = {
-            "model": DEEPSEEK_MODEL,  # Используем новую модель
+            "model": DEEPSEEK_MODEL,
             "messages": [
                 {"role": "system", "content": "Ты уставший мужик. Текст поста был обрезан. Допиши ТОЛЬКО концовку — 1-3 завершающих предложения с логическим выводом. Не повторяй уже написанное. Только текст продолжения."},
                 {"role": "user", "content": f"Вот текст, который оборвался:\n\n...{tail}\n\nДопиши концовку (1-3 предложения)."}
@@ -628,7 +629,7 @@ def validate_post_with_deepseek(post_text: str) -> Tuple[bool, str]:
         }
         
         data = {
-            "model": DEEPSEEK_MODEL,  # Используем новую модель
+            "model": DEEPSEEK_MODEL,
             "messages": [
                 {"role": "system", "content": """Ты — строгий модератор контента. Проверяй посты на соответствие правилам:
 
@@ -705,10 +706,10 @@ def generate_caption_with_validation() -> Tuple[str, Optional[str]]:
         logger.error("❌ Нет ключа DeepSeek API")
         return "Мне потребуется чуть больше времени на ответ, ожидайте.", streamer_key
     
-    max_attempts = 15
+    max_attempts = 20
     for attempt in range(max_attempts):
         try:
-            logger.info(f"Попытка {attempt+1} для {topic}")
+            logger.info(f"Попытка {attempt+1}/{max_attempts} для {topic}")
             
             base_prompt = get_style_prompt(style, streamer_key)
             
@@ -729,6 +730,7 @@ def generate_caption_with_validation() -> Tuple[str, Optional[str]]:
                     f"Напиши пост про то, как {name} накручивает зрителей. С юмором.",
                     f"У {genitive} опять проблемы со стримом. Напиши об этом с юмором.",
                     f"Смотрю на {accusative} и ржу. Расскажи почему.",
+                    f"Сегодня {dative} снова не повезло. Расскажи об этом с матом.",
                 ]
             else:
                 streamer_topics = [
@@ -742,14 +744,14 @@ def generate_caption_with_validation() -> Tuple[str, Optional[str]]:
                 "Напиши пост про азиатскую жизнь. С юмором.",
             ]
             
-            current_prompt = base_prompt
-            if attempt > 0:
+            if attempt % 2 == 0:
+                current_prompt = base_prompt
+            else:
                 if style == 'streamer':
-                    alt = random.choice(streamer_topics)
+                    current_prompt = random.choice(streamer_topics) + "\n\n⚠️ Пиши строго по теме. Только пост без рассуждений."
                 else:
-                    alt = random.choice(asian_topics)
-                current_prompt = alt + "\n\n⚠️ Пиши строго по теме. Только пост без рассуждений."
-                logger.info(f"Пробую альтернативный промпт")
+                    current_prompt = random.choice(asian_topics) + "\n\n⚠️ Пиши строго по теме. Только пост без рассуждений."
+                logger.info(f"Пробую альтернативный промпт #{attempt}")
             
             system_prompt = get_system_prompt()
             
@@ -760,13 +762,13 @@ def generate_caption_with_validation() -> Tuple[str, Optional[str]]:
             }
             
             data = {
-                "model": DEEPSEEK_MODEL,  # Используем новую модель
+                "model": DEEPSEEK_MODEL,
                 "messages": [
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": current_prompt}
                 ],
-                "temperature": 1.3,
-                "max_tokens": 4000,
+                "temperature": 1.4 + (attempt * 0.05),
+                "max_tokens": 1500,
             }
             
             response = requests.post(url, headers=headers, json=data, timeout=60)
@@ -776,9 +778,13 @@ def generate_caption_with_validation() -> Tuple[str, Optional[str]]:
                 if "извините" in error_text or "не могу" in error_text or "не разрешено" in error_text:
                     logger.warning(f"Контент заблокирован, пробую другой промпт...")
                     continue
+                else:
+                    logger.error(f"Ошибка 400: {response.text[:200]}")
+                    continue
             
             if response.status_code != 200:
-                logger.error(f"DeepSeek ошибка: {response.status_code}")
+                logger.error(f"DeepSeek ошибка {response.status_code}: {response.text[:200]}")
+                time.sleep(1)
                 continue
             
             result = response.json()
@@ -790,7 +796,7 @@ def generate_caption_with_validation() -> Tuple[str, Optional[str]]:
             generated_content = choice.get("message", {}).get("content", "")
             finish_reason = choice.get("finish_reason", "")
             
-            if not generated_content or len(generated_content.strip()) < 10:
+            if not generated_content or len(generated_content.strip()) < 20:
                 logger.warning("Пустой или короткий ответ")
                 continue
             
@@ -811,11 +817,7 @@ def generate_caption_with_validation() -> Tuple[str, Optional[str]]:
             caption = clean_text(caption)
             caption = truncate_by_sentences(caption, max_length=1023)
             
-            if len(caption) > 1023:
-                logger.warning(f"Слишком длинный ({len(caption)} символов)")
-                continue
-            
-            if len(caption) < 20:
+            if len(caption) < 50:
                 logger.warning(f"Слишком короткий ({len(caption)} символов)")
                 continue
             
@@ -835,6 +837,9 @@ def generate_caption_with_validation() -> Tuple[str, Optional[str]]:
                 logger.warning(f"❌ Пост не прошёл проверку: {result}")
                 continue
             
+        except requests.exceptions.Timeout:
+            logger.warning(f"Таймаут запроса (попытка {attempt+1})")
+            continue
         except Exception as e:
             logger.error(f"Ошибка генерации (попытка {attempt+1}): {e}")
             continue
@@ -842,7 +847,7 @@ def generate_caption_with_validation() -> Tuple[str, Optional[str]]:
     logger.warning("⚠️ Все попытки генерации не удались")
     return "Мне потребуется чуть больше времени на ответ, ожидайте.", streamer_key
 
-# ===== ФУНКЦИИ ПАРСИНГА И ПОИСКА МЕДИА =====
+# ===== ФУНКЦИИ ПОИСКА ФОТО =====
 
 def search_bing(query):
     if not query:
