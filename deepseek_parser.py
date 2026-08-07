@@ -11,7 +11,6 @@ import hashlib
 import requests
 import logging
 import base64
-import asyncio
 from typing import Optional, Tuple, List, Dict, Any
 from urllib.parse import quote
 from datetime import datetime, timedelta
@@ -118,7 +117,7 @@ style_prompts = {
     'streamer': """
 Ты — уставший мужик лет 35-40, работяга. Сидишь вечером с пивом, смотришь стримеров и ржешь с них. Твой стиль — как в гараже с мужиками: грубо, с матом, но с юмором.
 
-Напиши пост про стримера/стримеров. Пост должен быть живым, эмоциональным, с реальными историями и наблюдениями.
+Напиши короткий пост про стримера/стримеров. Пост должен быть живым, эмоциональным, с реальными историями и наблюдениями.
 
 ⚠️ ПРАВИЛА ИСПОЛЬЗОВАНИЯ ПАДЕЖЕЙ (ЭТО ВАЖНО!):
 - Вудуш: у Вудуша, Вудушу, Вудушем, о Вудуше
@@ -132,7 +131,7 @@ style_prompts = {
 - Бустер: у Бустера, Бустеру, Бустером, о Бустере
 
 Требования:
-- Пиши пост любого размера, но сохраняй логику и смысл
+- Пост должен быть 600-900 символов
 - Мат 2-5 раз
 - Обязательно используй 1-2 локальных мема про стримера
 - Используй правильные падежи!
@@ -142,10 +141,10 @@ style_prompts = {
 - Обращайся к читателям на "вы"
 """,
     'asia': """
-Ты — уставший мужик, работяга. Иногда вспоминаешь про Азию, где всё по-другому. Напиши пост про Азию с юмором и самоиронией.
+Ты — уставший мужик, работяга. Иногда вспоминаешь про Азию, где всё по-другому. Напиши короткий пост про Азию с юмором и самоиронией.
 
 Требования:
-- Пиши пост любого размера, но сохраняй логику и смысл
+- Пост должен быть 600-900 символов
 - Мат 1-2 раза
 - Острая шутка с юмором
 - Используй "так называемый/ая/ые" с иронией
@@ -350,7 +349,7 @@ def drop_incomplete_tail(text: str) -> str:
         return text[:last_end + 1].strip()
     return text
 
-def truncate_by_sentences(text: str, max_length: int = 1023) -> str:
+def truncate_by_sentences(text: str, max_length: int = 900) -> str:
     if not text:
         return ''
     text = text.strip()
@@ -388,7 +387,8 @@ def clean_text(text: str) -> str:
     text = clean_punctuation(text)
     return text
 
-def validate_caption(text: str, max_length: int = 1023) -> Tuple[str, Optional[str]]:
+def validate_caption(text: str, min_length: int = 600, max_length: int = 900) -> Tuple[str, Optional[str]]:
+    """Проверяет текст с ограничениями по длине 600-900 символов"""
     if not text:
         return '', 'Текст пустой'
     text = clean_text(text)
@@ -398,6 +398,8 @@ def validate_caption(text: str, max_length: int = 1023) -> Tuple[str, Optional[s
         text = truncate_by_sentences(text, max_length)
         if not text:
             return '', 'Текст слишком длинный и не может быть обрезан'
+    if len(text) < min_length:
+        return '', f'Слишком короткий ({len(text)} символов, нужно {min_length})'
     if not text.endswith(('.', '!', '?')):
         text = ensure_ends_with_dot(text)
     all_sentences = get_sentences(text)
@@ -412,7 +414,7 @@ def validate_caption(text: str, max_length: int = 1023) -> Tuple[str, Optional[s
             else:
                 return '', 'Последнее предложение не завершено'
         word_count = len(last_sentence.split())
-        if word_count < 2:
+        if word_count < 3:
             if len(all_sentences) > 1:
                 text = ' '.join(all_sentences[:-1]).strip()
                 text = ensure_ends_with_dot(text)
@@ -640,6 +642,7 @@ def validate_post_with_deepseek(post_text: str) -> Tuple[bool, str]:
 4. Не должно быть призывов к насилию или экстремизму
 5. Пост должен быть грамотным
 6. Пост должен быть завершённым
+7. Пост должен быть 600-900 символов
 
 Если пост соответствует — напиши "APPROVED".
 Если пост НЕ соответствует — напиши "REJECT: причина"."""},
@@ -724,34 +727,34 @@ def generate_caption_with_validation() -> Tuple[str, Optional[str]]:
                 accusative = info['accusative']
                 
                 streamer_topics = [
-                    f"Напиши живой пост про стримера {name}. Расскажи, как {pronoun} накручивает зрителей или тупит на стриме. Используй мат и юмор.",
-                    f"Напиши пост про {name}. У {genitive} опять проблемы на стриме. Расскажи с юмором и матом.",
-                    f"Напиши пост про скандал с {name}. Используй мат и чёрный юмор.",
-                    f"Расскажи смешную историю про {name}. С юмором и матом.",
-                    f"Напиши пост про то, как {name} накручивает зрителей. С юмором.",
-                    f"У {genitive} опять проблемы со стримом. Напиши об этом с юмором.",
-                    f"Смотрю на {accusative} и ржу. Расскажи почему.",
-                    f"Сегодня {dative} снова не повезло. Расскажи об этом с матом.",
+                    f"Напиши живой короткий пост про стримера {name} (600-900 символов). Расскажи, как {pronoun} накручивает зрителей или тупит на стриме. Используй мат и юмор.",
+                    f"Напиши короткий пост про {name} (600-900 символов). У {genitive} опять проблемы на стриме. Расскажи с юмором и матом.",
+                    f"Напиши короткий пост про скандал с {name} (600-900 символов). Используй мат и чёрный юмор.",
+                    f"Расскажи смешную историю про {name} (600-900 символов). С юмором и матом.",
+                    f"Напиши короткий пост про то, как {name} накручивает зрителей (600-900 символов). С юмором.",
+                    f"У {genitive} опять проблемы со стримом. Напиши короткий пост об этом с юмором (600-900 символов).",
+                    f"Смотрю на {accusative} и ржу. Расскажи почему (600-900 символов).",
+                    f"Сегодня {dative} снова не повезло. Расскажи коротко об этом с матом (600-900 символов).",
                 ]
             else:
                 streamer_topics = [
-                    "Напиши живой пост про стримера. Критикуй его действия с юмором. Используй мат.",
-                    "Напиши пост про стримера и его очередной провал на стриме. С юмором и матом.",
+                    "Напиши живой короткий пост про стримера (600-900 символов). Критикуй его действия с юмором. Используй мат.",
+                    "Напиши короткий пост про стримера и его очередной провал на стриме (600-900 символов). С юмором и матом.",
                 ]
             
             asian_topics = [
-                "Напиши пост про жизнь в Азии. С юмором и самоиронией.",
-                "Напиши смешную историю из Азии. С юмором и матом.",
-                "Напиши пост про азиатскую жизнь. С юмором.",
+                "Напиши короткий пост про жизнь в Азии (600-900 символов). С юмором и самоиронией.",
+                "Напиши короткую смешную историю из Азии (600-900 символов). С юмором и матом.",
+                "Напиши короткий пост про азиатскую жизнь (600-900 символов). С юмором.",
             ]
             
             if attempt % 2 == 0:
                 current_prompt = base_prompt
             else:
                 if style == 'streamer':
-                    current_prompt = random.choice(streamer_topics) + "\n\n⚠️ Пиши строго по теме. Только пост без рассуждений."
+                    current_prompt = random.choice(streamer_topics) + "\n\n⚠️ Пиши строго по теме. Только короткий пост без рассуждений."
                 else:
-                    current_prompt = random.choice(asian_topics) + "\n\n⚠️ Пиши строго по теме. Только пост без рассуждений."
+                    current_prompt = random.choice(asian_topics) + "\n\n⚠️ Пиши строго по теме. Только короткий пост без рассуждений."
                 logger.info(f"Пробую альтернативный промпт #{attempt}")
             
             system_prompt = get_system_prompt()
@@ -816,13 +819,20 @@ def generate_caption_with_validation() -> Tuple[str, Optional[str]]:
                 continue
             
             caption = clean_text(caption)
-            caption = truncate_by_sentences(caption, max_length=1023)
             
-            if len(caption) < 50:
-                logger.warning(f"Слишком короткий ({len(caption)} символов)")
+            # Проверяем длину поста (600-900 символов)
+            if len(caption) < 600:
+                logger.warning(f"Слишком короткий ({len(caption)} символов, нужно 600-900)")
                 continue
             
-            validated, error = validate_caption(caption, max_length=1023)
+            if len(caption) > 900:
+                caption = truncate_by_sentences(caption, 900)
+                if len(caption) < 600:
+                    logger.warning(f"После обрезания слишком короткий ({len(caption)} символов)")
+                    continue
+                logger.info(f"Пост обрезан до {len(caption)} символов")
+            
+            validated, error = validate_caption(caption, min_length=600, max_length=900)
             
             if not validated:
                 logger.warning(f"Текст не прошёл проверку: {error}")
@@ -831,7 +841,7 @@ def generate_caption_with_validation() -> Tuple[str, Optional[str]]:
             approved, result = validate_post_with_deepseek(caption)
             
             if approved:
-                logger.info(f"✅ Пост одобрен! (попытка {attempt+1})")
+                logger.info(f"✅ Пост одобрен! (попытка {attempt+1}) Длина: {len(caption)} символов")
                 add_to_last_posts(caption)
                 return caption, streamer_key
             else:
@@ -1203,7 +1213,6 @@ def get_streamer_photo(streamer_name: str) -> Optional[str]:
                 photo = search_func(query)
                 if photo:
                     if check_date_in_content("", photo):
-                        # Проверяем через DeepSeek, что на фото стример
                         if verify_photo_with_deepseek(photo, streamer_name):
                             logger.info(f"✅ Найдено новое фото для {streamer_name}")
                             return photo
@@ -1235,7 +1244,6 @@ def get_asia_photo() -> Optional[str]:
                 if photo:
                     if check_date_in_content("", photo):
                         if is_photo_valid(photo):
-                            # Проверяем через DeepSeek, что на фото азиатская модель
                             if verify_asia_photo_with_deepseek(photo):
                                 logger.info(f"✅ Найдено азиатское фото")
                                 return photo
@@ -1250,21 +1258,17 @@ def get_asia_photo() -> Optional[str]:
 
 def get_streamer_media(streamer_key: str, streamer_display: str) -> Tuple[Optional[str], str]:
     """Получает медиа для стримера: сначала клип, если нет - скрин/фото"""
-    # Сначала ищем клип на YouTube
     logger.info(f"📹 Ищу клип для {streamer_display}...")
     clip = search_youtube_clip(streamer_key, streamer_display)
     if clip:
         return clip, 'clip'
     
-    # Если клип не найден, ищем фото/скрин
     logger.info(f"🖼️ Клип не найден, ищу фото для {streamer_display}...")
     
-    # Сначала ищем скрин со стрима
     screenshot = search_streamer_screenshot(streamer_key, streamer_display)
     if screenshot:
         return screenshot, 'photo'
     
-    # Если скрин не найден, ищем обычное фото
     photo = get_streamer_photo(streamer_key)
     if photo:
         return photo, 'photo'
@@ -1278,10 +1282,9 @@ def verify_photo_with_deepseek(image_url: str, streamer_name: str) -> bool:
     """Проверяет через DeepSeek, что на фото изображен нужный стример"""
     if not DEEPSEEK_API_KEY:
         logger.warning("⚠️ Нет DeepSeek API ключа для проверки фото")
-        return True  # Пропускаем проверку, если нет ключа
+        return True
     
     try:
-        # Кодируем изображение в base64
         base64_image = encode_image_to_base64_url(image_url)
         if not base64_image:
             return False
@@ -1328,20 +1331,19 @@ def verify_photo_with_deepseek(image_url: str, streamer_name: str) -> bool:
             return "ДА" in answer
         else:
             logger.error(f"❌ Ошибка проверки фото: {response.status_code}")
-            return True  # При ошибке пропускаем проверку
+            return True
             
     except Exception as e:
         logger.error(f"❌ Ошибка проверки фото через DeepSeek: {e}")
-        return True  # При ошибке пропускаем проверку
+        return True
 
 def verify_asia_photo_with_deepseek(image_url: str) -> bool:
     """Проверяет через DeepSeek, что на фото азиатская модель/девушка"""
     if not DEEPSEEK_API_KEY:
         logger.warning("⚠️ Нет DeepSeek API ключа для проверки фото")
-        return True  # Пропускаем проверку, если нет ключа
+        return True
     
     try:
-        # Кодируем изображение в base64
         base64_image = encode_image_to_base64_url(image_url)
         if not base64_image:
             return False
@@ -1388,11 +1390,11 @@ def verify_asia_photo_with_deepseek(image_url: str) -> bool:
             return "ДА" in answer
         else:
             logger.error(f"❌ Ошибка проверки фото: {response.status_code}")
-            return True  # При ошибке пропускаем проверку
+            return True
             
     except Exception as e:
         logger.error(f"❌ Ошибка проверки фото через DeepSeek: {e}")
-        return True  # При ошибке пропускаем проверку
+        return True
 
 def encode_image_to_base64_url(image_url: str) -> str:
     try:
@@ -1467,7 +1469,6 @@ async def get_random_photo(style: str = "streamer", streamer_key: str = None, hi
         history = []
     
     if style == 'streamer' and streamer_key:
-        # Для темы streamer - ищем фото конкретного стримера
         photo = get_streamer_photo(streamer_key)
         if photo and photo not in history:
             if check_date_in_content("", photo):
@@ -1476,7 +1477,6 @@ async def get_random_photo(style: str = "streamer", streamer_key: str = None, hi
             logger.info("⏭️ Фото уже использовалось")
             return None
         
-        # Если не нашли конкретного стримера, ищем любого стримера
         logger.info("🔄 Пробую найти другого стримера...")
         streamers = ['voodoosh', 'praden', 'bratishkinoff', 'sasavot', 
                      'alina_rin', 'lasqa', 'arrowwoods', 'evelone', 'buster']
@@ -1490,7 +1490,6 @@ async def get_random_photo(style: str = "streamer", streamer_key: str = None, hi
                 if check_date_in_content("", photo):
                     return photo
         
-        # Если совсем не нашли, пробуем общий поиск
         logger.warning("⚠️ Не найдены фото стримеров, пробую общий поиск")
         fallback_queries = ["russian streamer face", "twitch streamer russian", "streamer portrait"]
         random.shuffle(fallback_queries)
@@ -1513,7 +1512,6 @@ async def get_random_photo(style: str = "streamer", streamer_key: str = None, hi
                     continue
     
     elif style == 'asia':
-        # Для темы asia - ищем азиатскую модель
         photo = get_asia_photo()
         if photo and photo not in history:
             if check_date_in_content("", photo):
@@ -1522,7 +1520,6 @@ async def get_random_photo(style: str = "streamer", streamer_key: str = None, hi
             logger.info("⏭️ Азиатское фото уже использовалось")
             return None
         
-        # Если не нашли, пробуем еще раз с другими запросами
         logger.info("🔄 Пробую найти другое азиатское фото...")
         photo = get_asia_photo()
         if photo and photo not in history:
