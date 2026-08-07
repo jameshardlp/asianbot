@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 # ===== КОНФИГУРАЦИЯ =====
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
+DEEPSEEK_MODEL = "deepseek-chat-v3-0324"  # Новая модель
 YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY", "")
 MIN_DATE = datetime(2026, 1, 1)
 
@@ -598,7 +599,7 @@ def request_continuation(previous_text: str) -> str:
         }
         tail = previous_text[-500:]
         data = {
-            "model": "deepseek-chat",
+            "model": DEEPSEEK_MODEL,  # Используем новую модель
             "messages": [
                 {"role": "system", "content": "Ты уставший мужик. Текст поста был обрезан. Допиши ТОЛЬКО концовку — 1-3 завершающих предложения с логическим выводом. Не повторяй уже написанное. Только текст продолжения."},
                 {"role": "user", "content": f"Вот текст, который оборвался:\n\n...{tail}\n\nДопиши концовку (1-3 предложения)."}
@@ -627,7 +628,7 @@ def validate_post_with_deepseek(post_text: str) -> Tuple[bool, str]:
         }
         
         data = {
-            "model": "deepseek-chat",
+            "model": DEEPSEEK_MODEL,  # Используем новую модель
             "messages": [
                 {"role": "system", "content": """Ты — строгий модератор контента. Проверяй посты на соответствие правилам:
 
@@ -759,7 +760,7 @@ def generate_caption_with_validation() -> Tuple[str, Optional[str]]:
             }
             
             data = {
-                "model": "deepseek-chat",
+                "model": DEEPSEEK_MODEL,  # Используем новую модель
                 "messages": [
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": current_prompt}
@@ -1246,7 +1247,7 @@ async def analyze_photo_for_comment(image_url: str) -> Optional[str]:
         }
         
         data = {
-            "model": "deepseek-vl-chat",
+            "model": DEEPSEEK_MODEL,
             "messages": [
                 {
                     "role": "user",
