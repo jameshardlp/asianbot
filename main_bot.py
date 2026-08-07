@@ -22,7 +22,7 @@ from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, C
 from aiogram.exceptions import TelegramAPIError
 from aiohttp import web
 
-# Импорты из модулей
+# Импорты из модулей - ПРОВЕРЕНО: все функции существуют
 from deepseek_parser import (
     generate_caption_with_validation, 
     get_streamer_media, 
@@ -87,14 +87,12 @@ USAGE_FILE = "usage.json"
 is_sending = False
 last_post_time = time.time()
 MIN_POST_INTERVAL = 2 * 60 * 60
-SEND_DELAY = 3.0  # Задержка 3 секунды между сообщениями
+SEND_DELAY = 3.0
 users = []
 history = []
 schedule_data = {}
 
-# Хранилище для отслеживания последнего времени отправки пользователю
 last_user_message_time = defaultdict(float)
-# Блокировка для каждого пользователя, чтобы предотвратить одновременные запросы
 user_locks = defaultdict(asyncio.Lock)
 
 # ===== ИНИЦИАЛИЗАЦИЯ БОТА =====
@@ -176,17 +174,13 @@ def save_usage(usage_data: dict):
         logger.error(f"Ошибка сохранения статистики: {e}")
         return False
 
-# ===== ИНИЦИАЛИЗАЦИЯ ДАННЫХ =====
 users = load_users()
 history = load_history()
 schedule_data = load_schedule()
 
-# ===== ФУНКЦИИ ОТПРАВКИ С ЗАДЕРЖКОЙ =====
+# ===== ФУНКЦИИ ОТПРАВКИ =====
 
 async def send_post_with_retry(chat_id, photo_url=None, caption=None, media_type='photo', clip_url=None, max_retries=3):
-    """Отправляет пост с повторными попытками при ошибках и задержкой между сообщениями"""
-    
-    # Проверяем, не слишком ли часто отправляем этому пользователю
     current_time = time.time()
     last_time = last_user_message_time.get(chat_id, 0)
     time_since_last = current_time - last_time
@@ -196,7 +190,6 @@ async def send_post_with_retry(chat_id, photo_url=None, caption=None, media_type
         logger.info(f"⏳ Ожидание {wait_time:.1f} сек перед отправкой пользователю {chat_id}")
         await asyncio.sleep(wait_time)
     
-    # Обновляем время последней отправки
     last_user_message_time[chat_id] = time.time()
     
     for attempt in range(max_retries):
@@ -227,7 +220,6 @@ async def send_post_with_retry(chat_id, photo_url=None, caption=None, media_type
         except TelegramAPIError as e:
             error_str = str(e).lower()
             
-            # Обработка ошибки "Too Many Requests"
             if "too many requests" in error_str or "retry after" in error_str:
                 import re
                 match = re.search(r"retry after (\d+)", str(e))
@@ -263,47 +255,244 @@ async def send_post_with_retry(chat_id, photo_url=None, caption=None, media_type
     
     return False
 
-# ===== ОБНОВЛЕННАЯ ФУНКЦИЯ ОТПРАВКИ ПОСТА =====
-
 async def send_post(chat_id, photo_url=None, caption=None, media_type='photo', clip_url=None):
-    """Отправляет пост с задержкой 3 секунды между сообщениями"""
     return await send_post_with_retry(chat_id, photo_url, caption, media_type, clip_url)
 
-# ===== ИСПРАВЛЕННЫЙ ДЕКОРАТОР ДЛЯ ОГРАНИЧЕНИЯ ЧАСТОТЫ =====
+# ===== ДЕКОРАТОР ДЛЯ ОГРАНИЧЕНИЯ ЧАСТОТЫ =====
 
 def rate_limit(seconds: int = 3):
-    """Декоратор для ограничения частоты вызова команд"""
     def decorator(func):
         async def wrapper(message: Message, *args, **kwargs):
             user_id = message.from_user.id
             
-            # Используем блокировку для пользователя
             async with user_locks[user_id]:
                 current_time = time.time()
                 last_time = last_user_message_time.get(user_id, 0)
                 
                 if current_time - last_time < seconds:
-                    # Не отвечаем, просто игнорируем
                     logger.info(f"⏭️ Игнорируем частый запрос от {user_id} ({(current_time - last_time):.1f} сек)")
                     return
                 
                 last_user_message_time[user_id] = current_time
-                # Передаем все аргументы, включая dispatcher и другие
                 return await func(message, *args, **kwargs)
         return wrapper
     return decorator
 
-# ===== КОМАНДЫ (ПРАВИЛЬНЫЙ ПОРЯДОК ДЕКОРАТОРОВ) =====
+# ===== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ =====
 
-# ВАЖНО: сначала @dp.message, потом @rate_limit!
-# Декораторы применяются снизу вверх: сначала rate_limit, потом dp.message
+async def get_channel_id() -> Optional[str]:
+    if CHANNEL_ID and CHANNEL_ID.strip():
+        return CHANNEL_ID.strip()
+    try:
+        me = await bot.get_me()
+        logger.info(f"Бот: @{me.username}")
+        try:
+            updates = await asyncio.wait_for(
+                bot.get_updates(offset=-1, limit=10),
+                timeout=10
+            )
+            for update in updates:
+                if update.channel_post:
+                    chat_id = update.channel_post.chat.id
+                    try:
+                        chat_member = await bot.get_chat_member(chat_id, bot.id)
+                        if chat_member.status in ["administrator", "creator"]:
+                            logger.info(f"Найден канал: {chat_id}")
+                            return str(chat_id)
+                    except:
+                        pass
+        except asyncio.TimeoutError:
+            logger.warning("Таймаут получения обновлений")
+        except Exception as e:
+            logger.error(f"Ошибка получения обновлений: {e}")
+    except Exception as e:
+        logger.error(f"Ошибка поиска канала: {e}")
+    return None
+
+def can_use_photo(user_id: int) -> Tuple[bool, int, int]:
+    if user_id == OWNER_ID:
+        return True, 0, float('inf')
+    
+    usage_data = load_usage()
+    current_date = datetime.now().strftime("%Y-%m-%d")
+    user_key = str(user_id)
+    limit = 10
+    
+    if user_key not in usage_data:
+        return True, 0, limit
+    
+    user_usage = usage_data.get(user_key, {})
+    last_date = user_usage.get("date")
+    count = user_usage.get("count", 0)
+    
+    if last_date != current_date:
+        return True, 0, limit
+    
+    if count >= limit:
+        return False, count, limit
+    
+    return True, count, limit
+
+def increment_photo_usage(user_id: int) -> Tuple[int, int]:
+    if user_id == OWNER_ID:
+        return 0, float('inf')
+    
+    usage_data = load_usage()
+    current_date = datetime.now().strftime("%Y-%m-%d")
+    user_key = str(user_id)
+    limit = 10
+    
+    if user_key not in usage_data:
+        usage_data[user_key] = {"date": current_date, "count": 0}
+    
+    user_usage = usage_data[user_key]
+    
+    if user_usage.get("date") != current_date:
+        user_usage["date"] = current_date
+        user_usage["count"] = 0
+    
+    user_usage["count"] += 1
+    
+    save_usage(usage_data)
+    
+    return user_usage["count"], limit
+
+async def create_post_with_photo(chat_id, user_id=0, skip_moderation=False, style="streamer"):
+    try:
+        caption, streamer_key = generate_caption_with_validation()
+        if not caption:
+            return False
+        
+        media_url = None
+        media_type = 'photo'
+        clip_url = None
+        
+        if streamer_key:
+            streamer_names = {
+                'voodoosh': 'Вудуш', 'praden': 'Праден', 'bratishkinoff': 'Братишкин',
+                'sasavot': 'Сасавот', 'alina_rin': 'Алина Рин', 'lasqa': 'Ласка',
+                'arrowwoods': 'Аравудус', 'evelone': 'Эвелон', 'buster': 'Бустер',
+            }
+            streamer_display = streamer_names.get(streamer_key, streamer_key)
+            media_url, media_type = get_streamer_media(streamer_key, streamer_display)
+            if media_type == 'clip':
+                clip_url = media_url
+        
+        if not media_url:
+            photo_url = await get_random_photo("streamer", None)
+            if photo_url:
+                media_url = photo_url
+        
+        if not media_url:
+            photo_url = await get_random_photo("asia", None)
+            if photo_url:
+                media_url = photo_url
+        
+        if not media_url:
+            logger.error("❌ Не удалось найти медиа")
+            await send_post_with_retry(chat_id, None, caption)
+            return True
+        
+        if media_type == 'photo' and random.random() < 0.1 and DEEPSEEK_API_KEY:
+            photo_comment = await analyze_photo_for_comment(media_url)
+            if photo_comment:
+                caption = caption.rstrip() + "\n\n" + photo_comment
+        
+        if media_type == 'photo' and media_url not in history:
+            history.append(media_url)
+            save_history(history)
+        
+        await send_post_with_retry(chat_id, media_url, caption, media_type, clip_url)
+        logger.info(f"✅ Пост отправлен в {chat_id}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"❌ Ошибка создания поста: {e}")
+        return False
+
+async def send_to_all_users():
+    try:
+        users_list = load_users()
+        if not users_list:
+            logger.warning("Нет пользователей для отправки")
+            return
+        
+        logger.info(f"Отправка поста {len(users_list)} пользователям...")
+        
+        caption, streamer_key = generate_caption_with_validation()
+        if not caption:
+            return
+        
+        media_url = None
+        media_type = 'photo'
+        clip_url = None
+        
+        if streamer_key:
+            streamer_names = {
+                'voodoosh': 'Вудуш', 'praden': 'Праден', 'bratishkinoff': 'Братишкин',
+                'sasavot': 'Сасавот', 'alina_rin': 'Алина Рин', 'lasqa': 'Ласка',
+                'arrowwoods': 'Аравудус', 'evelone': 'Эвелон', 'buster': 'Бустер',
+            }
+            streamer_display = streamer_names.get(streamer_key, streamer_key)
+            media_url, media_type = get_streamer_media(streamer_key, streamer_display)
+            if media_type == 'clip':
+                clip_url = media_url
+        
+        if not media_url:
+            photo_url = await get_random_photo("streamer", None)
+            if photo_url:
+                media_url = photo_url
+        
+        if not media_url:
+            photo_url = await get_random_photo("asia", None)
+            if photo_url:
+                media_url = photo_url
+        
+        if not media_url:
+            logger.error("Не удалось найти медиа")
+            return
+        
+        # Отправляем в канал
+        channel_id = CHANNEL_ID or await get_channel_id()
+        if channel_id:
+            try:
+                logger.info(f"📢 Отправка в канал {channel_id}")
+                await send_post_with_retry(channel_id, media_url, caption, media_type, clip_url)
+                logger.info(f"✅ Пост отправлен в канал {channel_id}")
+            except Exception as e:
+                logger.error(f"❌ Ошибка отправки в канал: {e}")
+        else:
+            logger.info("ℹ️ Канал не найден, отправка только пользователям")
+        
+        # Отправляем пользователям
+        sent_count = 0
+        failed_count = 0
+        random.shuffle(users_list)
+        
+        for i, chat_id in enumerate(users_list):
+            try:
+                logger.info(f"📨 Отправка пользователю {i+1}/{len(users_list)}: {chat_id}")
+                await send_post_with_retry(chat_id, media_url, caption, media_type, clip_url)
+                sent_count += 1
+                
+                if i < len(users_list) - 1:
+                    await asyncio.sleep(SEND_DELAY)
+                    
+            except Exception as e:
+                logger.error(f"Ошибка отправки пользователю {chat_id}: {e}")
+                failed_count += 1
+        
+        logger.info(f"✅ Пост отправлен: {sent_count} пользователям, {failed_count} ошибок")
+    except Exception as e:
+        logger.error(f"Ошибка в send_to_all_users: {e}")
+
+# ===== КОМАНДЫ (ПРАВИЛЬНЫЙ ПОРЯДОК) =====
 
 @dp.message(Command("start"))
 @rate_limit(seconds=3)
 async def start(msg: Message):
     try:
         chat_id = msg.chat.id
-        user_id = msg.from_user.id
         
         if chat_id not in users:
             users.append(chat_id)
@@ -316,13 +505,9 @@ async def start(msg: Message):
         rub_price = broadcast_prices.get("rub", 100)
         
         channel_status = "❌ не найден"
-        channel_id = CHANNEL_ID
-        if channel_id and channel_id.strip():
+        channel_id = CHANNEL_ID or await get_channel_id()
+        if channel_id:
             channel_status = f"✅ {channel_id}"
-        else:
-            found_channel = await get_channel_id()
-            if found_channel:
-                channel_status = f"✅ {found_channel} (авто-найден)"
         
         await msg.answer(
             f"✅ Бот активирован!\n\n"
@@ -379,17 +564,12 @@ async def post_command(message: Message):
             await message.answer("⛔ Доступ запрещён")
             return
         
-        channel_id = CHANNEL_ID
-        if channel_id and channel_id.strip():
+        channel_id = CHANNEL_ID or await get_channel_id()
+        if channel_id:
             await create_post_with_photo(str(channel_id), message.from_user.id, skip_moderation=True)
             await message.answer("✅ Пост создан для канала!")
         else:
-            channel_id = await get_channel_id()
-            if channel_id:
-                await create_post_with_photo(str(channel_id), message.from_user.id, skip_moderation=True)
-                await message.answer(f"✅ Пост создан для канала {channel_id}!")
-            else:
-                await message.answer("⚠️ Канал не найден. Укажите CHANNEL_ID в переменных окружения.")
+            await message.answer("⚠️ Канал не найден. Укажите CHANNEL_ID в переменных окружения.")
         
         await create_post_with_photo(str(message.chat.id), message.from_user.id, skip_moderation=True)
         await message.answer("✅ Пост создан в ЛС!")
@@ -531,259 +711,6 @@ async def check_channel(message: Message):
         logger.error(f"Ошибка проверки канала: {e}")
         await message.answer("❌ Произошла ошибка")
 
-# ===== ОБНОВЛЕННАЯ ФУНКЦИЯ ОТПРАВКИ ВСЕМ ПОЛЬЗОВАТЕЛЯМ =====
-
-async def send_to_all_users():
-    try:
-        users_list = load_users()
-        if not users_list:
-            logger.warning("Нет пользователей для отправки")
-            return
-        
-        logger.info(f"Отправка поста {len(users_list)} пользователям...")
-        
-        caption, streamer_key = generate_caption_with_validation()
-        if not caption:
-            return
-        
-        # Получаем медиа
-        media_url = None
-        media_type = 'photo'
-        clip_url = None
-        
-        if streamer_key:
-            streamer_names = {
-                'voodoosh': 'Вудуш', 'praden': 'Праден', 'bratishkinoff': 'Братишкин',
-                'sasavot': 'Сасавот', 'alina_rin': 'Алина Рин', 'lasqa': 'Ласка',
-                'arrowwoods': 'Аравудус', 'evelone': 'Эвелон', 'buster': 'Бустер',
-            }
-            streamer_display = streamer_names.get(streamer_key, streamer_key)
-            media_url, media_type = get_streamer_media(streamer_key, streamer_display)
-            if media_type == 'clip':
-                clip_url = media_url
-        
-        if not media_url:
-            photo_url = await get_random_photo("streamer", None)
-            if photo_url:
-                media_url = photo_url
-        
-        if not media_url:
-            photo_url = await get_random_photo("asia", None)
-            if photo_url:
-                media_url = photo_url
-        
-        if not media_url:
-            logger.error("Не удалось найти медиа")
-            return
-        
-        # Отправляем в канал (если он есть)
-        channel_id = None
-        if CHANNEL_ID and CHANNEL_ID.strip():
-            channel_id = CHANNEL_ID
-        else:
-            channel_id = await get_channel_id()
-        
-        if channel_id:
-            try:
-                logger.info(f"📢 Отправка в канал {channel_id}")
-                await send_post_with_retry(channel_id, media_url, caption, media_type, clip_url)
-                logger.info(f"✅ Пост отправлен в канал {channel_id}")
-            except Exception as e:
-                logger.error(f"❌ Ошибка отправки в канал: {e}")
-        else:
-            logger.info("ℹ️ Канал не найден, отправка только пользователям")
-        
-        # Отправляем всем пользователям с задержкой 3 секунды
-        sent_count = 0
-        failed_count = 0
-        
-        # Сортируем пользователей для равномерной отправки
-        random.shuffle(users_list)
-        
-        for i, chat_id in enumerate(users_list):
-            try:
-                logger.info(f"📨 Отправка пользователю {i+1}/{len(users_list)}: {chat_id}")
-                await send_post_with_retry(chat_id, media_url, caption, media_type, clip_url)
-                sent_count += 1
-                
-                # Задержка 3 секунды между отправками (кроме последней)
-                if i < len(users_list) - 1:
-                    await asyncio.sleep(SEND_DELAY)
-                    
-            except Exception as e:
-                logger.error(f"Ошибка отправки пользователю {chat_id}: {e}")
-                failed_count += 1
-        
-        logger.info(f"✅ Пост отправлен: {sent_count} пользователям, {failed_count} ошибок")
-    except Exception as e:
-        logger.error(f"Ошибка в send_to_all_users: {e}")
-
-# ===== ОСТАЛЬНЫЕ ФУНКЦИИ =====
-
-async def get_channel_id() -> Optional[str]:
-    if CHANNEL_ID and CHANNEL_ID.strip():
-        return CHANNEL_ID.strip()
-    try:
-        me = await bot.get_me()
-        logger.info(f"Бот: @{me.username}")
-        try:
-            updates = await asyncio.wait_for(
-                bot.get_updates(offset=-1, limit=10),
-                timeout=10
-            )
-            for update in updates:
-                if update.channel_post:
-                    chat_id = update.channel_post.chat.id
-                    try:
-                        chat_member = await bot.get_chat_member(chat_id, bot.id)
-                        if chat_member.status in ["administrator", "creator"]:
-                            logger.info(f"Найден канал: {chat_id}")
-                            return str(chat_id)
-                    except:
-                        pass
-        except asyncio.TimeoutError:
-            logger.warning("Таймаут получения обновлений")
-        except Exception as e:
-            logger.error(f"Ошибка получения обновлений: {e}")
-    except Exception as e:
-        logger.error(f"Ошибка поиска канала: {e}")
-    return None
-
-async def check_user_can_use_command(message: Message) -> bool:
-    try:
-        chat_type = message.chat.type
-        if chat_type == "private":
-            return True
-        if chat_type in ["group", "supergroup"]:
-            return await is_user_admin(message.chat.id, message.from_user.id)
-        return False
-    except Exception as e:
-        logger.error(f"Ошибка проверки прав: {e}")
-        return False
-
-async def is_user_admin(chat_id: int, user_id: int) -> bool:
-    try:
-        chat_member = await bot.get_chat_member(chat_id, user_id)
-        return chat_member.status in ["administrator", "creator"]
-    except Exception as e:
-        logger.error(f"Ошибка проверки админа: {e}")
-        return False
-
-def encode_image_to_base64_url(image_url: str) -> str:
-    try:
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-        }
-        response = requests.get(image_url, headers=headers, timeout=10)
-        if response.status_code == 200:
-            return base64.b64encode(response.content).decode('utf-8')
-        return None
-    except Exception as e:
-        logger.error(f"Ошибка загрузки картинки: {e}")
-        return None
-
-def can_use_photo(user_id: int) -> Tuple[bool, int, int]:
-    if user_id == OWNER_ID:
-        return True, 0, float('inf')
-    
-    usage_data = load_usage()
-    current_date = datetime.now().strftime("%Y-%m-%d")
-    user_key = str(user_id)
-    limit = 10
-    
-    if user_key not in usage_data:
-        return True, 0, limit
-    
-    user_usage = usage_data.get(user_key, {})
-    last_date = user_usage.get("date")
-    count = user_usage.get("count", 0)
-    
-    if last_date != current_date:
-        return True, 0, limit
-    
-    if count >= limit:
-        return False, count, limit
-    
-    return True, count, limit
-
-def increment_photo_usage(user_id: int) -> Tuple[int, int]:
-    if user_id == OWNER_ID:
-        return 0, float('inf')
-    
-    usage_data = load_usage()
-    current_date = datetime.now().strftime("%Y-%m-%d")
-    user_key = str(user_id)
-    limit = 10
-    
-    if user_key not in usage_data:
-        usage_data[user_key] = {"date": current_date, "count": 0}
-    
-    user_usage = usage_data[user_key]
-    
-    if user_usage.get("date") != current_date:
-        user_usage["date"] = current_date
-        user_usage["count"] = 0
-    
-    user_usage["count"] += 1
-    
-    save_usage(usage_data)
-    
-    return user_usage["count"], limit
-
-async def create_post_with_photo(chat_id, user_id=0, skip_moderation=False, style="streamer"):
-    try:
-        caption, streamer_key = generate_caption_with_validation()
-        if not caption:
-            return False
-        
-        media_url = None
-        media_type = 'photo'
-        clip_url = None
-        
-        if streamer_key:
-            streamer_names = {
-                'voodoosh': 'Вудуш', 'praden': 'Праден', 'bratishkinoff': 'Братишкин',
-                'sasavot': 'Сасавот', 'alina_rin': 'Алина Рин', 'lasqa': 'Ласка',
-                'arrowwoods': 'Аравудус', 'evelone': 'Эвелон', 'buster': 'Бустер',
-            }
-            streamer_display = streamer_names.get(streamer_key, streamer_key)
-            media_url, media_type = get_streamer_media(streamer_key, streamer_display)
-            if media_type == 'clip':
-                clip_url = media_url
-        
-        if not media_url:
-            photo_url = await get_random_photo("streamer", None)
-            if photo_url:
-                media_url = photo_url
-        
-        if not media_url:
-            photo_url = await get_random_photo("asia", None)
-            if photo_url:
-                media_url = photo_url
-        
-        if not media_url:
-            logger.error("❌ Не удалось найти медиа")
-            await send_post_with_retry(chat_id, None, caption)
-            return True
-        
-        if media_type == 'photo' and random.random() < 0.1 and DEEPSEEK_API_KEY:
-            photo_comment = await analyze_photo_for_comment(media_url)
-            if photo_comment:
-                caption = caption.rstrip() + "\n\n" + photo_comment
-        
-        if media_type == 'photo' and media_url not in history:
-            history.append(media_url)
-            save_history(history)
-        
-        # Отправляем пост с задержкой
-        await send_post_with_retry(chat_id, media_url, caption, media_type, clip_url)
-        logger.info(f"✅ Пост отправлен в {chat_id}")
-        return True
-        
-    except Exception as e:
-        logger.error(f"❌ Ошибка создания поста: {e}")
-        return False
-
 # ===== ПЛАНИРОВЩИК =====
 
 async def scheduler():
@@ -791,7 +718,7 @@ async def scheduler():
     await asyncio.sleep(10)
     logger.info("🔄 Планировщик запущен")
     logger.info(f"📅 Расписание: {schedule_data.get('times', ['12:00', '21:00'])}")
-    logger.info(f"⏱️ Минимальный интервал между постами: {MIN_POST_INTERVAL//3600} часов")
+    logger.info(f"⏱️ Минимальный интервал: {MIN_POST_INTERVAL//3600} часов")
     logger.info(f"⏱️ Задержка между сообщениями: {SEND_DELAY} секунд")
     
     while True:
@@ -1537,7 +1464,6 @@ async def handle_broadcast_moderation(callback: CallbackQuery):
                         
                         sent_count += 1
                         
-                        # Задержка 3 секунды между отправками
                         if i < len(users_list) - 1:
                             await asyncio.sleep(3.0)
                             
