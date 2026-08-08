@@ -539,10 +539,10 @@ async def help_command(message: Message):
         user_id = message.from_user.id
         is_owner = (user_id == OWNER_ID)
         
-        help_text = "🤖 **Помощь по командам бота**\n\n"
+        help_text = "<b>🤖 ПОМОЩЬ ПО КОМАНДАМ БОТА</b>\n\n"
         
         # Общие команды для всех пользователей
-        help_text += "📌 **Основные команды:**\n"
+        help_text += "<b>📌 ОСНОВНЫЕ КОМАНДЫ:</b>\n"
         help_text += "• /start - активировать бота и получить информацию\n"
         help_text += "• /photo - получить пост сейчас (до 10 раз в день)\n"
         help_text += "• /status - статус бота и информация о последнем посте\n"
@@ -552,7 +552,7 @@ async def help_command(message: Message):
         
         # Команды для владельца
         if is_owner:
-            help_text += "🔐 **Команды владельца:**\n"
+            help_text += "<b>🔐 КОМАНДЫ ВЛАДЕЛЬЦА:</b>\n"
             help_text += "• /post - создать пост в канале и в ЛС\n"
             help_text += "• /force_send - принудительная отправка поста всем\n"
             help_text += "• /stats - подробная статистика бота\n"
@@ -562,13 +562,13 @@ async def help_command(message: Message):
             help_text += "• /clear_cache - очистить кэш промптов\n"
             help_text += "• /restart - перезапустить планировщик\n\n"
         
-        help_text += "ℹ️ **О боте:**\n"
+        help_text += "<b>ℹ️ О БОТЕ:</b>\n"
         help_text += f"• Режим: случайные отправки (не чаще 2 часов)\n"
         help_text += f"• Время работы: с 8:00 до 23:00\n"
         help_text += f"• Максимум постов в день: 5\n"
         help_text += f"• Контент: 85% стримеры, 15% Азия\n\n"
         
-        help_text += "📊 **Статистика:**\n"
+        help_text += "<b>📊 СТАТИСТИКА:</b>\n"
         users_count = len(load_users())
         help_text += f"• Подписчиков: {users_count}\n"
         help_text += f"• Фото в истории: {len(history)}\n"
@@ -584,7 +584,7 @@ async def help_command(message: Message):
             remaining = 2 - hours_since
             help_text += f"• Статус: ⏳ Следующий пост через {remaining:.1f} часов\n"
         
-        await message.answer(help_text, parse_mode="Markdown")
+        await message.answer(help_text, parse_mode="HTML")
         
     except Exception as e:
         logger.error(f"Ошибка в команде help: {e}")
