@@ -87,7 +87,7 @@ USAGE_FILE = "usage.json"
 # ===== ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ =====
 is_sending = False
 last_post_time = time.time()
-MIN_POST_INTERVAL = 2 * 60 * 60
+MIN_POST_INTERVAL = 2 * 60 * 60  # 2 часа
 SEND_DELAY = 3.0
 users = []
 history = []
@@ -491,8 +491,10 @@ async def send_to_all_users():
                 failed_count += 1
         
         logger.info(f"✅ Пост отправлен: {sent_count} пользователям, {failed_count} ошибок")
+        return True
     except Exception as e:
         logger.error(f"Ошибка в send_to_all_users: {e}")
+        return False
 
 # ===== КОМАНДЫ =====
 
@@ -507,7 +509,6 @@ async def start(msg: Message):
             logger.info(f"👤 Добавлен пользователь: {chat_id}")
         
         current_schedule = load_schedule()
-        times = ", ".join(current_schedule.get("times", ["12:00", "21:00"]))
         stars_price = broadcast_prices.get("stars", 100)
         rub_price = broadcast_prices.get("rub", 100)
         
@@ -519,17 +520,75 @@ async def start(msg: Message):
         await msg.answer(
             f"✅ Бот активирован!\n\n"
             f"📸 Посты про стримеров и Азию\n"
-            f"⏰ Расписание: {times}\n"
+            f"⏰ Режим: случайные отправки (не чаще 2 часов)\n"
             f"📢 Канал: {channel_status}\n\n"
             f"🔄 /photo - получить пост сейчас (до 10 раз в день)\n"
-            f"⏰ /schedule - изменить расписание (только для владельца)\n"
+            f"📊 /status - статус бота\n"
             f"📢 /broadcast - отправить сообщение всем (⭐ {stars_price} звёзд или 💳 {rub_price} RUB)\n"
             f"🛑 /stop - отписаться\n"
-            f"📊 /status - статус бота"
+            f"❓ /help - список всех команд\n\n"
+            f"ℹ️ Владелец: используйте /help для просмотра всех команд"
         )
         
     except Exception as e:
         logger.error(f"Ошибка в команде start: {e}")
+
+@dp.message(Command("help"))
+async def help_command(message: Message):
+    try:
+        user_id = message.from_user.id
+        is_owner = (user_id == OWNER_ID)
+        
+        help_text = "🤖 **Помощь по командам бота**\n\n"
+        
+        # Общие команды для всех пользователей
+        help_text += "📌 **Основные команды:**\n"
+        help_text += "• /start - активировать бота и получить информацию\n"
+        help_text += "• /photo - получить пост сейчас (до 10 раз в день)\n"
+        help_text += "• /status - статус бота и информация о последнем посте\n"
+        help_text += "• /broadcast - отправить платное сообщение всем подписчикам\n"
+        help_text += "• /stop - отписаться от рассылки\n"
+        help_text += "• /help - показать это сообщение\n\n"
+        
+        # Команды для владельца
+        if is_owner:
+            help_text += "🔐 **Команды владельца:**\n"
+            help_text += "• /post - создать пост в канале и в ЛС\n"
+            help_text += "• /force_send - принудительная отправка поста всем\n"
+            help_text += "• /stats - подробная статистика бота\n"
+            help_text += "• /price - установить цены на рассылку\n"
+            help_text += "• /schedule - информация о режиме работы\n"
+            help_text += "• /check_channel - проверить статус бота в канале\n"
+            help_text += "• /clear_cache - очистить кэш промптов\n"
+            help_text += "• /restart - перезапустить планировщик\n\n"
+        
+        help_text += "ℹ️ **О боте:**\n"
+        help_text += f"• Режим: случайные отправки (не чаще 2 часов)\n"
+        help_text += f"• Время работы: с 8:00 до 23:00\n"
+        help_text += f"• Максимум постов в день: 5\n"
+        help_text += f"• Контент: 85% стримеры, 15% Азия\n\n"
+        
+        help_text += "📊 **Статистика:**\n"
+        users_count = len(load_users())
+        help_text += f"• Подписчиков: {users_count}\n"
+        help_text += f"• Фото в истории: {len(history)}\n"
+        
+        current_time = time.time()
+        hours_since = (current_time - last_post_time) / 3600
+        help_text += f"• Последний пост: {datetime.fromtimestamp(last_post_time).strftime('%H:%M:%S')}\n"
+        help_text += f"• Прошло: {hours_since:.1f} часов\n"
+        
+        if hours_since >= 2:
+            help_text += "• Статус: ✅ Можно отправить пост\n"
+        else:
+            remaining = 2 - hours_since
+            help_text += f"• Статус: ⏳ Следующий пост через {remaining:.1f} часов\n"
+        
+        await message.answer(help_text, parse_mode="Markdown")
+        
+    except Exception as e:
+        logger.error(f"Ошибка в команде help: {e}")
+        await message.answer("❌ Произошла ошибка при получении помощи")
 
 @dp.message(Command("photo"))
 async def photo_command(message: Message):
@@ -603,27 +662,14 @@ async def schedule(msg: Message):
         
         args = msg.text.replace("/schedule", "").strip()
         if not args:
-            current_schedule = load_schedule()
-            times = ", ".join(current_schedule.get("times", ["12:00", "21:00"]))
-            await msg.answer(f"📅 Текущее расписание: {times}")
+            await msg.answer(
+                f"ℹ️ Бот работает в режиме случайных отправок.\n"
+                f"⏱️ Минимальный интервал: {MIN_POST_INTERVAL//3600} часа\n"
+                f"📊 Используйте /stats для просмотра статистики"
+            )
             return
         
-        new_times = []
-        for time_str in args.split(','):
-            time_str = time_str.strip()
-            try:
-                hour, minute = map(int, time_str.split(':'))
-                if 0 <= hour <= 23 and 0 <= minute <= 59:
-                    new_times.append(f"{hour:02d}:{minute:02d}")
-            except:
-                continue
-        
-        if new_times:
-            schedule_data["times"] = new_times
-            save_schedule(schedule_data)
-            await msg.answer(f"✅ Расписание обновлено: {', '.join(new_times)}")
-        else:
-            await msg.answer("❌ Неверный формат")
+        await msg.answer("❌ Режим расписания отключен. Бот отправляет посты случайно.")
     except Exception as e:
         logger.error(f"Ошибка в команде schedule: {e}")
 
@@ -676,19 +722,167 @@ async def set_price(message: Message):
 async def status(msg: Message):
     try:
         users_list = load_users()
-        current_schedule = load_schedule()
-        times = ", ".join(current_schedule.get("times", ["12:00", "21:00"]))
         channel_id = CHANNEL_ID or await get_channel_id()
         
-        await msg.answer(
-            f"📊 Статус бота:\n"
-            f"• Подписчиков: {len(users_list)}\n"
-            f"• Фото в истории: {len(history)}\n"
-            f"• Расписание: {times}\n"
-            f"• Канал: {'✅ ' + channel_id if channel_id else '❌ не найден'}"
-        )
+        current_time = time.time()
+        hours_since = (current_time - last_post_time) / 3600
+        
+        status_text = f"📊 Статус бота:\n"
+        status_text += f"• Подписчиков: {len(users_list)}\n"
+        status_text += f"• Фото в истории: {len(history)}\n"
+        status_text += f"• Режим: случайные отправки\n"
+        status_text += f"• Интервал: {MIN_POST_INTERVAL//3600} часа\n"
+        status_text += f"• Последний пост: {datetime.fromtimestamp(last_post_time).strftime('%H:%M:%S')}\n"
+        status_text += f"• Прошло: {hours_since:.1f} часов\n"
+        status_text += f"• Канал: {'✅ ' + channel_id if channel_id else '❌ не найден'}"
+        
+        if hours_since >= 2:
+            status_text += f"\n• Статус: ✅ Можно отправить пост"
+        else:
+            remaining = 2 - hours_since
+            status_text += f"\n• Статус: ⏳ Следующий пост через {remaining:.1f} часов"
+        
+        await msg.answer(status_text)
     except Exception as e:
         logger.error(f"Ошибка в команде status: {e}")
+
+@dp.message(Command("stats"))
+async def stats_command(message: Message):
+    try:
+        if message.from_user.id != OWNER_ID:
+            await message.answer("⛔ Доступ запрещён")
+            return
+        
+        current_time = time.time()
+        hours_since = (current_time - last_post_time) / 3600
+        
+        # Считаем посты за сегодня
+        usage_data = load_usage()
+        today = datetime.now().strftime("%Y-%m-%d")
+        today_posts = 0
+        for user_id, data in usage_data.items():
+            if data.get("date") == today:
+                today_posts += data.get("count", 0)
+        
+        stats_text = f"📊 Статистика бота:\n\n"
+        stats_text += f"🕐 Последний пост: {datetime.fromtimestamp(last_post_time).strftime('%H:%M:%S')}\n"
+        stats_text += f"⏱️ Прошло: {hours_since:.1f} часов\n"
+        stats_text += f"📅 Постов сегодня: {today_posts}\n"
+        stats_text += f"👥 Подписчиков: {len(load_users())}\n"
+        stats_text += f"📸 В истории: {len(history)} фото\n"
+        stats_text += f"📢 Канал: {CHANNEL_ID or 'Не найден'}\n"
+        stats_text += f"⏰ Режим: случайные отправки\n"
+        stats_text += f"⏱️ Интервал: {MIN_POST_INTERVAL//3600} часа\n"
+        
+        # Определяем, сколько осталось до следующей отправки
+        if hours_since < 2:
+            remaining = 2 - hours_since
+            stats_text += f"⏳ Следующая отправка через: {remaining:.1f} часов\n"
+        else:
+            stats_text += f"✅ Можно отправить следующий пост\n"
+            # Шанс отправки в минуту
+            if hours_since >= 10:
+                chance = 0.50
+            elif hours_since >= 8:
+                chance = 0.35
+            elif hours_since >= 6:
+                chance = 0.25
+            elif hours_since >= 4:
+                chance = 0.18
+            elif hours_since >= 3:
+                chance = 0.14
+            else:
+                chance = 0.10
+            stats_text += f"🎲 Шанс отправки в минуту: {chance*100:.0f}%\n"
+        
+        await message.answer(stats_text)
+        
+    except Exception as e:
+        logger.error(f"Ошибка в stats_command: {e}")
+        await message.answer(f"❌ Ошибка: {e}")
+
+@dp.message(Command("force_send"))
+async def force_send(message: Message):
+    try:
+        if message.from_user.id != OWNER_ID:
+            await message.answer("⛔ Доступ запрещён")
+            return
+        
+        await message.answer("🔄 Начинаю принудительную отправку...")
+        
+        # Проверяем канал
+        channel_id = CHANNEL_ID or await get_channel_id()
+        if channel_id:
+            await message.answer(f"📢 Канал найден: {channel_id}")
+        else:
+            await message.answer("⚠️ Канал не найден! Проверьте CHANNEL_ID")
+        
+        # Отправляем пост
+        result = await send_to_all_users()
+        
+        if result:
+            global last_post_time
+            last_post_time = time.time()
+            await message.answer("✅ Пост успешно отправлен!")
+        else:
+            await message.answer("❌ Ошибка при отправке поста")
+            
+    except Exception as e:
+        logger.error(f"Ошибка в force_send: {e}")
+        await message.answer(f"❌ Ошибка: {e}")
+
+@dp.message(Command("clear_cache"))
+async def clear_cache_command(message: Message):
+    try:
+        if message.from_user.id != OWNER_ID:
+            await message.answer("⛔ Доступ запрещён")
+            return
+        
+        # Очищаем кэш промптов
+        clear_prompt_cache()
+        
+        # Очищаем историю фото (опционально)
+        global history
+        history = []
+        save_history(history)
+        
+        await message.answer("✅ Кэш очищен!\n"
+                           "• Очищены промпты DeepSeek\n"
+                           "• Очищена история фото")
+        
+        logger.info(f"🧹 Кэш очищен владельцем {message.from_user.id}")
+        
+    except Exception as e:
+        logger.error(f"Ошибка в clear_cache: {e}")
+        await message.answer(f"❌ Ошибка: {e}")
+
+@dp.message(Command("restart"))
+async def restart_command(message: Message):
+    try:
+        if message.from_user.id != OWNER_ID:
+            await message.answer("⛔ Доступ запрещён")
+            return
+        
+        global is_sending, last_post_time
+        
+        await message.answer("🔄 Перезапуск планировщика...")
+        
+        # Сбрасываем флаг отправки
+        is_sending = False
+        
+        # Сбрасываем время последнего поста (но не слишком сильно)
+        # Чтобы бот не отправил пост сразу после перезапуска
+        last_post_time = time.time() - (MIN_POST_INTERVAL - 3600)  # Через 1 час сможет отправить
+        
+        await message.answer(f"✅ Планировщик перезапущен!\n"
+                           f"⏱️ Следующая возможная отправка через 1 час\n"
+                           f"🔄 Бот продолжит работу в обычном режиме")
+        
+        logger.info(f"🔄 Планировщик перезапущен владельцем {message.from_user.id}")
+        
+    except Exception as e:
+        logger.error(f"Ошибка в restart: {e}")
+        await message.answer(f"❌ Ошибка: {e}")
 
 @dp.message(Command("check_channel"))
 async def check_channel(message: Message):
@@ -711,56 +905,108 @@ async def check_channel(message: Message):
         logger.error(f"Ошибка проверки канала: {e}")
         await message.answer("❌ Произошла ошибка")
 
-# ===== ПЛАНИРОВЩИК =====
+# ===== ПЛАНИРОВЩИК (ГИБРИДНЫЙ РЕЖИМ) =====
 
 async def scheduler():
     global is_sending, last_post_time
     await asyncio.sleep(10)
-    logger.info("🔄 Планировщик запущен")
-    logger.info(f"📅 Расписание: {schedule_data.get('times', ['12:00', '21:00'])}")
+    logger.info("🔄 Планировщик запущен (гибридный режим)")
     logger.info(f"⏱️ Минимальный интервал: {MIN_POST_INTERVAL//3600} часов")
-    logger.info(f"⏱️ Задержка между сообщениями: {SEND_DELAY} секунд")
+    logger.info("🎲 Посты отправляются случайно в течение дня")
+    
+    # Время работы бота
+    START_HOUR = 8
+    END_HOUR = 23
+    
+    # Статистика отправок
+    posts_today = 0
+    last_date = datetime.now().date()
     
     while True:
         try:
             current_time = time.time()
+            now = datetime.now()
+            current_hour = now.hour
             
-            if current_time - last_post_time < MIN_POST_INTERVAL:
-                wait_time = random.randint(1800, 3600)
-                logger.info(f"⏳ Следующая проверка через {wait_time//60} минут")
-                await asyncio.sleep(wait_time)
+            # Сброс счётчика в новый день
+            if now.date() != last_date:
+                posts_today = 0
+                last_date = now.date()
+                logger.info(f"📅 Новый день! Сброс счётчика постов")
+            
+            # Ночной режим
+            if current_hour < START_HOUR or current_hour > END_HOUR:
+                await asyncio.sleep(1800)  # Проверяем раз в 30 минут
                 continue
             
-            now = datetime.now()
-            current_time_str = now.strftime("%H:%M")
+            # Проверяем интервал
+            hours_since = (current_time - last_post_time) / 3600
             
-            schedule_times = schedule_data.get("times", ["12:00", "21:00"])
-            
-            if current_time_str in schedule_times:
-                if not is_sending:
+            # Если прошло больше 2 часов, пытаемся отправить
+            if hours_since >= 2:
+                # Базовый шанс отправки (в минуту)
+                chance = 0.10  # 10% в минуту
+                
+                # Увеличиваем шанс с каждым часом
+                if hours_since >= 10:
+                    chance = 0.50
+                elif hours_since >= 8:
+                    chance = 0.35
+                elif hours_since >= 6:
+                    chance = 0.25
+                elif hours_since >= 4:
+                    chance = 0.18
+                elif hours_since >= 3:
+                    chance = 0.14
+                
+                # Не отправляем больше 5 постов в день
+                if posts_today >= 5:
+                    chance = 0.02  # Почти не отправляем
+                    if hours_since >= 10:  # Но если прошло 10 часов - всё равно отправляем
+                        chance = 0.50
+                
+                if random.random() < chance and not is_sending:
                     is_sending = True
                     try:
-                        random_delay = random.randint(0, 2700)
-                        logger.info(f"🎲 Случайная задержка {random_delay//60} минут")
-                        await asyncio.sleep(random_delay)
+                        # Маленькая задержка для имитации "размышления"
+                        delay = random.randint(0, 120)
+                        if delay > 0:
+                            logger.info(f"🎲 Задержка {delay} сек перед отправкой")
+                            await asyncio.sleep(delay)
                         
+                        # Повторная проверка (вдруг кто-то уже отправил)
                         if time.time() - last_post_time >= MIN_POST_INTERVAL:
-                            if random.random() < 0.05:
-                                logger.info("🎲 Случайный пропуск отправки (5%)")
-                                last_post_time = time.time()
-                            else:
-                                logger.info(f"📢 Отправка по расписанию {current_time_str}")
-                                await send_to_all_users()
-                                last_post_time = time.time()
-                                logger.info(f"✅ Пост отправлен в {datetime.now().strftime('%H:%M')}")
+                            logger.info(f"📢 Отправка поста! (Прошло {hours_since:.1f}ч, пост #{posts_today+1} за сегодня)")
+                            await send_to_all_users()
+                            last_post_time = time.time()
+                            posts_today += 1
+                            logger.info(f"✅ Пост отправлен в {datetime.now().strftime('%H:%M:%S')}")
                         else:
-                            logger.info("⏭️ Пост уже был отправлен, пропускаем")
+                            logger.info("⏭️ Пост уже отправлен, пропускаем")
                     except Exception as e:
                         logger.error(f"❌ Ошибка отправки: {e}")
                     finally:
                         is_sending = False
+            
+            # Логируем состояние каждые 30 минут
+            if now.minute % 30 == 0 and now.second < 5:
+                hours_since = (time.time() - last_post_time) / 3600
+                if hours_since >= 2:
+                    chance = 0.10
+                    if hours_since >= 10:
+                        chance = 0.50
+                    elif hours_since >= 8:
+                        chance = 0.35
+                    elif hours_since >= 6:
+                        chance = 0.25
+                    elif hours_since >= 4:
+                        chance = 0.18
+                    elif hours_since >= 3:
+                        chance = 0.14
+                    logger.info(f"⏰ {now.strftime('%H:%M')} | Постов не было {hours_since:.1f}ч | Шанс отправки: {chance*100:.0f}% | Сегодня: {posts_today}")
                 else:
-                    logger.warning("⚠️ Отправка уже идёт, пропускаем")
+                    remaining = 2 - hours_since
+                    logger.info(f"⏰ {now.strftime('%H:%M')} | Ждём {remaining:.1f}ч до следующей отправки | Сегодня: {posts_today}")
             
             await asyncio.sleep(60)
             
@@ -1570,7 +1816,9 @@ async def main():
         logger.info("=" * 60)
         logger.info("🤖 БОТ ЗАПУЩЕН")
         logger.info("📸 85% постов про стримеров, 15% про Азию")
+        logger.info(f"⏱️ Минимальный интервал: {MIN_POST_INTERVAL//3600} часа")
         logger.info(f"⏱️ Задержка между сообщениями: {SEND_DELAY} секунд")
+        logger.info("🎲 Режим: случайные отправки")
         logger.info("=" * 60)
         
         if FREEKASSA_SHOP_ID and FREEKASSA_SECRET1:
